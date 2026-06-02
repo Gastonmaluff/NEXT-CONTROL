@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>NEXT CONTROL</title>
+    <script>
+      (function () {
+        var redirect = new URLSearchParams(window.location.search).get("redirect");
+        if (!redirect) return;
+
+        var normalizedRedirect = redirect.charAt(0) === "/" ? redirect : "/" + redirect;
+        window.history.replaceState(null, "", "/NEXT-CONTROL" + normalizedRedirect);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
