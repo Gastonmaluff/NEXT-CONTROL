@@ -1,6 +1,15 @@
 import { Bell, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { logout } from "../../lib/auth";
 
 export default function Header() {
+  const navigate = useNavigate();
+
+  async function handleLogout() {
+    await logout();
+    navigate(0);
+  }
+
   return (
     <header className="sticky top-[92px] z-20 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:top-0 lg:px-8">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -16,7 +25,7 @@ export default function Header() {
           />
         </label>
 
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
           <button
             className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue"
             type="button"
@@ -34,6 +43,13 @@ export default function Header() {
               <p className="text-xs font-medium text-next-muted">Administrador</p>
             </div>
           </div>
+          <button
+            className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-black text-next-muted transition hover:border-next-blue hover:text-next-blue"
+            type="button"
+            onClick={handleLogout}
+          >
+            Salir
+          </button>
         </div>
       </div>
     </header>

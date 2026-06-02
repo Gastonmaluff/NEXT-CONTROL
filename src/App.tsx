@@ -1,12 +1,55 @@
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import MobileInstallationsView from "./components/mobile/MobileInstallationsView";
+import { subscribeToAuthChanges } from "./lib/auth";
 import CrmPage from "./pages/CrmPage";
 import DashboardPage from "./pages/DashboardPage";
+import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    localStorage.getItem("next-control-demo-session") === "true"
+  );
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthChanges((user) => {
+      const demoSession = localStorage.getItem("next-control-demo-session") === "true";
+      setIsAuthenticated(Boolean(user) || demoSession);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  function handleDemoLogin() {
+    localStorage.setItem("next-control-demo-session", "true");
+    setIsAuthenticated(true);
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-next-bg px-4">
+        <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-next-muted shadow-soft">
+          Cargando NEXT CONTROL...
+        </div>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        onDemoLogin={handleDemoLogin}
+        onFirebaseLogin={() => setIsAuthenticated(true)}
+      />
+    );
+  }
+
   return (
     <Routes>
       <Route path="/instalaciones/mobile" element={<MobileInstallationsView />} />
@@ -15,12 +58,12 @@ export default function App() {
         <Route path="/crm" element={<CrmPage />} />
         <Route path="/obras" element={<ProjectControlPage />} />
         <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
-        <Route path="/produccion" element={<PlaceholderPage title="Producción" />} />
-        <Route path="/cobros" element={<PlaceholderPage title="Cobros" />} />
+        <Route path="/produccion" element={<ProjectControlPage />} />
+        <Route path="/cobros" element={<ProjectControlPage />} />
         <Route path="/proveedores" element={<PlaceholderPage title="Proveedores" />} />
         <Route path="/inventario" element={<PlaceholderPage title="Inventario" />} />
         <Route path="/reportes" element={<PlaceholderPage title="Reportes" />} />
-        <Route path="/configuracion" element={<PlaceholderPage title="Configuración" />} />
+        <Route path="/configuracion" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

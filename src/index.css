@@ -21,7 +21,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -32,4 +34,14 @@ input {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+@layer components {
+  .field {
+    @apply h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-next-text outline-none transition placeholder:text-next-muted focus:border-next-blue focus:ring-4 focus:ring-next-blue/10;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue;
+  }
 }

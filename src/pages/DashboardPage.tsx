@@ -1,17 +1,94 @@
+import {
+  BarChart3,
+  CalendarClock,
+  ClipboardList,
+  Factory,
+  Receipt,
+  Truck
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
 import ProgressBar from "../components/ui/ProgressBar";
-import StatusBadge from "../components/ui/StatusBadge";
-import {
-  activeCrews,
-  cashflowBars,
-  criticalWorks,
-  dashboardKpis,
-  dueDates,
-  worksByStatus
-} from "../data/mockData";
+import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import { getCobrosByObra, getCuadrillas, getObras } from "../lib/firestore";
+import type { Cobro, Cuadrilla, Obra } from "../types";
+import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
+import { calculateWeightedProgress } from "../utils/progress";
 
 export default function DashboardPage() {
+  const [obras, setObras] = useState<Obra[]>([]);
+  const [cobros, setCobros] = useState<Cobro[]>([]);
+  const [cuadrillas, setCuadrillas] = useState<Cuadrilla[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const loadedObras = await getObras();
+        const loadedCobros = (await Promise.all(
+          loadedObras.map((obra) => getCobrosByObra(obra.id))
+        )).flat();
+        setObras(loadedObras);
+        setCobros(loadedCobros);
+        setCuadrillas(await getCuadrillas());
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el dashboard.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, []);
+
+  const metrics = useMemo(() => {
+    const activeObras = obras.filter((obra) => !["Finalizada", "Cobrado"].includes(obra.estado));
+    const totalMonto = obras.reduce((sum, obra) => sum + obra.montoAprobado, 0);
+    const totalCobrado = cobros.reduce((sum, cobro) => sum + cobro.monto, 0);
+    const saldoPendiente = obras.reduce((sum, obra) => sum + obra.saldoPendienteCobro, 0);
+    const atrasadas = obras.filter((obra) => obra.estado === "Atrasada");
+    const pendienteProduccion = obras.filter((obra) =>
+      obra.etapasProduccion.some((stage) => stage.estado !== "Completado")
+    ).length;
+
+    return {
+      activeObras,
+      totalMonto,
+      totalCobrado,
+      saldoPendiente,
+      atrasadas,
+      pendienteProduccion,
+      utilidadEstimada: Math.round(totalMonto * 0.18)
+    };
+  }, [cobros, obras]);
+
+  const statusRows = useMemo(() => {
+    const total = Math.max(obras.length, 1);
+    return Object.entries(
+      obras.reduce<Record<string, number>>((acc, obra) => {
+        acc[obra.estado] = (acc[obra.estado] ?? 0) + 1;
+        return acc;
+      }, {})
+    ).map(([label, value]) => ({
+      label,
+      value,
+      percent: Math.round((value / total) * 100),
+      status: getBadgeForStatus(label)
+    }));
+  }, [obras]);
+
+  const upcoming = [...obras]
+    .filter((obra) => obra.fechaEntrega)
+    .sort((a, b) => a.fechaEntrega.localeCompare(b.fechaEntrega))
+    .slice(0, 3);
+
+  if (loading) {
+    return <StateCard text="Cargando dashboard..." />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -22,114 +99,146 @@ export default function DashboardPage() {
           </h1>
         </div>
         <p className="max-w-xl text-sm font-medium leading-6 text-next-muted">
-          Dashboard gerencial para obras, producción, instalaciones, cobranzas y materiales.
+          Dashboard gerencial conectado a obras, cobros, produccion, instalaciones y materiales.
         </p>
       </div>
 
+      {error ? (
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-next-red">
+          {error}
+        </div>
+      ) : null}
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {dashboardKpis.map((kpi) => (
-          <KpiCard key={kpi.label} {...kpi} />
-        ))}
+        <KpiCard label="Obras activas" value={`${metrics.activeObras.length}`} icon={ClipboardList} />
+        <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" />
+        <KpiCard label="Total aprobado" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} />
+        <KpiCard label="Total cobrado" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" />
+        <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" />
+        <KpiCard label="Saldo pendiente total" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={BarChart3} tone="orange" />
+        <KpiCard label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} icon={Factory} tone="orange" />
+        <KpiCard label="Utilidad estimada demo" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.95fr]">
-        <DataCard
-          title="Flujo de caja proyectado 30 días"
-          subtitle="Ingresos previstos por semana"
-        >
-          <div className="flex h-72 items-end gap-4 rounded-lg bg-next-light/45 px-4 pb-4 pt-8">
-            {cashflowBars.map((bar) => (
-              <div key={bar.label} className="flex h-full flex-1 flex-col justify-end gap-3">
-                <div
-                  className="flex min-h-10 items-start justify-center rounded-md bg-next-blue px-2 pt-3 text-center text-xs font-black text-white shadow-lg shadow-blue-900/10"
-                  style={{ height: `${bar.value}%` }}
-                >
-                  {bar.amount}
+        <DataCard title="Obras por estado" subtitle="Distribucion operativa">
+          <div className="space-y-5">
+            {statusRows.length ? (
+              statusRows.map((item) => (
+                <div key={item.label}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-next-text">{item.label}</p>
+                      <p className="text-xs font-semibold text-next-muted">{item.value} obras</p>
+                    </div>
+                    <StatusBadge label={`${item.percent}%`} status={item.status} />
+                  </div>
+                  <ProgressBar
+                    value={item.percent}
+                    tone={item.status === "critical" ? "red" : item.status === "warning" ? "orange" : "blue"}
+                  />
                 </div>
-                <p className="text-center text-xs font-black text-next-muted">{bar.label}</p>
-              </div>
-            ))}
+              ))
+            ) : (
+              <EmptyState text="Todavia no hay obras cargadas." />
+            )}
           </div>
         </DataCard>
 
-        <DataCard title="Obras por estado" subtitle="Distribución operativa">
-          <div className="space-y-5">
-            {worksByStatus.map((item) => (
-              <div key={item.label}>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-next-text">{item.label}</p>
-                    <p className="text-xs font-semibold text-next-muted">{item.value} obras</p>
-                  </div>
-                  <StatusBadge label={`${item.percent}%`} status={item.status} />
+        <DataCard title="Proximos vencimientos">
+          <div className="space-y-4">
+            {upcoming.map((obra) => (
+              <div
+                key={obra.id}
+                className="flex items-center justify-between gap-4 rounded-md bg-next-bg px-3 py-3"
+              >
+                <div>
+                  <p className="text-sm font-black text-next-text">{obra.nombre}</p>
+                  <p className="text-xs font-semibold text-next-muted">{formatDateShort(obra.fechaEntrega)}</p>
                 </div>
-                <ProgressBar
-                  value={item.percent}
-                  tone={item.status === "critical" ? "red" : item.status === "warning" ? "orange" : "blue"}
-                />
+                <p className="text-right text-sm font-black text-next-blue">
+                  {formatCurrencyPYG(obra.saldoPendienteCobro)}
+                </p>
               </div>
             ))}
           </div>
         </DataCard>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr_0.8fr]">
-        <DataCard title="Obras críticas">
+      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <DataCard title="Obras criticas">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead className="text-xs uppercase text-next-muted">
                 <tr>
                   <th className="pb-3 font-black">Obra</th>
                   <th className="pb-3 font-black">Cliente</th>
-                  <th className="pb-3 font-black">Estado</th>
-                  <th className="pb-3 text-right font-black">Demora</th>
+                  <th className="pb-3 font-black">Avance</th>
+                  <th className="pb-3 text-right font-black">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {criticalWorks.map((work) => (
-                  <tr key={work.project}>
-                    <td className="py-4 font-black text-next-text">{work.project}</td>
-                    <td className="py-4 font-semibold text-next-muted">{work.client}</td>
-                    <td className="py-4">
-                      <StatusBadge label={work.status} status={work.badge} />
-                    </td>
-                    <td className="py-4 text-right font-black text-next-text">{work.days}</td>
-                  </tr>
-                ))}
+                {obras
+                  .filter((obra) => obra.estado === "Atrasada" || obra.saldoPendienteCobro > 0)
+                  .slice(0, 6)
+                  .map((obra) => (
+                    <tr key={obra.id}>
+                      <td className="py-4 font-black text-next-text">{obra.nombre}</td>
+                      <td className="py-4 font-semibold text-next-muted">{obra.cliente}</td>
+                      <td className="py-4 font-black text-next-blue">
+                        {calculateWeightedProgress(obra.rubrosAvance)}%
+                      </td>
+                      <td className="py-4 text-right">
+                        <StatusBadge label={obra.estado} status={getBadgeForStatus(obra.estado)} />
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         </DataCard>
 
-        <DataCard title="Próximos vencimientos">
-          <div className="space-y-4">
-            {dueDates.map((item) => (
-              <div
-                key={item.title}
-                className="flex items-center justify-between gap-4 rounded-md bg-next-bg px-3 py-3"
-              >
-                <div>
-                  <p className="text-sm font-black text-next-text">{item.title}</p>
-                  <p className="text-xs font-semibold text-next-muted">{item.date}</p>
-                </div>
-                <p className="text-right text-sm font-black text-next-blue">{item.amount}</p>
-              </div>
-            ))}
-          </div>
-        </DataCard>
-
         <DataCard title="Cuadrillas activas hoy">
           <div className="space-y-4">
-            {activeCrews.map((crew) => (
-              <div key={crew.crew} className="rounded-md border border-slate-100 px-3 py-3">
-                <p className="text-sm font-black text-next-text">{crew.crew}</p>
-                <p className="mt-1 text-sm font-semibold text-next-muted">{crew.project}</p>
-                <p className="mt-2 text-xs font-black uppercase text-next-blue">{crew.progress}</p>
-              </div>
-            ))}
+            {cuadrillas.map((crew) => {
+              const obra = obras.find((item) => item.id === crew.obraId);
+              return (
+                <div key={crew.id} className="rounded-md border border-slate-100 px-3 py-3">
+                  <p className="text-sm font-black text-next-text">{crew.nombre}</p>
+                  <p className="mt-1 text-sm font-semibold text-next-muted">
+                    {obra?.nombre ?? "Sin obra asignada"}
+                  </p>
+                  <p className="mt-2 text-xs font-black uppercase text-next-blue">{crew.estado}</p>
+                </div>
+              );
+            })}
           </div>
         </DataCard>
       </section>
+    </div>
+  );
+}
+
+function getBadgeForStatus(status: string): BadgeStatus {
+  if (status === "Atrasada" || status === "Pausada") return "critical";
+  if (status === "Prospecto" || status === "Presupuesto enviado" || status === "Seguimiento") return "warning";
+  if (status === "Finalizada" || status === "Cobrado") return "success";
+  if (status === "Produccion" || status === "Instalacion" || status === "Facturacion") return "info";
+  return "neutral";
+}
+
+function StateCard({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-next-muted shadow-soft">
+      {text}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 bg-next-bg px-4 py-8 text-center text-sm font-semibold text-next-muted">
+      {text}
     </div>
   );
 }

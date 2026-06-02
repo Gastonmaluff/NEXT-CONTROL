@@ -1,4 +1,9 @@
-import type { BadgeStatus } from "../../data/mockData";
+export type BadgeStatus =
+  | "success"
+  | "warning"
+  | "critical"
+  | "info"
+  | "neutral";
 
 type StatusBadgeProps = {
   label: string;
