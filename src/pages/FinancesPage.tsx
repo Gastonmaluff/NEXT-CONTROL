@@ -334,7 +334,7 @@ export default function FinancesPage() {
           </button>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-4">
           {filteredWorks.map((work) => (
             <FinancialWorkCard
               key={work.id}
@@ -602,17 +602,17 @@ function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements:
   const totals = getRowTotals(obra, movements);
   const imageUrl = obra.imageUrl ?? obra.renderUrl;
   return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-xl">
-      <div className="grid min-w-0 gap-0 md:grid-cols-[210px_minmax(0,1fr)]">
-        <div className="relative min-h-44 bg-next-navy md:min-h-full">
+    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft transition hover:-translate-y-0.5 hover:shadow-xl">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(240px,32%)_minmax(0,1fr)]">
+        <div className="relative min-h-52 overflow-hidden rounded-md bg-next-navy lg:min-h-full">
           {imageUrl ? (
             <img
-              className="h-full min-h-44 w-full object-cover"
+              className="h-full min-h-52 w-full object-cover"
               src={imageUrl}
               alt={`Imagen de ${obra.nombre}`}
             />
           ) : (
-            <div className="flex h-full min-h-44 flex-col justify-between bg-[linear-gradient(135deg,#0f2a44_0%,#1f6fb2_58%,#e8f3ff_100%)] p-5 text-white">
+            <div className="flex h-full min-h-52 flex-col justify-between bg-[linear-gradient(135deg,#0f2a44_0%,#1f6fb2_58%,#e8f3ff_100%)] p-5 text-white">
               <div className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-white/15 ring-1 ring-white/20">
                 <Building2 className="h-6 w-6" aria-hidden="true" />
               </div>
@@ -624,7 +624,7 @@ function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements:
           )}
         </div>
 
-        <div className="min-w-0 p-4 sm:p-5">
+        <div className="min-w-0 p-1 sm:p-2">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h2 className="line-clamp-2 text-xl font-black leading-tight text-next-text">{obra.nombre}</h2>
@@ -636,7 +636,7 @@ function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements:
             <StatusBadge label={formatCompactFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} title={formatFinancialStatus(totals.status)} />
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             <FinanceCardMetric label="Presupuesto" value={formatCompactGuarani(totals.totalContratado)} />
             <FinanceCardMetric label="Ingresado" value={formatCompactGuarani(totals.ingresos)} tone="green" />
             <FinanceCardMetric label="Egresado" value={formatCompactGuarani(totals.egresos)} tone="red" />
@@ -646,9 +646,9 @@ function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements:
 
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs font-semibold leading-5 text-next-muted">
-              Resumen ejecutivo financiero. Los movimientos se cargan dentro de la obra.
+              Los ingresos, compras y egresos se cargan dentro de esta obra.
             </p>
-            <button className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy" type="button" onClick={onOpen}>
+            <button className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy sm:w-auto" type="button" onClick={onOpen}>
               <Eye className="h-4 w-4" aria-hidden="true" />
               Abrir finanzas
             </button>
