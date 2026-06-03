@@ -74,6 +74,10 @@ function emptyMovementForm(tipo: FinancialMovementKind) {
     cantidad: "",
     unidad: "",
     metodoPago: "Transferencia" as FinancialPaymentMethod,
+    numeroCheque: "",
+    fechaEmisionCheque: "",
+    fechaCobroCheque: "",
+    bancoCheque: "",
     monto: "",
     tercero: "",
     observacion: ""
@@ -244,6 +248,10 @@ export default function FinancesPage() {
         cantidad: movementForm.cantidad ? Number(movementForm.cantidad) : undefined,
         unidad: movementForm.unidad || undefined,
         metodoPago: movementForm.metodoPago,
+        numeroCheque: movementForm.metodoPago === "Cheque" ? movementForm.numeroCheque || undefined : undefined,
+        fechaEmisionCheque: movementForm.metodoPago === "Cheque" ? movementForm.fechaEmisionCheque || undefined : undefined,
+        fechaCobroCheque: movementForm.metodoPago === "Cheque" ? movementForm.fechaCobroCheque || undefined : undefined,
+        bancoCheque: movementForm.metodoPago === "Cheque" ? movementForm.bancoCheque || undefined : undefined,
         monto: Number(movementForm.monto),
         tercero: movementForm.tercero || undefined,
         observacion: movementForm.observacion || undefined
@@ -473,12 +481,16 @@ function FinancialDetail({
         </div>
 
         <div className="hidden min-w-0 overflow-x-auto md:block">
-          <div className="grid grid-cols-[78px_70px_minmax(150px,1.35fr)_minmax(94px,0.72fr)_82px_102px_102px_78px] items-center gap-1 border-b border-slate-100 px-1 pb-2 text-[10px] font-black uppercase leading-tight text-next-muted xl:grid-cols-[86px_76px_minmax(190px,1.45fr)_minmax(112px,0.78fr)_92px_116px_116px_86px] xl:gap-2 xl:text-xs">
+          <div className="grid min-w-[1180px] grid-cols-[74px_58px_minmax(132px,1.05fr)_minmax(86px,0.68fr)_minmax(118px,0.9fr)_74px_70px_86px_86px_104px_104px_72px] items-center gap-1 border-b border-slate-100 px-1 pb-2 text-[10px] font-black uppercase leading-tight text-next-muted xl:min-w-0 xl:grid-cols-[82px_64px_minmax(160px,1.1fr)_minmax(96px,0.7fr)_minmax(140px,0.95fr)_82px_78px_94px_94px_112px_112px_78px] xl:gap-2">
             <span>Fecha</span>
             <span>Tipo</span>
             <span>Concepto</span>
             <span>Categoria</span>
+            <span>Proveedor / Cliente</span>
             <span>Metodo</span>
+            <span>Cheque</span>
+            <span>Fecha emision</span>
+            <span>Fecha cobro</span>
             <span>Ingreso</span>
             <span>Egreso</span>
             <span>Acciones</span>
@@ -695,14 +707,19 @@ function MovementRow({
   onDelete: () => void;
 }) {
   const isIngreso = movement.tipo === "ingreso";
+  const isCheque = movement.metodoPago === "Cheque";
   return (
     <>
-      <div className={`grid grid-cols-[78px_70px_minmax(150px,1.35fr)_minmax(94px,0.72fr)_82px_102px_102px_78px] items-center gap-1 px-1 py-2 text-[11px] leading-tight xl:grid-cols-[86px_76px_minmax(190px,1.45fr)_minmax(112px,0.78fr)_92px_116px_116px_86px] xl:gap-2 xl:text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
+      <div className={`grid min-w-[1180px] grid-cols-[74px_58px_minmax(132px,1.05fr)_minmax(86px,0.68fr)_minmax(118px,0.9fr)_74px_70px_86px_86px_104px_104px_72px] items-center gap-1 px-1 py-2 text-[11px] leading-tight xl:min-w-0 xl:grid-cols-[82px_64px_minmax(160px,1.1fr)_minmax(96px,0.7fr)_minmax(140px,0.95fr)_82px_78px_94px_94px_112px_112px_78px] xl:gap-2 xl:text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
         <span className="font-bold text-next-muted">{formatDateShort(movement.fecha)}</span>
         <span className="font-black uppercase text-next-text">{formatMovementType(movement.tipo)}</span>
-        <span className="min-w-0 break-words font-bold text-next-text">{movement.concepto}</span>
-        <span className="min-w-0 break-words">{movement.categoria}</span>
-        <span>{movement.metodoPago || "-"}</span>
+        <span className="min-w-0 truncate font-bold text-next-text" title={movement.concepto}>{movement.concepto}</span>
+        <span className="min-w-0 truncate" title={movement.categoria}>{movement.categoria}</span>
+        <span className="min-w-0 truncate font-semibold text-next-text" title={movement.tercero || "-"}>{movement.tercero || "-"}</span>
+        <span className="min-w-0 truncate">{movement.metodoPago || "-"}</span>
+        <span className="min-w-0 truncate font-bold text-next-text" title={isCheque ? movement.numeroCheque || "-" : "-"}>{isCheque && movement.numeroCheque ? movement.numeroCheque : "-"}</span>
+        <span className="font-semibold text-next-muted">{isCheque && movement.fechaEmisionCheque ? formatDateShort(movement.fechaEmisionCheque) : "-"}</span>
+        <span className="font-semibold text-next-muted">{isCheque && movement.fechaCobroCheque ? formatDateShort(movement.fechaCobroCheque) : "-"}</span>
         <span className="text-right font-black text-next-green">{isIngreso ? formatCurrencyPYG(movement.monto) : "-"}</span>
         <span className="text-right font-black text-next-red">{isIngreso ? "-" : formatCurrencyPYG(movement.monto)}</span>
         <span className="flex items-center justify-end gap-1">
@@ -731,6 +748,7 @@ function MovementCard({
   onDelete: () => void;
 }) {
   const isIngreso = movement.tipo === "ingreso";
+  const isCheque = movement.metodoPago === "Cheque";
   return (
     <article className={`rounded-lg border p-4 ${isIngreso ? "border-green-100 bg-green-50" : "border-orange-100 bg-orange-50"}`}>
       <div className="flex items-start justify-between gap-3">
@@ -744,6 +762,13 @@ function MovementCard({
       <div className="mt-3 grid gap-2 text-sm text-next-muted">
         <RowLabel label="Metodo" value={movement.metodoPago || "-"} />
         <RowLabel label="Proveedor / Cliente" value={movement.tercero || "-"} />
+        {isCheque ? (
+          <>
+            <RowLabel label="Cheque" value={movement.numeroCheque || "-"} />
+            <RowLabel label="Fecha emision" value={movement.fechaEmisionCheque ? formatDateShort(movement.fechaEmisionCheque) : "-"} />
+            <RowLabel label="Fecha cobro" value={movement.fechaCobroCheque ? formatDateShort(movement.fechaCobroCheque) : "-"} />
+          </>
+        ) : null}
       </div>
       {expanded ? <MovementDetails movement={movement} compact /> : null}
       <div className="mt-3 flex flex-wrap gap-2">
@@ -762,12 +787,12 @@ function MovementCard({
 
 function MovementDetails({ movement, compact = false }: { movement: FinancialMovement; compact?: boolean }) {
   return (
-    <div className={`${compact ? "mt-3 rounded-md bg-white/70 p-3" : "rounded-b-md border-t border-slate-100 bg-white px-4 py-3"} text-xs text-next-muted`}>
+    <div className={`${compact ? "mt-3 rounded-md bg-white/70 p-3" : "min-w-[1180px] rounded-b-md border-t border-slate-100 bg-white px-4 py-3 xl:min-w-0"} text-xs text-next-muted`}>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <DetailItem label="Detalle" value={movement.detalle || "-"} />
         <DetailItem label="Cantidad" value={movement.cantidad ? String(movement.cantidad) : "-"} />
         <DetailItem label="Unidad" value={movement.unidad || "-"} />
-        <DetailItem label="Proveedor / Cliente" value={movement.tercero || "-"} />
+        <DetailItem label="Banco cheque" value={movement.bancoCheque || "-"} />
         <DetailItem label="Observacion" value={movement.observacion || "-"} />
         <DetailItem label="Creado" value={formatDateTime(movement.createdAt)} />
         {movement.updatedAt ? <DetailItem label="Actualizado" value={formatDateTime(movement.updatedAt)} /> : null}
@@ -842,6 +867,7 @@ function MovementModal({
   onClose: () => void;
 }) {
   const title = type === "ingreso" ? "Agregar ingreso" : type === "compra" ? "Agregar compra" : "Agregar egreso";
+  const isCheque = values.metodoPago === "Cheque";
   return (
     <Modal title={title} onClose={onClose}>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
@@ -862,6 +888,20 @@ function MovementModal({
           {paymentMethods.map((method) => <option key={method}>{method}</option>)}
         </select>
         <input className="field" placeholder={type === "ingreso" ? "Cliente / pagador" : "Proveedor / persona"} value={values.tercero} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+        {isCheque ? (
+          <>
+            <input className="field" required placeholder="Numero de cheque" value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />
+            <input className="field" placeholder="Banco opcional" value={values.bancoCheque} onChange={(event) => setValues({ ...values, bancoCheque: event.target.value })} />
+            <label className="text-xs font-black uppercase text-next-muted">
+              Fecha emision cheque
+              <input className="field mt-1" type="date" value={values.fechaEmisionCheque} onChange={(event) => setValues({ ...values, fechaEmisionCheque: event.target.value })} />
+            </label>
+            <label className="text-xs font-black uppercase text-next-muted">
+              Fecha cobro cheque
+              <input className="field mt-1" required type="date" value={values.fechaCobroCheque} onChange={(event) => setValues({ ...values, fechaCobroCheque: event.target.value })} />
+            </label>
+          </>
+        ) : null}
         <input className="field" placeholder="Observacion" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
         <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white sm:col-span-2" type="submit">
           Guardar movimiento

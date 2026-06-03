@@ -64,6 +64,10 @@ export type FinancialMovement = {
   cantidad?: number;
   unidad?: string;
   metodoPago?: FinancialPaymentMethod;
+  numeroCheque?: string;
+  fechaEmisionCheque?: string;
+  fechaCobroCheque?: string;
+  bancoCheque?: string;
   monto: number;
   tercero?: string;
   observacion?: string;

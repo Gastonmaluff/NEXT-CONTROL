@@ -320,6 +320,10 @@ export const seedData: StoredData = {
       unidad: "m2",
       monto: 85000000,
       metodoPago: "Cheque",
+      numeroCheque: "000145",
+      fechaEmisionCheque: "2026-05-12",
+      fechaCobroCheque: "2026-06-30",
+      bancoCheque: "Banco Continental",
       tercero: "Vidriera X",
       createdAt: now
     },
@@ -380,6 +384,10 @@ export const seedData: StoredData = {
       categoria: "Vidrio",
       monto: 45000000,
       metodoPago: "Cheque",
+      numeroCheque: "000219",
+      fechaEmisionCheque: "2026-05-03",
+      fechaCobroCheque: "2026-06-15",
+      bancoCheque: "Banco Familiar",
       tercero: "Vidriera X",
       createdAt: now
     },
