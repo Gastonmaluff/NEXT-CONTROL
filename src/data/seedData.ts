@@ -1,10 +1,10 @@
 import type { StoredData } from "../types";
 
 export const initialRubros = [
-  { id: "rubro-carpinteria", nombre: "Carpinteria", peso: 40, avance: 100 },
-  { id: "rubro-vidrios", nombre: "Vidrios", peso: 30, avance: 80 },
+  { id: "rubro-carpinteria", nombre: "Carpinteria instalada", peso: 40, avance: 100 },
+  { id: "rubro-vidrios", nombre: "Vidrios instalados", peso: 30, avance: 80 },
   { id: "rubro-contramarcos", nombre: "Contramarcos", peso: 20, avance: 50 },
-  { id: "rubro-sellado", nombre: "Sellado", peso: 10, avance: 20 }
+  { id: "rubro-sellado", nombre: "Sellado final", peso: 10, avance: 20 }
 ];
 
 export const initialProductionStages = [
@@ -41,6 +41,7 @@ export const seedData: StoredData = {
       descuentos: 0,
       valorFinalContratado: 1050000000,
       totalContratado: 1050000000,
+      observacionInicial: "Instalacion avanzada con control de DVH pendiente para fachada norte.",
       movimientosFinancieros: [],
       rubrosAvance: initialRubros,
       etapasProduccion: initialProductionStages,
@@ -86,12 +87,13 @@ export const seedData: StoredData = {
       descuentos: 0,
       valorFinalContratado: 780000000,
       totalContratado: 780000000,
+      observacionInicial: "Obra atrasada por reposicion de perfiles y ajustes de instalacion.",
       movimientosFinancieros: [],
       rubrosAvance: [
-        { id: "aur-carp", nombre: "Carpinteria", peso: 40, avance: 90 },
-        { id: "aur-vid", nombre: "Vidrios", peso: 35, avance: 60 },
+        { id: "aur-carp", nombre: "Carpinteria instalada", peso: 40, avance: 90 },
+        { id: "aur-vid", nombre: "Vidrios instalados", peso: 35, avance: 60 },
         { id: "aur-contra", nombre: "Contramarcos", peso: 15, avance: 70 },
-        { id: "aur-sell", nombre: "Sellado", peso: 10, avance: 25 }
+        { id: "aur-sell", nombre: "Sellado final", peso: 10, avance: 25 }
       ],
       etapasProduccion: initialProductionStages.map((stage) => ({
         ...stage,
@@ -130,12 +132,13 @@ export const seedData: StoredData = {
       descuentos: 10000000,
       valorFinalContratado: 705300000,
       totalContratado: 705300000,
+      observacionInicial: "Produccion en curso; vidrios y contramarcos pendientes de liberacion.",
       movimientosFinancieros: [],
       rubrosAvance: [
-        { id: "kat-carp", nombre: "Carpinteria", peso: 45, avance: 65 },
-        { id: "kat-vid", nombre: "Vidrios", peso: 30, avance: 35 },
+        { id: "kat-carp", nombre: "Carpinteria instalada", peso: 45, avance: 65 },
+        { id: "kat-vid", nombre: "Vidrios instalados", peso: 30, avance: 35 },
         { id: "kat-contra", nombre: "Contramarcos", peso: 15, avance: 20 },
-        { id: "kat-sell", nombre: "Sellado", peso: 10, avance: 0 }
+        { id: "kat-sell", nombre: "Sellado final", peso: 10, avance: 0 }
       ],
       etapasProduccion: initialProductionStages.map((stage) => ({
         ...stage,

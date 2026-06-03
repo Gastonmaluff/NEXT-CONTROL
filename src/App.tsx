@@ -62,6 +62,7 @@ export default function App() {
         <Route path="/crm" element={<Navigate to="/clientes" replace />} />
         <Route path="/crm-obras" element={<Navigate to="/clientes" replace />} />
         <Route path="/avance-obras" element={<ProjectControlPage />} />
+        <Route path="/avance-obras/:obraId" element={<ProjectControlPage />} />
         <Route path="/obras" element={<Navigate to="/avance-obras" replace />} />
         <Route path="/finanzas-obras" element={<FinancesPage />} />
         <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
