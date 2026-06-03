@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronRight, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, ChevronDown, ChevronRight, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -309,7 +309,7 @@ export default function FinancesPage() {
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3 shadow-soft sm:p-4">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
         <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_auto] xl:grid-cols-[minmax(0,1fr)_200px_auto]">
           <input
             className="h-10 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-xs font-semibold outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10 sm:text-sm"
@@ -334,31 +334,7 @@ export default function FinancesPage() {
           </button>
         </div>
 
-        <div className="hidden min-w-0 overflow-x-auto md:block">
-          <div className="grid grid-cols-[minmax(128px,1.16fr)_minmax(104px,0.9fr)_repeat(5,minmax(74px,0.62fr))_minmax(86px,0.55fr)_40px] items-center gap-1 border-b border-slate-100 px-1 pb-2 text-[10px] font-black uppercase leading-tight text-next-muted xl:grid-cols-[minmax(168px,1.25fr)_minmax(132px,0.95fr)_repeat(5,minmax(90px,0.65fr))_minmax(96px,0.55fr)_42px] xl:gap-2">
-            <span>Obra</span>
-            <span>Cliente</span>
-            <span>Presupuesto</span>
-            <span>Ingresado</span>
-            <span>Egresado</span>
-            <span>Resultado</span>
-            <span>Saldo</span>
-            <span>Estado</span>
-            <span>Accion</span>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {filteredWorks.map((work) => (
-              <FinancialWorkRow
-                key={work.id}
-                obra={work}
-                movements={movementsByWork[work.id] ?? []}
-                onOpen={() => navigate(`/finanzas-obras/${work.id}`)}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-3 md:hidden">
+        <div className="grid gap-4 xl:grid-cols-2">
           {filteredWorks.map((work) => (
             <FinancialWorkCard
               key={work.id}
@@ -368,6 +344,8 @@ export default function FinancesPage() {
             />
           ))}
         </div>
+
+        {!filteredWorks.length ? <EmptyState text="No hay obras financieras para mostrar." /> : null}
       </section>
 
       {workModal ? (
@@ -541,6 +519,13 @@ function FinancialDetail({
         </div>
 
         {!movements.length ? <EmptyState text="Todavia no hay movimientos cargados." /> : null}
+        <MovementTotals
+          totalIngresos={totalIngresos}
+          totalCompras={totalCompras}
+          totalEgresosOperativos={totalEgresosOperativos}
+          totalEgresos={totalEgresos}
+          resultado={resultado}
+        />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
@@ -615,26 +600,86 @@ function FinancialWorkRow({
 
 function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements: FinancialMovement[]; onOpen: () => void }) {
   const totals = getRowTotals(obra, movements);
+  const imageUrl = obra.imageUrl ?? obra.renderUrl;
   return (
-    <article className="rounded-lg border border-slate-100 bg-next-bg p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-base font-black text-next-text">{obra.nombre}</p>
-          <p className="mt-1 text-sm font-semibold text-next-muted">{obra.cliente}</p>
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-xl">
+      <div className="grid min-w-0 gap-0 md:grid-cols-[210px_minmax(0,1fr)]">
+        <div className="relative min-h-44 bg-next-navy md:min-h-full">
+          {imageUrl ? (
+            <img
+              className="h-full min-h-44 w-full object-cover"
+              src={imageUrl}
+              alt={`Imagen de ${obra.nombre}`}
+            />
+          ) : (
+            <div className="flex h-full min-h-44 flex-col justify-between bg-[linear-gradient(135deg,#0f2a44_0%,#1f6fb2_58%,#e8f3ff_100%)] p-5 text-white">
+              <div className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-white/15 ring-1 ring-white/20">
+                <Building2 className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase text-white/72">Render pendiente</p>
+                <p className="mt-1 text-sm font-black leading-tight">{obra.nombre}</p>
+              </div>
+            </div>
+          )}
         </div>
-        <StatusBadge label={formatFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} />
+
+        <div className="min-w-0 p-4 sm:p-5">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="line-clamp-2 text-xl font-black leading-tight text-next-text">{obra.nombre}</h2>
+              <p className="mt-1 truncate text-sm font-semibold text-next-muted" title={obra.cliente}>{obra.cliente}</p>
+              <p className="mt-2 text-xs font-black uppercase text-next-blue">
+                Fecha comprometida: {formatDateShort(obra.fechaComprometida ?? obra.fechaEntrega)}
+              </p>
+            </div>
+            <StatusBadge label={formatCompactFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} title={formatFinancialStatus(totals.status)} />
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <FinanceCardMetric label="Presupuesto" value={formatCompactGuarani(totals.totalContratado)} />
+            <FinanceCardMetric label="Ingresado" value={formatCompactGuarani(totals.ingresos)} tone="green" />
+            <FinanceCardMetric label="Egresado" value={formatCompactGuarani(totals.egresos)} tone="red" />
+            <FinanceCardMetric label="Resultado" value={formatCompactGuarani(totals.resultado)} tone={totals.resultado >= 0 ? "green" : "red"} />
+            <FinanceCardMetric label="Saldo pendiente" value={formatCompactGuarani(totals.saldo)} tone="orange" />
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-semibold leading-5 text-next-muted">
+              Resumen ejecutivo financiero. Los movimientos se cargan dentro de la obra.
+            </p>
+            <button className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy" type="button" onClick={onOpen}>
+              <Eye className="h-4 w-4" aria-hidden="true" />
+              Abrir finanzas
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="mt-4 grid gap-2 text-sm">
-        <RowLabel label="Presupuesto" value={formatCurrencyPYG(totals.totalContratado)} />
-        <RowLabel label="Ingresado" value={formatCurrencyPYG(totals.ingresos)} />
-        <RowLabel label="Egresado" value={formatCurrencyPYG(totals.egresos)} />
-        <RowLabel label="Resultado" value={formatCurrencyPYG(totals.resultado)} />
-        <RowLabel label="Saldo" value={formatCurrencyPYG(totals.saldo)} />
-      </div>
-      <button className="mt-4 h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white" type="button" onClick={onOpen}>
-        Abrir finanzas
-      </button>
     </article>
+  );
+}
+
+function FinanceCardMetric({
+  label,
+  value,
+  tone = "blue"
+}: {
+  label: string;
+  value: string;
+  tone?: "blue" | "green" | "orange" | "red";
+}) {
+  const toneClasses = {
+    blue: "text-next-blue",
+    green: "text-next-green",
+    orange: "text-next-orange",
+    red: "text-next-red"
+  };
+
+  return (
+    <div className="min-w-0 rounded-md bg-next-bg px-3 py-3">
+      <p className="text-[11px] font-black uppercase text-next-muted">{label}</p>
+      <p className={`mt-1 truncate text-base font-black ${toneClasses[tone]}`}>{value}</p>
+    </div>
   );
 }
 
@@ -838,6 +883,64 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
         </div>
         {children}
       </section>
+    </div>
+  );
+}
+
+function MovementTotals({
+  totalIngresos,
+  totalCompras,
+  totalEgresosOperativos,
+  totalEgresos,
+  resultado
+}: {
+  totalIngresos: number;
+  totalCompras: number;
+  totalEgresosOperativos: number;
+  totalEgresos: number;
+  resultado: number;
+}) {
+  return (
+    <div className="mt-4 rounded-lg border border-next-blue/15 bg-next-light p-4">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase text-next-blue">Cierre financiero</p>
+          <h3 className="text-lg font-black text-next-text">Totales de movimientos</h3>
+        </div>
+        <p className={`text-xl font-black ${resultado >= 0 ? "text-next-green" : "text-next-red"}`}>
+          {formatCurrencyPYG(resultado)}
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <TotalPill label="Total ingresos" value={formatCurrencyPYG(totalIngresos)} tone="green" />
+        <TotalPill label="Total compras" value={formatCurrencyPYG(totalCompras)} tone="red" />
+        <TotalPill label="Egresos operativos" value={formatCurrencyPYG(totalEgresosOperativos)} tone="orange" />
+        <TotalPill label="Total egresos" value={formatCurrencyPYG(totalEgresos)} tone="red" />
+        <TotalPill label="Resultado actual" value={formatCurrencyPYG(resultado)} tone={resultado >= 0 ? "green" : "red"} />
+      </div>
+    </div>
+  );
+}
+
+function TotalPill({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: "green" | "orange" | "red";
+}) {
+  const toneClasses = {
+    green: "text-next-green",
+    orange: "text-next-orange",
+    red: "text-next-red"
+  };
+
+  return (
+    <div className="rounded-md bg-white px-3 py-3 ring-1 ring-slate-200">
+      <p className="text-[11px] font-black uppercase text-next-muted">{label}</p>
+      <p className={`mt-1 break-words text-sm font-black ${toneClasses[tone]}`}>{value}</p>
     </div>
   );
 }

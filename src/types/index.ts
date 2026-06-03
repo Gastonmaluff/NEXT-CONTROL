@@ -105,6 +105,8 @@ export type Obra = {
   fechaInicio: string;
   fechaEntrega: string;
   fechaComprometida?: string;
+  imageUrl?: string;
+  renderUrl?: string;
   responsable: string;
   supervisor?: string;
   estado: WorkStatus;
