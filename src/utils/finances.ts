@@ -83,7 +83,7 @@ export function getFinancialStatus(obra: Obra): FinancialStatus {
   const contractValue = getContractValue(obra);
 
   if (realCosts > contractValue) {
-    return "Excedido";
+    return "Margen bajo";
   }
 
   if (obra.saldoPendienteCobro > contractValue * 0.35) {

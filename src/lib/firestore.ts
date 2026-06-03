@@ -14,10 +14,12 @@ import type {
   Actividad,
   Cobro,
   Cuadrilla,
+  FinancialMovement,
   Obra,
   OportunidadCRM,
   TareaInstalacion
 } from "../types";
+import { calculateSaldoPendiente } from "../utils/finance";
 import { getDefaultCostBudget } from "../utils/finances";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
@@ -31,7 +33,8 @@ const collections = {
   cobros: "cobros",
   actividades: "actividades",
   cuadrillas: "cuadrillas",
-  tareasInstalacion: "tareasInstalacion"
+  tareasInstalacion: "tareasInstalacion",
+  movimientosFinancieros: "movimientosFinancieros"
 } as const;
 
 function shouldUseFirebase() {
@@ -157,6 +160,9 @@ export async function createObra(data: ObraInput): Promise<Obra> {
     adicionalesAprobados,
     descuentos,
     valorFinalContratado,
+    totalContratado: data.totalContratado ?? valorFinalContratado,
+    direccion: data.direccion ?? data.ubicacion,
+    fechaComprometida: data.fechaComprometida ?? data.fechaEntrega,
     costosEstimados: data.costosEstimados?.length
       ? data.costosEstimados
       : getDefaultCostBudget(valorFinalContratado),
@@ -180,6 +186,9 @@ export async function deleteObra(id: string): Promise<void> {
     stored.cobros = stored.cobros.filter((cobro) => cobro.obraId !== id);
     stored.actividades = stored.actividades.filter((actividad) => actividad.obraId !== id);
     stored.tareasInstalacion = stored.tareasInstalacion.filter((tarea) => tarea.obraId !== id);
+    stored.movimientosFinancieros = stored.movimientosFinancieros.filter(
+      (movement) => movement.obraId !== id
+    );
     saveStoredData(stored);
     return;
   }
@@ -312,6 +321,113 @@ export async function updateTareaInstalacion(
 ): Promise<TareaInstalacion> {
   return updateDocument<TareaInstalacion>("tareasInstalacion", id, data);
 }
+
+export async function getFinancialWorks(): Promise<Obra[]> {
+  return getObras();
+}
+
+export async function createFinancialWork(data: {
+  nombre: string;
+  cliente: string;
+  arquitecto?: string;
+  direccion?: string;
+  fechaInicio?: string;
+  fechaComprometida?: string;
+  presupuestoAprobado: number;
+  adicionalesAprobados: number;
+  descuentos: number;
+  observacionInicial?: string;
+  estado?: WorkStatusLike;
+}): Promise<Obra> {
+  const totalContratado =
+    data.presupuestoAprobado + data.adicionalesAprobados - data.descuentos;
+
+  return createObra({
+    nombre: data.nombre,
+    cliente: data.cliente,
+    arquitecto: data.arquitecto ?? "",
+    ubicacion: data.direccion ?? "",
+    direccion: data.direccion ?? "",
+    montoAprobado: totalContratado,
+    fechaInicio: data.fechaInicio ?? new Date().toISOString().slice(0, 10),
+    fechaEntrega: data.fechaComprometida ?? new Date().toISOString().slice(0, 10),
+    fechaComprometida: data.fechaComprometida,
+    responsable: "Administracion",
+    estado: data.estado ?? "Aprobado",
+    saldoPendienteCobro: totalContratado,
+    presupuestoAprobado: data.presupuestoAprobado,
+    adicionalesAprobados: data.adicionalesAprobados,
+    descuentos: data.descuentos,
+    totalContratado,
+    valorFinalContratado: totalContratado,
+    observacionInicial: data.observacionInicial,
+    rubrosAvance: [],
+    etapasProduccion: [],
+    materialesFaltantes: []
+  });
+}
+
+export async function updateFinancialWork(
+  id: string,
+  data: Partial<Obra>
+): Promise<Obra> {
+  return updateObra(id, data);
+}
+
+export async function deleteFinancialWork(id: string): Promise<void> {
+  return deleteObra(id);
+}
+
+export async function getMovementsByWork(obraId: string): Promise<FinancialMovement[]> {
+  return (await getCollection<FinancialMovement>("movimientosFinancieros"))
+    .filter((movement) => movement.obraId === obraId)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+
+export async function createMovement(
+  obraId: string,
+  data: Omit<FinancialMovement, "id" | "obraId" | "createdAt" | "updatedAt">
+): Promise<FinancialMovement> {
+  const movement = await createDocument<FinancialMovement>("movimientosFinancieros", {
+    ...data,
+    obraId,
+    createdAt: now()
+  });
+  await syncFinancialWorkSaldo(obraId);
+  return movement;
+}
+
+export async function updateMovement(
+  obraId: string,
+  movementId: string,
+  data: Partial<FinancialMovement>
+): Promise<FinancialMovement> {
+  const movement = await updateDocument<FinancialMovement>("movimientosFinancieros", movementId, {
+    ...data,
+    updatedAt: now()
+  });
+  await syncFinancialWorkSaldo(obraId);
+  return movement;
+}
+
+export async function deleteMovement(obraId: string, movementId: string): Promise<void> {
+  await deleteDocument<FinancialMovement>("movimientosFinancieros", movementId);
+  await syncFinancialWorkSaldo(obraId);
+}
+
+async function syncFinancialWorkSaldo(obraId: string): Promise<void> {
+  const obra = await getObraById(obraId);
+  if (!obra) {
+    return;
+  }
+
+  const movements = await getMovementsByWork(obraId);
+  await updateObra(obraId, {
+    saldoPendienteCobro: calculateSaldoPendiente(obra, movements)
+  });
+}
+
+type WorkStatusLike = Obra["estado"];
 
 export async function loadSeedDataToFirebase(replace = false): Promise<string> {
   if (!shouldUseFirebase() || !firestoreDb) {

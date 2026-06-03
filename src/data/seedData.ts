@@ -1,5 +1,4 @@
 import type { StoredData } from "../types";
-import { getDefaultCostBudget } from "../utils/finances";
 
 export const initialRubros = [
   { id: "rubro-carpinteria", nombre: "Carpinteria", peso: 40, avance: 100 },
@@ -29,49 +28,20 @@ export const seedData: StoredData = {
       cliente: "Inversora del Este S.A.",
       arquitecto: "Arq. Sofia Ramos",
       ubicacion: "Av. Santa Teresa, Asuncion",
-      montoAprobado: 1245680000,
+      montoAprobado: 1050000000,
       fechaInicio: "2026-05-05",
       fechaEntrega: "2026-06-30",
+      fechaComprometida: "2026-06-30",
       responsable: "Juan Martinez",
       supervisor: "Fiscalizador: Hugo Franco",
       estado: "Instalacion",
-      saldoPendienteCobro: 215680000,
-      presupuestoAprobado: 1195680000,
-      adicionalesAprobados: 65000000,
-      descuentos: 15000000,
-      valorFinalContratado: 1245680000,
-      costosEstimados: getDefaultCostBudget(1245680000),
-      movimientosFinancieros: [
-        {
-          id: "fin-pal-1",
-          tipo: "Anticipo",
-          categoria: "Ingreso",
-          fecha: "2026-05-08",
-          concepto: "Anticipo inicial",
-          monto: 450000000,
-          metodoPago: "Transferencia"
-        },
-        {
-          id: "fin-pal-2",
-          tipo: "Compra",
-          categoria: "Compra",
-          fecha: "2026-05-12",
-          concepto: "Compra de vidrios DVH",
-          monto: 210000000,
-          metodoPago: "Transferencia",
-          proveedor: "Proveedor Vidrios PY"
-        },
-        {
-          id: "fin-pal-3",
-          tipo: "Mano de obra",
-          categoria: "Egreso",
-          fecha: "2026-05-30",
-          concepto: "Mano de obra de instalacion",
-          monto: 84000000,
-          metodoPago: "Efectivo",
-          proveedor: "Cuadrilla B"
-        }
-      ],
+      saldoPendienteCobro: 850000000,
+      presupuestoAprobado: 1000000000,
+      adicionalesAprobados: 50000000,
+      descuentos: 0,
+      valorFinalContratado: 1050000000,
+      totalContratado: 1050000000,
+      movimientosFinancieros: [],
       rubrosAvance: initialRubros,
       etapasProduccion: initialProductionStages,
       materialesFaltantes: [
@@ -103,52 +73,20 @@ export const seedData: StoredData = {
       cliente: "Aurora Desarrollos",
       arquitecto: "Arq. Diego Ferreira",
       ubicacion: "Palmanova 1234, Asuncion",
-      montoAprobado: 824900000,
+      montoAprobado: 780000000,
       fechaInicio: "2026-04-18",
       fechaEntrega: "2026-06-18",
+      fechaComprometida: "2026-06-18",
       responsable: "Marta Lopez",
       supervisor: "Fiscalizador: Andrea Ruiz",
       estado: "Atrasada",
-      saldoPendienteCobro: 360000000,
-      presupuestoAprobado: 824900000,
+      saldoPendienteCobro: 630000000,
+      presupuestoAprobado: 780000000,
       adicionalesAprobados: 0,
       descuentos: 0,
-      valorFinalContratado: 824900000,
-      costosEstimados: getDefaultCostBudget(824900000).map((item) => ({
-        ...item,
-        real: Math.round(item.estimado * 1.08)
-      })),
-      movimientosFinancieros: [
-        {
-          id: "fin-aur-1",
-          tipo: "Anticipo",
-          categoria: "Ingreso",
-          fecha: "2026-04-25",
-          concepto: "Anticipo y compra de materiales",
-          monto: 464900000,
-          metodoPago: "Transferencia"
-        },
-        {
-          id: "fin-aur-2",
-          tipo: "Materia prima",
-          categoria: "Compra",
-          fecha: "2026-05-03",
-          concepto: "Aluminio y accesorios",
-          monto: 246000000,
-          metodoPago: "Cheque",
-          proveedor: "Aluminio del Este"
-        },
-        {
-          id: "fin-aur-3",
-          tipo: "Gasto extraordinario",
-          categoria: "Egreso",
-          fecha: "2026-06-01",
-          concepto: "Reproceso por ajuste de fachada",
-          monto: 42000000,
-          metodoPago: "Transferencia",
-          proveedor: "Servicio externo"
-        }
-      ],
+      valorFinalContratado: 780000000,
+      totalContratado: 780000000,
+      movimientosFinancieros: [],
       rubrosAvance: [
         { id: "aur-carp", nombre: "Carpinteria", peso: 40, avance: 90 },
         { id: "aur-vid", nombre: "Vidrios", peso: 35, avance: 60 },
@@ -182,6 +120,7 @@ export const seedData: StoredData = {
       montoAprobado: 690300000,
       fechaInicio: "2026-05-20",
       fechaEntrega: "2026-07-22",
+      fechaComprometida: "2026-07-22",
       responsable: "Carlos Duarte",
       supervisor: "Fiscalizador: Victor Sosa",
       estado: "Produccion",
@@ -190,28 +129,8 @@ export const seedData: StoredData = {
       adicionalesAprobados: 25000000,
       descuentos: 10000000,
       valorFinalContratado: 705300000,
-      costosEstimados: getDefaultCostBudget(705300000),
-      movimientosFinancieros: [
-        {
-          id: "fin-kat-1",
-          tipo: "Anticipo",
-          categoria: "Ingreso",
-          fecha: "2026-05-22",
-          concepto: "Anticipo de obra",
-          monto: 285300000,
-          metodoPago: "Transferencia"
-        },
-        {
-          id: "fin-kat-2",
-          tipo: "Materia prima",
-          categoria: "Compra",
-          fecha: "2026-05-28",
-          concepto: "Perfiles y accesorios iniciales",
-          monto: 138000000,
-          metodoPago: "Transferencia",
-          proveedor: "Next Supply"
-        }
-      ],
+      totalContratado: 705300000,
+      movimientosFinancieros: [],
       rubrosAvance: [
         { id: "kat-carp", nombre: "Carpinteria", peso: 45, avance: 65 },
         { id: "kat-vid", nombre: "Vidrios", peso: 30, avance: 35 },
@@ -372,6 +291,108 @@ export const seedData: StoredData = {
       cuadrillaId: "cuad-a",
       titulo: "Sellado y silicona - Fachada principal",
       estado: "Pendiente",
+      createdAt: now
+    }
+  ],
+  movimientosFinancieros: [
+    {
+      id: "mov-pal-ing-1",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-08",
+      tipo: "ingreso",
+      concepto: "Anticipo de obra",
+      categoria: "Anticipo",
+      monto: 200000000,
+      metodoPago: "Transferencia",
+      tercero: "Inversora del Este S.A.",
+      observacion: "Primer anticipo",
+      createdAt: now
+    },
+    {
+      id: "mov-pal-com-1",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-12",
+      tipo: "compra",
+      concepto: "Compra de vidrio DVH",
+      categoria: "Vidrio",
+      detalle: "DVH 8+12+8",
+      cantidad: 120,
+      unidad: "m2",
+      monto: 85000000,
+      metodoPago: "Cheque",
+      tercero: "Vidriera X",
+      createdAt: now
+    },
+    {
+      id: "mov-pal-com-2",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-14",
+      tipo: "compra",
+      concepto: "Perfiles de aluminio",
+      categoria: "Aluminio",
+      monto: 140000000,
+      metodoPago: "Transferencia",
+      tercero: "Aluminio del Este",
+      createdAt: now
+    },
+    {
+      id: "mov-pal-egr-1",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-22",
+      tipo: "egreso",
+      concepto: "Viaticos cuadrilla",
+      categoria: "Viaticos",
+      monto: 2500000,
+      metodoPago: "Efectivo",
+      tercero: "Cuadrilla B",
+      createdAt: now
+    },
+    {
+      id: "mov-pal-egr-2",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-24",
+      tipo: "egreso",
+      concepto: "Flete materiales",
+      categoria: "Transporte",
+      monto: 3800000,
+      metodoPago: "Efectivo",
+      tercero: "Transporte externo",
+      createdAt: now
+    },
+    {
+      id: "mov-aur-ing-1",
+      obraId: "obra-aurora",
+      fecha: "2026-04-25",
+      tipo: "ingreso",
+      concepto: "Anticipo",
+      categoria: "Anticipo",
+      monto: 150000000,
+      metodoPago: "Transferencia",
+      tercero: "Aurora Desarrollos",
+      createdAt: now
+    },
+    {
+      id: "mov-aur-com-1",
+      obraId: "obra-aurora",
+      fecha: "2026-05-03",
+      tipo: "compra",
+      concepto: "Vidrios templados",
+      categoria: "Vidrio",
+      monto: 45000000,
+      metodoPago: "Cheque",
+      tercero: "Vidriera X",
+      createdAt: now
+    },
+    {
+      id: "mov-aur-egr-1",
+      obraId: "obra-aurora",
+      fecha: "2026-05-20",
+      tipo: "egreso",
+      concepto: "Mano de obra instalacion",
+      categoria: "Instalacion",
+      monto: 18000000,
+      metodoPago: "Transferencia",
+      tercero: "Cuadrilla A",
       createdAt: now
     }
   ]

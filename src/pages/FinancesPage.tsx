@@ -1,251 +1,291 @@
-import { Calculator, Plus, Receipt, Save, TrendingUp } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, Edit3, Plus, Trash2, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import DataCard from "../components/ui/DataCard";
-import ProgressBar from "../components/ui/ProgressBar";
+import { useNavigate, useParams } from "react-router-dom";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
-import { createCobro, createObra, getCobrosByObra, getObras, updateObra } from "../lib/firestore";
-import { generateId } from "../lib/storage";
+import {
+  createFinancialWork,
+  createMovement,
+  deleteMovement,
+  getFinancialWorks,
+  getMovementsByWork,
+  updateFinancialWork
+} from "../lib/firestore";
 import type {
-  Cobro,
-  CostBudgetItem,
   FinancialMovement,
-  FinancialMovementType,
+  FinancialMovementKind,
+  FinancialPaymentMethod,
   FinancialStatus,
-  Obra,
-  PaymentMethod,
-  WorkStatus
+  Obra
 } from "../types";
 import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
 import {
-  costCategories,
-  getContractValue,
-  getCostBudget,
-  getFinancialStatus,
-  getGrossProfit,
-  getMargin,
-  getRealCosts
-} from "../utils/finances";
+  calculateFinancialStatus,
+  calculateMargenActual,
+  calculateResultadoActual,
+  calculateSaldoPendiente,
+  calculateTotalEgresos,
+  calculateTotalIngresos,
+  getTotalContratado,
+  groupEgresosByCategoria,
+  groupIngresosByCategoria
+} from "../utils/finance";
 
-const workStatuses: WorkStatus[] = [
-  "Aprobado",
-  "Produccion",
-  "Instalacion",
-  "Facturacion",
-  "Cobrado",
-  "Finalizada",
-  "Pausada",
-  "Atrasada"
+const paymentMethods: FinancialPaymentMethod[] = [
+  "Efectivo",
+  "Transferencia",
+  "Cheque",
+  "Credito",
+  "Otro"
 ];
 
-const paymentMethods: PaymentMethod[] = ["Efectivo", "Transferencia", "Cheque", "Otro"];
-const movementTypes: FinancialMovementType[] = [
-  "Anticipo",
-  "Certificacion",
-  "Pago recibido",
-  "Retencion",
-  "Compra",
-  "Materia prima",
-  "Mano de obra",
-  "Logistica",
-  "Gasto extraordinario"
-];
+const categoriesByType: Record<FinancialMovementKind, string[]> = {
+  ingreso: ["Anticipo", "Certificacion", "Pago parcial", "Pago final", "Retencion liberada", "Otro ingreso"],
+  compra: ["Vidrio", "Aluminio", "Accesorios", "Herrajes", "ACM", "WPC", "Cielorrasos", "Otros materiales"],
+  egreso: ["Mano de obra", "Instalacion", "Transporte", "Combustible", "Viaticos", "Alquiler de equipos", "Roturas", "Reprocesos", "Reclamos", "Otros egresos"]
+};
 
-const emptyForm = {
+const emptyWorkForm = {
   nombre: "",
   cliente: "",
   arquitecto: "",
-  ubicacion: "",
+  direccion: "",
   fechaInicio: getTodayInputDate(),
-  fechaEntrega: getTodayInputDate(),
-  responsable: "",
-  supervisor: "",
-  estado: "Aprobado" as WorkStatus,
+  fechaComprometida: getTodayInputDate(),
   presupuestoAprobado: "",
   adicionalesAprobados: "0",
-  descuentos: "0"
+  descuentos: "0",
+  observacionInicial: ""
 };
 
-export default function FinancesPage() {
-  const [obras, setObras] = useState<Obra[]>([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [costs, setCosts] = useState<CostBudgetItem[]>(
-    costCategories.map((categoria) => ({ id: generateId("cost"), categoria, estimado: 0, real: 0 }))
-  );
-  const [cobros, setCobros] = useState<Cobro[]>([]);
-  const [movementForm, setMovementForm] = useState({
-    tipo: "Compra" as FinancialMovementType,
-    categoria: "Compra" as "Ingreso" | "Egreso" | "Compra",
+function emptyMovementForm(tipo: FinancialMovementKind) {
+  return {
+    tipo,
     fecha: getTodayInputDate(),
     concepto: "",
+    categoria: categoriesByType[tipo][0],
+    detalle: "",
+    cantidad: "",
+    unidad: "",
+    metodoPago: "Transferencia" as FinancialPaymentMethod,
     monto: "",
-    metodoPago: "Transferencia" as PaymentMethod,
-    proveedor: ""
-  });
+    tercero: "",
+    observacion: ""
+  };
+}
+
+export default function FinancesPage() {
+  const { obraId } = useParams();
+  const navigate = useNavigate();
+  const [works, setWorks] = useState<Obra[]>([]);
+  const [allMovements, setAllMovements] = useState<FinancialMovement[]>([]);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [workModal, setWorkModal] = useState<"create" | "edit" | null>(null);
+  const [workForm, setWorkForm] = useState(emptyWorkForm);
+  const [movementModal, setMovementModal] = useState<FinancialMovementKind | null>(null);
+  const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
 
-  const selectedObra = obras.find((obra) => obra.id === selectedId) ?? obras[0];
+  const selectedWork = works.find((work) => work.id === obraId) ?? null;
+  const movements = useMemo(
+    () => allMovements.filter((movement) => movement.obraId === selectedWork?.id),
+    [allMovements, selectedWork?.id]
+  );
 
   useEffect(() => {
-    loadObras();
+    loadWorks();
   }, []);
 
   useEffect(() => {
-    if (selectedObra) {
-      loadCobros(selectedObra.id);
+    if (selectedWork) {
+      loadMovements(selectedWork.id);
     }
-  }, [selectedObra?.id]);
+  }, [selectedWork?.id]);
 
-  const filteredObras = useMemo(() => {
-    return obras.filter((obra) =>
-      `${obra.nombre} ${obra.cliente}`.toLowerCase().includes(query.toLowerCase())
-    );
-  }, [obras, query]);
+  const movementsByWork = useMemo(() => {
+    return works.reduce<Record<string, FinancialMovement[]>>((acc, work) => {
+      acc[work.id] = allMovements.filter((movement) => movement.obraId === work.id);
+      return acc;
+    }, {});
+  }, [allMovements, works]);
 
-  const totalCobrado = cobros.reduce((sum, cobro) => sum + cobro.monto, 0);
-  const contractValue = selectedObra ? getContractValue(selectedObra) : 0;
-  const realCosts = selectedObra ? getRealCosts(selectedObra) : 0;
-  const grossProfit = selectedObra ? getGrossProfit(selectedObra) : 0;
-  const margin = selectedObra ? getMargin(selectedObra) : 0;
-  const selectedBudget = selectedObra ? getCostBudget(selectedObra) : [];
-  const financialStatus = selectedObra ? getFinancialStatus(selectedObra) : "Atencion";
+  const filteredWorks = useMemo(() => {
+    return works.filter((work) => {
+      const workMovements = movementsByWork[work.id] ?? [];
+      const status = calculateFinancialStatus(work, workMovements);
+      const matchesQuery = `${work.nombre} ${work.cliente}`.toLowerCase().includes(query.toLowerCase());
+      const matchesStatus = statusFilter === "Todos" || status === statusFilter;
+      return matchesQuery && matchesStatus;
+    });
+  }, [movementsByWork, query, statusFilter, works]);
 
-  async function loadObras() {
+  async function loadWorks() {
     setLoading(true);
     setError("");
     try {
-      const loaded = await getObras();
-      setObras(loaded);
-      setSelectedId((current) => current || loaded[0]?.id || "");
+      const loadedWorks = await getFinancialWorks();
+      const loadedMovements = (await Promise.all(
+        loadedWorks.map((work) => getMovementsByWork(work.id))
+      )).flat();
+      setWorks(loadedWorks);
+      setAllMovements(loadedMovements);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar finanzas.");
+      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las finanzas.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadCobros(obraId: string) {
-    try {
-      setCobros(await getCobrosByObra(obraId));
-    } catch (cobroError) {
-      setError(cobroError instanceof Error ? cobroError.message : "No se pudieron cargar cobros.");
-    }
+  async function loadMovements(id: string) {
+    const nextMovements = await getMovementsByWork(id);
+    setAllMovements((current) => [
+      ...current.filter((movement) => movement.obraId !== id),
+      ...nextMovements
+    ]);
   }
 
-  function handleBudgetBase(value: string) {
-    setForm({ ...form, presupuestoAprobado: value });
-    const base = Number(value);
-    setCosts((current) =>
-      current.map((item) => ({
-        ...item,
-        estimado: item.estimado || Math.round(base / costCategories.length),
-        real: item.real || Math.round(base / costCategories.length)
-      }))
-    );
+  function openCreateWork() {
+    setWorkForm(emptyWorkForm);
+    setWorkModal("create");
   }
 
-  async function handleCreateObra(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-
-    const presupuestoAprobado = Number(form.presupuestoAprobado);
-    const adicionalesAprobados = Number(form.adicionalesAprobados);
-    const descuentos = Number(form.descuentos);
-    const valorFinalContratado = presupuestoAprobado + adicionalesAprobados - descuentos;
-
-    try {
-      const created = await createObra({
-        nombre: form.nombre,
-        cliente: form.cliente,
-        arquitecto: form.arquitecto,
-        ubicacion: form.ubicacion,
-        fechaInicio: form.fechaInicio,
-        fechaEntrega: form.fechaEntrega,
-        responsable: form.responsable,
-        supervisor: form.supervisor,
-        estado: form.estado,
-        montoAprobado: valorFinalContratado,
-        saldoPendienteCobro: valorFinalContratado,
-        presupuestoAprobado,
-        adicionalesAprobados,
-        descuentos,
-        valorFinalContratado,
-        costosEstimados: costs,
-        movimientosFinancieros: [],
-        rubrosAvance: [],
-        etapasProduccion: [],
-        materialesFaltantes: []
-      });
-
-      setMessage("Nueva obra creada desde Finanzas.");
-      setShowForm(false);
-      setForm(emptyForm);
-      setSelectedId(created.id);
-      await loadObras();
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "No se pudo crear la obra.");
-    }
-  }
-
-  async function handleUpdateCost(item: CostBudgetItem, field: "estimado" | "real", value: number) {
-    if (!selectedObra) return;
-    const nextCosts = selectedBudget.map((cost) =>
-      cost.id === item.id ? { ...cost, [field]: value } : cost
-    );
-    const updated = await updateObra(selectedObra.id, { costosEstimados: nextCosts });
-    setObras((current) => current.map((obra) => (obra.id === updated.id ? updated : obra)));
-  }
-
-  async function handleAddMovement(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedObra || !movementForm.concepto || !movementForm.monto) return;
-
-    const movement: FinancialMovement = {
-      id: generateId("mov"),
-      tipo: movementForm.tipo,
-      categoria: movementForm.categoria,
-      fecha: movementForm.fecha,
-      concepto: movementForm.concepto,
-      monto: Number(movementForm.monto),
-      metodoPago: movementForm.metodoPago,
-      proveedor: movementForm.proveedor
-    };
-
-    const nextMovements = [movement, ...(selectedObra.movimientosFinancieros ?? [])];
-    const updated = await updateObra(selectedObra.id, { movimientosFinancieros: nextMovements });
-
-    if (movement.categoria === "Ingreso") {
-      await createCobro({
-        obraId: selectedObra.id,
-        fecha: movement.fecha,
-        monto: movement.monto,
-        medio: movement.metodoPago ?? "Transferencia",
-        observacion: movement.concepto
-      });
-    }
-
-    setObras((current) => current.map((obra) => (obra.id === updated.id ? updated : obra)));
-    setMovementForm({
-      tipo: "Compra",
-      categoria: "Compra",
-      fecha: getTodayInputDate(),
-      concepto: "",
-      monto: "",
-      metodoPago: "Transferencia",
-      proveedor: ""
+  function openEditWork() {
+    if (!selectedWork) return;
+    setWorkForm({
+      nombre: selectedWork.nombre,
+      cliente: selectedWork.cliente,
+      arquitecto: selectedWork.arquitecto,
+      direccion: selectedWork.direccion ?? selectedWork.ubicacion,
+      fechaInicio: selectedWork.fechaInicio,
+      fechaComprometida: selectedWork.fechaComprometida ?? selectedWork.fechaEntrega,
+      presupuestoAprobado: String(selectedWork.presupuestoAprobado ?? selectedWork.montoAprobado),
+      adicionalesAprobados: String(selectedWork.adicionalesAprobados ?? 0),
+      descuentos: String(selectedWork.descuentos ?? 0),
+      observacionInicial: ""
     });
-    setMessage("Movimiento financiero registrado.");
-    await loadCobros(selectedObra.id);
+    setWorkModal("edit");
+  }
+
+  async function handleSaveWork(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const presupuestoAprobado = Number(workForm.presupuestoAprobado);
+    const adicionalesAprobados = Number(workForm.adicionalesAprobados);
+    const descuentos = Number(workForm.descuentos);
+    const totalContratado = presupuestoAprobado + adicionalesAprobados - descuentos;
+
+    try {
+      if (workModal === "edit" && selectedWork) {
+        const updated = await updateFinancialWork(selectedWork.id, {
+          nombre: workForm.nombre,
+          cliente: workForm.cliente,
+          arquitecto: workForm.arquitecto,
+          ubicacion: workForm.direccion,
+          direccion: workForm.direccion,
+          fechaInicio: workForm.fechaInicio,
+          fechaEntrega: workForm.fechaComprometida,
+          fechaComprometida: workForm.fechaComprometida,
+          montoAprobado: totalContratado,
+          presupuestoAprobado,
+          adicionalesAprobados,
+          descuentos,
+          totalContratado,
+          valorFinalContratado: totalContratado
+        });
+        setWorks((current) => current.map((work) => (work.id === updated.id ? updated : work)));
+        setMessage("Datos de obra actualizados.");
+      } else {
+        const created = await createFinancialWork({
+          nombre: workForm.nombre,
+          cliente: workForm.cliente,
+          arquitecto: workForm.arquitecto,
+          direccion: workForm.direccion,
+          fechaInicio: workForm.fechaInicio,
+          fechaComprometida: workForm.fechaComprometida,
+          presupuestoAprobado,
+          adicionalesAprobados,
+          descuentos,
+          observacionInicial: workForm.observacionInicial
+        });
+        setWorks((current) => [created, ...current]);
+        setMessage("Obra financiera creada.");
+        navigate(`/finanzas-obras/${created.id}`);
+      }
+      setWorkModal(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la obra.");
+    }
+  }
+
+  function openMovement(type: FinancialMovementKind) {
+    setMovementForm(emptyMovementForm(type));
+    setMovementModal(type);
+  }
+
+  async function handleSaveMovement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWork || !movementModal) return;
+
+    try {
+      await createMovement(selectedWork.id, {
+        fecha: movementForm.fecha,
+        tipo: movementModal,
+        concepto: movementForm.concepto,
+        categoria: movementForm.categoria,
+        detalle: movementForm.detalle || undefined,
+        cantidad: movementForm.cantidad ? Number(movementForm.cantidad) : undefined,
+        unidad: movementForm.unidad || undefined,
+        metodoPago: movementForm.metodoPago,
+        monto: Number(movementForm.monto),
+        tercero: movementForm.tercero || undefined,
+        observacion: movementForm.observacion || undefined
+      });
+      await loadMovements(selectedWork.id);
+      await loadWorks();
+      setMovementModal(null);
+      setMessage("Movimiento registrado.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar el movimiento.");
+    }
+  }
+
+  async function handleDeleteMovement(movementId: string) {
+    if (!selectedWork || !window.confirm("Eliminar este movimiento?")) return;
+    await deleteMovement(selectedWork.id, movementId);
+    await loadMovements(selectedWork.id);
+    await loadWorks();
+    setMessage("Movimiento eliminado.");
   }
 
   if (loading) {
     return <StateCard text="Cargando finanzas de obras..." />;
+  }
+
+  if (selectedWork) {
+    return (
+      <FinancialDetail
+        obra={selectedWork}
+        movements={movements}
+        onBack={() => navigate("/finanzas-obras")}
+        onAddMovement={openMovement}
+        onEditWork={openEditWork}
+        onDeleteMovement={handleDeleteMovement}
+        message={message}
+        error={error}
+        workModal={workModal}
+        workForm={workForm}
+        setWorkForm={setWorkForm}
+        onSaveWork={handleSaveWork}
+        onCloseWorkModal={() => setWorkModal(null)}
+        movementModal={movementModal}
+        movementForm={movementForm}
+        setMovementForm={setMovementForm}
+        onSaveMovement={handleSaveMovement}
+        onCloseMovementModal={() => setMovementModal(null)}
+      />
+    );
   }
 
   return (
@@ -255,14 +295,10 @@ export default function FinancesPage() {
           <p className="text-sm font-black uppercase text-next-blue">Administracion</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">FINANZAS DE OBRAS</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
-            Presupuestos, ingresos, egresos, compras, cobros y rentabilidad por obra.
+            Control financiero por obra: ingresos, compras, egresos y resultado.
           </p>
         </div>
-        <button
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy"
-          type="button"
-          onClick={() => setShowForm((current) => !current)}
-        >
+        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy" type="button" onClick={openCreateWork}>
           <Plus className="h-5 w-5" aria-hidden="true" />
           Nueva obra
         </button>
@@ -271,326 +307,528 @@ export default function FinancesPage() {
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      {showForm ? (
-        <DataCard title="Nueva obra financiera" subtitle="La obra creada aparece tambien en Avance de obras.">
-          <form className="space-y-5" onSubmit={handleCreateObra}>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <input className="field" required placeholder="Nombre de obra" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} />
-              <input className="field" required placeholder="Cliente" value={form.cliente} onChange={(event) => setForm({ ...form, cliente: event.target.value })} />
-              <input className="field" placeholder="Arquitecto" value={form.arquitecto} onChange={(event) => setForm({ ...form, arquitecto: event.target.value })} />
-              <input className="field" placeholder="Direccion" value={form.ubicacion} onChange={(event) => setForm({ ...form, ubicacion: event.target.value })} />
-              <input className="field" type="date" value={form.fechaInicio} onChange={(event) => setForm({ ...form, fechaInicio: event.target.value })} />
-              <input className="field" type="date" value={form.fechaEntrega} onChange={(event) => setForm({ ...form, fechaEntrega: event.target.value })} />
-              <input className="field" placeholder="Encargado de obra" value={form.responsable} onChange={(event) => setForm({ ...form, responsable: event.target.value })} />
-              <input className="field" placeholder="Supervisor" value={form.supervisor} onChange={(event) => setForm({ ...form, supervisor: event.target.value })} />
-              <select className="field" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as WorkStatus })}>
-                {workStatuses.map((status) => <option key={status}>{status}</option>)}
-              </select>
-              <input className="field" required type="number" placeholder="Presupuesto aprobado" value={form.presupuestoAprobado} onChange={(event) => handleBudgetBase(event.target.value)} />
-              <input className="field" type="number" placeholder="Adicionales aprobados" value={form.adicionalesAprobados} onChange={(event) => setForm({ ...form, adicionalesAprobados: event.target.value })} />
-              <input className="field" type="number" placeholder="Descuentos" value={form.descuentos} onChange={(event) => setForm({ ...form, descuentos: event.target.value })} />
-            </div>
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_220px]">
+          <input
+            className="h-11 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
+            placeholder="Buscar por obra o cliente"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select
+            className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-next-blue focus:ring-4 focus:ring-next-blue/10"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option>Todos</option>
+            <option>Saludable</option>
+            <option value="Atencion">Atención</option>
+            <option>Margen bajo</option>
+            <option>Pendiente de cobro</option>
+          </select>
+        </div>
 
-            <div className="rounded-lg bg-next-bg p-4">
-              <p className="text-xs font-bold uppercase text-next-muted">Valor final contratado</p>
-              <p className="mt-1 text-2xl font-black text-next-blue">
-                {formatCurrencyPYG(Number(form.presupuestoAprobado) + Number(form.adicionalesAprobados) - Number(form.descuentos))}
-              </p>
-            </div>
+        <div className="hidden lg:block">
+          <div className="grid grid-cols-[1.4fr_1fr_repeat(5,0.9fr)_150px] gap-3 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+            <span>Obra</span>
+            <span>Cliente</span>
+            <span>Presupuesto</span>
+            <span>Ingresado</span>
+            <span>Egresado</span>
+            <span>Resultado</span>
+            <span>Saldo</span>
+            <span>Estado</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {filteredWorks.map((work) => (
+              <FinancialWorkRow
+                key={work.id}
+                obra={work}
+                movements={movementsByWork[work.id] ?? []}
+                onOpen={() => navigate(`/finanzas-obras/${work.id}`)}
+              />
+            ))}
+          </div>
+        </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="text-xs uppercase text-next-muted">
-                  <tr>
-                    <th className="pb-3 font-black">Categoria</th>
-                    <th className="pb-3 font-black">Estimado</th>
-                    <th className="pb-3 font-black">Real inicial</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {costs.map((item) => (
-                    <tr key={item.id}>
-                      <td className="py-2 font-bold text-next-text">{item.categoria}</td>
-                      <td className="py-2">
-                        <input className="field" type="number" value={item.estimado} onChange={(event) => setCosts((current) => current.map((cost) => cost.id === item.id ? { ...cost, estimado: Number(event.target.value) } : cost))} />
-                      </td>
-                      <td className="py-2">
-                        <input className="field" type="number" value={item.real} onChange={(event) => setCosts((current) => current.map((cost) => cost.id === item.id ? { ...cost, real: Number(event.target.value) } : cost))} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div className="space-y-3 lg:hidden">
+          {filteredWorks.map((work) => (
+            <FinancialWorkCard
+              key={work.id}
+              obra={work}
+              movements={movementsByWork[work.id] ?? []}
+              onOpen={() => navigate(`/finanzas-obras/${work.id}`)}
+            />
+          ))}
+        </div>
+      </section>
 
-            <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="submit">
-              <Save className="h-4 w-4" aria-hidden="true" />
-              Guardar obra
-            </button>
-          </form>
-        </DataCard>
+      {workModal ? (
+        <WorkModal
+          mode={workModal}
+          values={workForm}
+          setValues={setWorkForm}
+          onSubmit={handleSaveWork}
+          onClose={() => setWorkModal(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FinancialDetail({
+  obra,
+  movements,
+  onBack,
+  onAddMovement,
+  onEditWork,
+  onDeleteMovement,
+  message,
+  error,
+  workModal,
+  workForm,
+  setWorkForm,
+  onSaveWork,
+  onCloseWorkModal,
+  movementModal,
+  movementForm,
+  setMovementForm,
+  onSaveMovement,
+  onCloseMovementModal
+}: {
+  obra: Obra;
+  movements: FinancialMovement[];
+  onBack: () => void;
+  onAddMovement: (type: FinancialMovementKind) => void;
+  onEditWork: () => void;
+  onDeleteMovement: (movementId: string) => void;
+  message: string;
+  error: string;
+  workModal: "create" | "edit" | null;
+  workForm: typeof emptyWorkForm;
+  setWorkForm: (values: typeof emptyWorkForm) => void;
+  onSaveWork: (event: FormEvent<HTMLFormElement>) => void;
+  onCloseWorkModal: () => void;
+  movementModal: FinancialMovementKind | null;
+  movementForm: ReturnType<typeof emptyMovementForm>;
+  setMovementForm: (values: ReturnType<typeof emptyMovementForm>) => void;
+  onSaveMovement: (event: FormEvent<HTMLFormElement>) => void;
+  onCloseMovementModal: () => void;
+}) {
+  const totalContratado = getTotalContratado(obra);
+  const totalIngresos = calculateTotalIngresos(movements);
+  const totalEgresos = calculateTotalEgresos(movements);
+  const resultado = calculateResultadoActual(obra, movements);
+  const saldo = calculateSaldoPendiente(obra, movements);
+  const margen = calculateMargenActual(obra, movements);
+  const egresosByCategory = groupEgresosByCategoria(movements);
+  const ingresosByCategory = groupIngresosByCategoria(movements);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <button className="mb-3 inline-flex items-center gap-2 text-sm font-black text-next-blue" type="button" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Volver a Finanzas de obras
+          </button>
+          <p className="text-sm font-black uppercase text-next-blue">Administracion</p>
+          <h1 className="mt-1 text-3xl font-black tracking-normal">FINANZAS DE OBRA</h1>
+        </div>
+      </div>
+
+      {message ? <Notice tone="success" text={message} /> : null}
+      {error ? <Notice tone="error" text={error} /> : null}
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
+          <div>
+            <h2 className="text-2xl font-black text-next-text">{obra.nombre}</h2>
+            <p className="mt-1 text-sm font-semibold text-next-muted">{obra.cliente}</p>
+          </div>
+        <StatusBadge label={formatFinancialStatus(calculateFinancialStatus(obra, movements))} status={badgeForFinancial(calculateFinancialStatus(obra, movements))} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Presupuesto aprobado" value={formatCurrencyPYG(obra.presupuestoAprobado ?? obra.montoAprobado)} />
+          <Metric label="Adicionales" value={formatCurrencyPYG(obra.adicionalesAprobados ?? 0)} />
+          <Metric label="Descuentos" value={formatCurrencyPYG(obra.descuentos ?? 0)} />
+          <Metric label="Total contratado" value={formatCurrencyPYG(totalContratado)} />
+          <Metric label="Total ingresado" value={formatCurrencyPYG(totalIngresos)} tone="green" />
+          <Metric label="Total egresado" value={formatCurrencyPYG(totalEgresos)} tone="red" />
+          <Metric label="Resultado actual" value={formatCurrencyPYG(resultado)} tone={resultado >= 0 ? "green" : "red"} />
+          <Metric label="Saldo pendiente" value={formatCurrencyPYG(saldo)} tone="orange" />
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <ActionButton label="+ Agregar ingreso" onClick={() => onAddMovement("ingreso")} />
+        <ActionButton label="+ Agregar compra" onClick={() => onAddMovement("compra")} />
+        <ActionButton label="+ Agregar egreso" onClick={() => onAddMovement("egreso")} />
+        <ActionButton label="Editar datos de obra" onClick={onEditWork} secondary />
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+        <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+          <div>
+            <h2 className="text-lg font-black text-next-text">Movimientos de la obra</h2>
+            <p className="mt-1 text-sm font-semibold text-next-muted">
+              Ingresos, compras y egresos en una tabla operativa.
+            </p>
+          </div>
+          <p className="text-sm font-black text-next-blue">Margen actual: {margen}%</p>
+        </div>
+
+        <div className="hidden xl:block">
+          <div className="grid grid-cols-[92px_82px_1.1fr_110px_1fr_80px_70px_110px_120px_120px_1fr_1fr_80px] gap-2 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+            <span>Fecha</span>
+            <span>Tipo</span>
+            <span>Concepto</span>
+            <span>Categoria</span>
+            <span>Detalle</span>
+            <span>Cant.</span>
+            <span>Unidad</span>
+            <span>Metodo</span>
+            <span>Ingreso</span>
+            <span>Egreso</span>
+            <span>Proveedor / Cliente</span>
+            <span>Observacion</span>
+            <span>Acciones</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {movements.map((movement) => (
+              <MovementRow key={movement.id} movement={movement} onDelete={() => onDeleteMovement(movement.id)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3 xl:hidden">
+          {movements.map((movement) => (
+            <MovementCard key={movement.id} movement={movement} onDelete={() => onDeleteMovement(movement.id)} />
+          ))}
+        </div>
+
+        {!movements.length ? <EmptyState text="Todavia no hay movimientos cargados." /> : null}
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <SummaryBlock
+          title="Resumen por categoria"
+          groups={egresosByCategory}
+          total={totalEgresos}
+          fallback={["Vidrio", "Aluminio", "Accesorios", "Mano de obra", "Transporte", "Otros"]}
+        />
+        <SummaryBlock
+          title="Resumen de ingresos"
+          groups={ingresosByCategory}
+          total={totalIngresos}
+          fallback={["Anticipo", "Certificacion", "Pago parcial", "Otros ingresos"]}
+        />
+      </section>
+
+      {workModal ? (
+        <WorkModal
+          mode={workModal}
+          values={workForm}
+          setValues={setWorkForm}
+          onSubmit={onSaveWork}
+          onClose={onCloseWorkModal}
+        />
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
-        <DataCard title="Obras financieras" subtitle="La pregunta clave: margen y caja por obra.">
-          <div className="space-y-3">
-            <input
-              className="h-11 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
-              placeholder="Buscar por obra o cliente"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+      {movementModal ? (
+        <MovementModal
+          type={movementModal}
+          values={movementForm}
+          setValues={setMovementForm}
+          onSubmit={onSaveMovement}
+          onClose={onCloseMovementModal}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-            <div className="max-h-[650px] space-y-3 overflow-y-auto pr-1">
-              {filteredObras.map((obra) => {
-                const status = getFinancialStatus(obra);
-                const cardMargin = getMargin(obra);
-                const cardValue = getContractValue(obra);
-                const cardCosts = getRealCosts(obra);
-                const cardProfit = getGrossProfit(obra);
-                return (
-                  <button
-                    key={obra.id}
-                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${
-                      obra.id === selectedObra?.id
-                        ? "border-next-blue bg-next-light"
-                        : "border-slate-100 bg-white hover:border-next-blue/40"
-                    }`}
-                    type="button"
-                    onClick={() => setSelectedId(obra.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-next-text">{obra.nombre}</p>
-                        <p className="mt-1 truncate text-xs font-semibold text-next-muted">{obra.cliente}</p>
-                      </div>
-                      <StatusBadge label={status} status={badgeForFinancial(status)} />
-                    </div>
-                    <div className="mt-3 grid gap-2 text-xs font-bold text-next-muted">
-                      <span>Valor contratado: {formatCurrencyPYG(cardValue)}</span>
-                      <span>Costos reales: {formatCurrencyPYG(cardCosts)}</span>
-                      <span>Utilidad estimada: {formatCurrencyPYG(cardProfit)}</span>
-                    </div>
-                    <div className="mt-3">
-                      <ProgressBar value={Math.max(0, Math.min(100, cardMargin))} tone={cardMargin < 20 ? "red" : cardMargin < 28 ? "orange" : "green"} />
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs font-black">
-                      <span className="text-next-muted">Margen {cardMargin}%</span>
-                      <span className="rounded-md bg-next-blue px-2.5 py-1 text-white">Ver finanzas</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </DataCard>
+function FinancialWorkRow({
+  obra,
+  movements,
+  onOpen
+}: {
+  obra: Obra;
+  movements: FinancialMovement[];
+  onOpen: () => void;
+}) {
+  const totals = getRowTotals(obra, movements);
+  return (
+    <div className="grid grid-cols-[1.4fr_1fr_repeat(5,0.9fr)_150px] items-center gap-3 py-4 text-sm">
+      <div>
+        <p className="font-black text-next-text">{obra.nombre}</p>
+        <p className="text-xs font-semibold text-next-muted">{formatDateShort(obra.fechaComprometida ?? obra.fechaEntrega)}</p>
+      </div>
+      <p className="font-semibold text-next-muted">{obra.cliente}</p>
+      <p className="font-black text-next-text">{formatCurrencyPYG(totals.totalContratado)}</p>
+      <p className="font-black text-next-green">{formatCurrencyPYG(totals.ingresos)}</p>
+      <p className="font-black text-next-red">{formatCurrencyPYG(totals.egresos)}</p>
+      <p className={`font-black ${totals.resultado >= 0 ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(totals.resultado)}</p>
+      <p className="font-black text-next-orange">{formatCurrencyPYG(totals.saldo)}</p>
+      <div className="flex items-center justify-between gap-2">
+        <StatusBadge label={formatFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} />
+        <button className="rounded-md bg-next-blue px-3 py-2 text-xs font-black text-white" type="button" onClick={onOpen}>
+          Abrir finanzas
+        </button>
+      </div>
+    </div>
+  );
+}
 
-        {selectedObra ? (
-          <div className="space-y-5">
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Kpi label="Valor final contratado" value={formatCurrencyPYG(contractValue)} icon={Receipt} />
-              <Kpi label="Total cobrado" value={formatCurrencyPYG(totalCobrado)} icon={Receipt} tone="green" />
-              <Kpi label="Saldo pendiente" value={formatCurrencyPYG(selectedObra.saldoPendienteCobro)} icon={Calculator} tone="orange" />
-              <Kpi label="Margen" value={`${margin}%`} icon={TrendingUp} tone={margin < 20 ? "red" : "green"} />
-            </section>
+function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements: FinancialMovement[]; onOpen: () => void }) {
+  const totals = getRowTotals(obra, movements);
+  return (
+    <article className="rounded-lg border border-slate-100 bg-next-bg p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-black text-next-text">{obra.nombre}</p>
+          <p className="mt-1 text-sm font-semibold text-next-muted">{obra.cliente}</p>
+        </div>
+        <StatusBadge label={formatFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} />
+      </div>
+      <div className="mt-4 grid gap-2 text-sm">
+        <RowLabel label="Presupuesto" value={formatCurrencyPYG(totals.totalContratado)} />
+        <RowLabel label="Ingresado" value={formatCurrencyPYG(totals.ingresos)} />
+        <RowLabel label="Egresado" value={formatCurrencyPYG(totals.egresos)} />
+        <RowLabel label="Resultado" value={formatCurrencyPYG(totals.resultado)} />
+        <RowLabel label="Saldo" value={formatCurrencyPYG(totals.saldo)} />
+      </div>
+      <button className="mt-4 h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white" type="button" onClick={onOpen}>
+        Abrir finanzas
+      </button>
+    </article>
+  );
+}
 
-            {margin < 20 ? (
-              <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-black text-next-red">
-                Margen menor al 20%.
-              </div>
-            ) : null}
+function MovementRow({ movement, onDelete }: { movement: FinancialMovement; onDelete: () => void }) {
+  const isIngreso = movement.tipo === "ingreso";
+  return (
+    <div className={`grid grid-cols-[92px_82px_1.1fr_110px_1fr_80px_70px_110px_120px_120px_1fr_1fr_80px] items-center gap-2 py-3 text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
+      <span className="font-bold text-next-muted">{formatDateShort(movement.fecha)}</span>
+      <span className="font-black uppercase text-next-text">{movement.tipo}</span>
+      <span className="font-bold text-next-text">{movement.concepto}</span>
+      <span>{movement.categoria}</span>
+      <span>{movement.detalle || "-"}</span>
+      <span>{movement.cantidad ?? "-"}</span>
+      <span>{movement.unidad || "-"}</span>
+      <span>{movement.metodoPago || "-"}</span>
+      <span className="font-black text-next-green">{isIngreso ? formatCurrencyPYG(movement.monto) : "-"}</span>
+      <span className="font-black text-next-red">{isIngreso ? "-" : formatCurrencyPYG(movement.monto)}</span>
+      <span>{movement.tercero || "-"}</span>
+      <span>{movement.observacion || "-"}</span>
+      <button className="icon-button text-next-red" type="button" onClick={onDelete} title="Eliminar">
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
 
-            <section className="grid gap-5 xl:grid-cols-2">
-              <DataCard title="Resumen financiero">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Metric label="Costos reales totales" value={formatCurrencyPYG(realCosts)} />
-                  <Metric label="Utilidad bruta" value={formatCurrencyPYG(grossProfit)} />
-                  <Metric label="Margen %" value={`${margin}%`} />
-                  <Metric label="Estado financiero" value={financialStatus} />
-                </div>
-              </DataCard>
+function MovementCard({ movement, onDelete }: { movement: FinancialMovement; onDelete: () => void }) {
+  const isIngreso = movement.tipo === "ingreso";
+  return (
+    <article className={`rounded-lg border p-4 ${isIngreso ? "border-green-100 bg-green-50" : "border-orange-100 bg-orange-50"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black uppercase text-next-muted">{movement.tipo}</p>
+          <h3 className="mt-1 text-base font-black text-next-text">{movement.concepto}</h3>
+          <p className="mt-1 text-sm font-semibold text-next-muted">{formatDateShort(movement.fecha)} · {movement.categoria}</p>
+        </div>
+        <p className={`text-right text-lg font-black ${isIngreso ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(movement.monto)}</p>
+      </div>
+      <div className="mt-3 grid gap-2 text-sm text-next-muted">
+        <RowLabel label="Detalle" value={movement.detalle || "-"} />
+        <RowLabel label="Cantidad" value={movement.cantidad ? `${movement.cantidad} ${movement.unidad ?? ""}` : "-"} />
+        <RowLabel label="Metodo" value={movement.metodoPago || "-"} />
+        <RowLabel label="Proveedor / Cliente" value={movement.tercero || "-"} />
+        <RowLabel label="Observacion" value={movement.observacion || "-"} />
+      </div>
+      <button className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-red-100 bg-white px-3 text-xs font-black text-next-red" type="button" onClick={onDelete}>
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+        Eliminar
+      </button>
+    </article>
+  );
+}
 
-              <DataCard title="Valor contractual">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Metric label="Presupuesto aprobado" value={formatCurrencyPYG(selectedObra.presupuestoAprobado ?? selectedObra.montoAprobado)} />
-                  <Metric label="Adicionales aprobados" value={formatCurrencyPYG(selectedObra.adicionalesAprobados ?? 0)} />
-                  <Metric label="Descuentos" value={formatCurrencyPYG(selectedObra.descuentos ?? 0)} />
-                  <Metric label="Valor final contratado" value={formatCurrencyPYG(contractValue)} />
-                </div>
-              </DataCard>
+function WorkModal({
+  mode,
+  values,
+  setValues,
+  onSubmit,
+  onClose
+}: {
+  mode: "create" | "edit";
+  values: typeof emptyWorkForm;
+  setValues: (values: typeof emptyWorkForm) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  const totalContratado =
+    Number(values.presupuestoAprobado) + Number(values.adicionalesAprobados) - Number(values.descuentos);
 
-              <DataCard title="Presupuesto economico" className="xl:col-span-2">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[780px] text-left text-sm">
-                    <thead className="text-xs uppercase text-next-muted">
-                      <tr>
-                        <th className="pb-3 font-black">Categoria</th>
-                        <th className="pb-3 font-black">Estimado</th>
-                        <th className="pb-3 font-black">Real</th>
-                        <th className="pb-3 font-black">Diferencia</th>
-                        <th className="pb-3 text-right font-black">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedBudget.map((item) => {
-                        const diff = item.estimado - item.real;
-                        return (
-                          <tr key={item.id}>
-                            <td className="py-3 font-bold text-next-text">{item.categoria}</td>
-                            <td className="py-3">
-                              <input className="field" type="number" value={item.estimado} onChange={(event) => handleUpdateCost(item, "estimado", Number(event.target.value))} />
-                            </td>
-                            <td className="py-3">
-                              <input className="field" type="number" value={item.real} onChange={(event) => handleUpdateCost(item, "real", Number(event.target.value))} />
-                            </td>
-                            <td className={`py-3 font-black ${diff < 0 ? "text-next-red" : "text-next-green"}`}>{formatCurrencyPYG(diff)}</td>
-                            <td className="py-3 text-right">
-                              <StatusBadge label={diff < 0 ? "Excedido" : "OK"} status={diff < 0 ? "critical" : "success"} />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </DataCard>
+  return (
+    <Modal title={mode === "create" ? "Nueva obra" : "Editar datos de obra"} onClose={onClose}>
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input className="field" required placeholder="Nombre de obra" value={values.nombre} onChange={(event) => setValues({ ...values, nombre: event.target.value })} />
+          <input className="field" required placeholder="Cliente" value={values.cliente} onChange={(event) => setValues({ ...values, cliente: event.target.value })} />
+          <input className="field" placeholder="Arquitecto opcional" value={values.arquitecto} onChange={(event) => setValues({ ...values, arquitecto: event.target.value })} />
+          <input className="field" placeholder="Direccion opcional" value={values.direccion} onChange={(event) => setValues({ ...values, direccion: event.target.value })} />
+          <input className="field" type="date" value={values.fechaInicio} onChange={(event) => setValues({ ...values, fechaInicio: event.target.value })} />
+          <input className="field" type="date" value={values.fechaComprometida} onChange={(event) => setValues({ ...values, fechaComprometida: event.target.value })} />
+          <input className="field" required type="number" placeholder="Presupuesto aprobado" value={values.presupuestoAprobado} onChange={(event) => setValues({ ...values, presupuestoAprobado: event.target.value })} />
+          <input className="field" type="number" placeholder="Adicionales aprobados" value={values.adicionalesAprobados} onChange={(event) => setValues({ ...values, adicionalesAprobados: event.target.value })} />
+          <input className="field" type="number" placeholder="Descuentos" value={values.descuentos} onChange={(event) => setValues({ ...values, descuentos: event.target.value })} />
+          <input className="field" placeholder="Observacion inicial opcional" value={values.observacionInicial} onChange={(event) => setValues({ ...values, observacionInicial: event.target.value })} />
+        </div>
+        <div className="rounded-lg bg-next-bg p-4">
+          <p className="text-xs font-bold uppercase text-next-muted">Total contratado</p>
+          <p className="mt-1 text-2xl font-black text-next-blue">{formatCurrencyPYG(totalContratado)}</p>
+        </div>
+        <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="submit">
+          Guardar
+        </button>
+      </form>
+    </Modal>
+  );
+}
 
-              <DataCard title="Ingresos">
-                <MovementList
-                  movements={[
-                    ...cobros.map((cobro) => ({
-                      id: cobro.id,
-                      tipo: "Pago recibido" as FinancialMovementType,
-                      categoria: "Ingreso" as const,
-                      fecha: cobro.fecha,
-                      concepto: cobro.observacion || cobro.medio,
-                      monto: cobro.monto,
-                      metodoPago: cobro.medio
-                    })),
-                    ...(selectedObra.movimientosFinancieros ?? []).filter((item) => item.categoria === "Ingreso")
-                  ]}
-                />
-              </DataCard>
+function MovementModal({
+  type,
+  values,
+  setValues,
+  onSubmit,
+  onClose
+}: {
+  type: FinancialMovementKind;
+  values: ReturnType<typeof emptyMovementForm>;
+  setValues: (values: ReturnType<typeof emptyMovementForm>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  const title = type === "ingreso" ? "Agregar ingreso" : type === "compra" ? "Agregar compra" : "Agregar egreso";
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
+        <input className="field" type="date" value={values.fecha} onChange={(event) => setValues({ ...values, fecha: event.target.value })} />
+        <input className="field" required placeholder="Concepto" value={values.concepto} onChange={(event) => setValues({ ...values, concepto: event.target.value })} />
+        <select className="field" value={values.categoria} onChange={(event) => setValues({ ...values, categoria: event.target.value })}>
+          {categoriesByType[type].map((category) => <option key={category}>{category}</option>)}
+        </select>
+        <input className="field" required type="number" placeholder="Monto" value={values.monto} onChange={(event) => setValues({ ...values, monto: event.target.value })} />
+        {type !== "ingreso" ? (
+          <>
+            <input className="field" placeholder="Detalle" value={values.detalle} onChange={(event) => setValues({ ...values, detalle: event.target.value })} />
+            <input className="field" type="number" placeholder="Cantidad opcional" value={values.cantidad} onChange={(event) => setValues({ ...values, cantidad: event.target.value })} />
+            <input className="field" placeholder="Unidad opcional" value={values.unidad} onChange={(event) => setValues({ ...values, unidad: event.target.value })} />
+          </>
+        ) : null}
+        <select className="field" value={values.metodoPago} onChange={(event) => setValues({ ...values, metodoPago: event.target.value as FinancialPaymentMethod })}>
+          {paymentMethods.map((method) => <option key={method}>{method}</option>)}
+        </select>
+        <input className="field" placeholder={type === "ingreso" ? "Cliente / pagador" : "Proveedor / persona"} value={values.tercero} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+        <input className="field" placeholder="Observacion" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
+        <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white sm:col-span-2" type="submit">
+          Guardar movimiento
+        </button>
+      </form>
+    </Modal>
+  );
+}
 
-              <DataCard title="Egresos y compras">
-                <MovementList movements={(selectedObra.movimientosFinancieros ?? []).filter((item) => item.categoria !== "Ingreso")} />
-              </DataCard>
-
-              <DataCard title="Registrar ingreso, egreso o compra" className="xl:col-span-2">
-                <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={handleAddMovement}>
-                  <select className="field" value={movementForm.categoria} onChange={(event) => setMovementForm({ ...movementForm, categoria: event.target.value as "Ingreso" | "Egreso" | "Compra" })}>
-                    <option>Ingreso</option>
-                    <option>Egreso</option>
-                    <option>Compra</option>
-                  </select>
-                  <select className="field" value={movementForm.tipo} onChange={(event) => setMovementForm({ ...movementForm, tipo: event.target.value as FinancialMovementType })}>
-                    {movementTypes.map((type) => <option key={type}>{type}</option>)}
-                  </select>
-                  <input className="field" type="date" value={movementForm.fecha} onChange={(event) => setMovementForm({ ...movementForm, fecha: event.target.value })} />
-                  <input className="field" placeholder="Concepto" value={movementForm.concepto} onChange={(event) => setMovementForm({ ...movementForm, concepto: event.target.value })} />
-                  <input className="field" type="number" placeholder="Monto" value={movementForm.monto} onChange={(event) => setMovementForm({ ...movementForm, monto: event.target.value })} />
-                  <select className="field" value={movementForm.metodoPago} onChange={(event) => setMovementForm({ ...movementForm, metodoPago: event.target.value as PaymentMethod })}>
-                    {paymentMethods.map((method) => <option key={method}>{method}</option>)}
-                  </select>
-                  <input className="field xl:col-span-2" placeholder="Proveedor o referencia" value={movementForm.proveedor} onChange={(event) => setMovementForm({ ...movementForm, proveedor: event.target.value })} />
-                  <button className="h-10 rounded-md bg-next-blue px-3 text-xs font-black text-white" type="submit">Registrar movimiento</button>
-                </form>
-              </DataCard>
-
-              <DataCard title="Rentabilidad">
-                <div className="space-y-4">
-                  <Metric label="Costos reales totales" value={formatCurrencyPYG(realCosts)} />
-                  <Metric label="Utilidad bruta" value={formatCurrencyPYG(grossProfit)} />
-                  <ProgressBar value={Math.max(0, Math.min(100, margin))} tone={margin < 20 ? "red" : margin < 28 ? "orange" : "green"} label={`Margen ${margin}%`} />
-                </div>
-              </DataCard>
-
-              <DataCard title="Alertas financieras">
-                <div className="space-y-3">
-                  <Alert text={margin < 20 ? "Margen menor al 20%." : "Margen dentro de rango operativo."} danger={margin < 20} />
-                  <Alert text={selectedObra.saldoPendienteCobro > contractValue * 0.35 ? "Saldo pendiente alto." : "Cobranza bajo control."} danger={selectedObra.saldoPendienteCobro > contractValue * 0.35} />
-                </div>
-              </DataCard>
-
-              <DataCard title="Resultado final" className="xl:col-span-2">
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <Metric label="Valor final" value={formatCurrencyPYG(contractValue)} />
-                  <Metric label="Cobrado" value={formatCurrencyPYG(totalCobrado)} />
-                  <Metric label="Utilidad bruta" value={formatCurrencyPYG(grossProfit)} />
-                  <Metric label="Estado" value={financialStatus} />
-                </div>
-              </DataCard>
-            </section>
-          </div>
-        ) : (
-          <EmptyState text="Crea una obra financiera para empezar." />
-        )}
+function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <section className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-black text-next-text">{title}</h2>
+          <button className="icon-button" type="button" onClick={onClose} title="Cerrar">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        {children}
       </section>
     </div>
   );
 }
 
-function MovementList({ movements }: { movements: FinancialMovement[] }) {
-  if (!movements.length) {
-    return <EmptyState text="Sin movimientos registrados." />;
-  }
+function SummaryBlock({
+  title,
+  groups,
+  total,
+  fallback
+}: {
+  title: string;
+  groups: Record<string, number>;
+  total: number;
+  fallback: string[];
+}) {
+  const entries = Object.entries(groups).length
+    ? Object.entries(groups)
+    : fallback.map((category) => [category, 0] as [string, number]);
 
   return (
-    <div className="space-y-2">
-      {movements.map((movement) => (
-        <div key={movement.id} className="rounded-md border border-slate-100 px-3 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-next-text">{movement.concepto}</p>
-              <p className="mt-1 text-xs font-semibold text-next-muted">
-                {formatDateShort(movement.fecha)} · {movement.tipo}
-                {movement.proveedor ? ` · ${movement.proveedor}` : ""}
-              </p>
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+      <h2 className="text-base font-black text-next-text">{title}</h2>
+      <div className="mt-4 space-y-3">
+        {entries.map(([category, value]) => (
+          <div key={category}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+              <span className="font-bold text-next-text">{category}</span>
+              <span className="font-black text-next-blue">{formatCurrencyPYG(value)}</span>
             </div>
-            <p className="text-sm font-black text-next-blue">{formatCurrencyPYG(movement.monto)}</p>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-next-blue" style={{ width: `${total ? Math.min(100, Math.round((value / total) * 100)) : 0}%` }} />
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Kpi({ label, value, icon: Icon, tone = "blue" }: { label: string; value: string; icon: LucideIcon; tone?: "blue" | "green" | "orange" | "red" }) {
-  const toneClasses = {
-    blue: "bg-next-light text-next-blue",
-    green: "bg-green-50 text-next-green",
-    orange: "bg-orange-50 text-next-orange",
-    red: "bg-red-50 text-next-red"
-  };
-
-  return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-next-muted">{label}</p>
-          <p className="mt-3 break-words text-2xl font-black text-next-text">{value}</p>
-        </div>
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${toneClasses[tone]}`}>
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </div>
+        ))}
       </div>
-    </article>
+    </section>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, tone = "blue" }: { label: string; value: string; tone?: "blue" | "green" | "orange" | "red" }) {
+  const toneClasses = {
+    blue: "text-next-blue",
+    green: "text-next-green",
+    orange: "text-next-orange",
+    red: "text-next-red"
+  };
   return (
     <div className="rounded-md bg-next-bg px-3 py-3">
       <p className="text-xs font-bold uppercase text-next-muted">{label}</p>
-      <p className="mt-1 break-words text-sm font-black text-next-text">{value}</p>
+      <p className={`mt-1 break-words text-sm font-black ${toneClasses[tone]}`}>{value}</p>
     </div>
   );
 }
 
-function Alert({ text, danger }: { text: string; danger: boolean }) {
+function ActionButton({ label, onClick, secondary = false }: { label: string; onClick: () => void; secondary?: boolean }) {
   return (
-    <div className={`rounded-md px-3 py-3 text-sm font-black ${danger ? "bg-red-50 text-next-red" : "bg-green-50 text-next-green"}`}>
-      {text}
+    <button
+      className={`inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-black transition ${
+        secondary
+          ? "border border-next-blue bg-white text-next-blue hover:bg-next-light"
+          : "bg-next-blue text-white hover:bg-next-navy"
+      }`}
+      type="button"
+      onClick={onClick}
+    >
+      {secondary ? <Edit3 className="h-5 w-5" aria-hidden="true" /> : <Plus className="h-5 w-5" aria-hidden="true" />}
+      {label}
+    </button>
+  );
+}
+
+function RowLabel({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="font-semibold text-next-muted">{label}</span>
+      <span className="text-right font-black text-next-text">{value}</span>
     </div>
   );
 }
@@ -618,8 +856,23 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function getRowTotals(obra: Obra, movements: FinancialMovement[]) {
+  return {
+    totalContratado: getTotalContratado(obra),
+    ingresos: calculateTotalIngresos(movements),
+    egresos: calculateTotalEgresos(movements),
+    resultado: calculateResultadoActual(obra, movements),
+    saldo: calculateSaldoPendiente(obra, movements),
+    status: calculateFinancialStatus(obra, movements)
+  };
+}
+
 function badgeForFinancial(status: FinancialStatus): BadgeStatus {
   if (status === "Saludable") return "success";
   if (status === "Atencion" || status === "Pendiente de cobro") return "warning";
   return "critical";
+}
+
+function formatFinancialStatus(status: FinancialStatus): string {
+  return status === "Atencion" ? "Atención" : status;
 }

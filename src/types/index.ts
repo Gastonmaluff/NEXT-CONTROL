@@ -23,12 +23,12 @@ export type PipelineStatus =
 export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
 export type PaymentMethod = "Efectivo" | "Transferencia" | "Cheque" | "Otro";
+export type FinancialPaymentMethod = PaymentMethod | "Credito";
 export type InstallationTaskStatus = "Pendiente" | "Completada";
 export type FinancialStatus =
   | "Saludable"
   | "Atencion"
   | "Margen bajo"
-  | "Excedido"
   | "Pendiente de cobro";
 
 export type CostCategoryName =
@@ -51,27 +51,24 @@ export type CostBudgetItem = {
   real: number;
 };
 
-export type FinancialMovementType =
-  | "Anticipo"
-  | "Certificacion"
-  | "Pago recibido"
-  | "Retencion"
-  | "Compra"
-  | "Materia prima"
-  | "Mano de obra"
-  | "Logistica"
-  | "Gasto extraordinario";
+export type FinancialMovementKind = "ingreso" | "compra" | "egreso";
 
 export type FinancialMovement = {
   id: string;
-  tipo: FinancialMovementType;
-  categoria: "Ingreso" | "Egreso" | "Compra";
+  obraId: string;
   fecha: string;
+  tipo: FinancialMovementKind;
   concepto: string;
+  categoria: string;
+  detalle?: string;
+  cantidad?: number;
+  unidad?: string;
+  metodoPago?: FinancialPaymentMethod;
   monto: number;
-  metodoPago?: PaymentMethod;
-  proveedor?: string;
-  comprobanteUrl?: string;
+  tercero?: string;
+  observacion?: string;
+  createdAt: string;
+  updatedAt?: string;
 };
 
 export type ProgressItem = {
@@ -103,9 +100,11 @@ export type Obra = {
   cliente: string;
   arquitecto: string;
   ubicacion: string;
+  direccion?: string;
   montoAprobado: number;
   fechaInicio: string;
   fechaEntrega: string;
+  fechaComprometida?: string;
   responsable: string;
   supervisor?: string;
   estado: WorkStatus;
@@ -117,6 +116,8 @@ export type Obra = {
   adicionalesAprobados?: number;
   descuentos?: number;
   valorFinalContratado?: number;
+  totalContratado?: number;
+  observacionInicial?: string;
   costosEstimados?: CostBudgetItem[];
   movimientosFinancieros?: FinancialMovement[];
   createdAt: string;
@@ -185,6 +186,7 @@ export type StoredData = {
   actividades: Actividad[];
   cuadrillas: Cuadrilla[];
   tareasInstalacion: TareaInstalacion[];
+  movimientosFinancieros: FinancialMovement[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

@@ -64,6 +64,7 @@ export default function App() {
         <Route path="/avance-obras" element={<ProjectControlPage />} />
         <Route path="/obras" element={<Navigate to="/avance-obras" replace />} />
         <Route path="/finanzas-obras" element={<FinancesPage />} />
+        <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
         <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
         <Route path="/produccion" element={<ProjectControlPage />} />
         <Route path="/cobros" element={<FinancesPage />} />

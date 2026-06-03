@@ -63,7 +63,7 @@ export default function DashboardPage() {
       atrasadas,
       pendienteProduccion,
       utilidadEstimada: Math.round(totalMonto * 0.18),
-      margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo" || getFinancialStatus(obra) === "Excedido").length,
+      margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo").length,
       m2InstaladosSemana: 1256,
       flujoProyectado: saldoPendiente + Math.round(totalCobrado * 0.18)
     };
