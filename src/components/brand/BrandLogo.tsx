@@ -31,14 +31,16 @@ export default function BrandLogo({ variant = "full", className = "" }: BrandLog
           onImageError={() => setImageFailed(true)}
         />
       </div>
-      <div className={isLogin ? "mt-5" : "mt-3"}>
-        <p className={`${isLogin ? "text-2xl" : "text-lg"} font-black tracking-wide text-white`}>
-          NEXT GLASS
-        </p>
-        <p className={`${isLogin ? "text-sm" : "text-xs"} font-semibold uppercase tracking-wide text-white/70`}>
-          Vidrios y Aluminios
-        </p>
-      </div>
+      {imageFailed ? (
+        <div className={isLogin ? "mt-5" : "mt-3"}>
+          <p className={`${isLogin ? "text-2xl" : "text-lg"} font-black tracking-wide text-white`}>
+            NEXT GLASS
+          </p>
+          <p className={`${isLogin ? "text-sm" : "text-xs"} font-semibold uppercase tracking-wide text-white/70`}>
+            Vidrios y Aluminios
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -55,13 +57,13 @@ function LogoFrame({
   onImageError: () => void;
 }) {
   const sizeClass = compact
-    ? "h-11 w-11 p-1.5"
+    ? "h-11 w-11 p-0.5"
     : login
-      ? "h-24 w-56 p-4"
-      : "h-16 w-40 p-3";
+      ? "h-56 w-56 p-1.5"
+      : "h-36 w-36 p-1";
 
   return (
-    <div className={`inline-flex shrink-0 items-center justify-center rounded-lg bg-white shadow-soft ring-1 ring-white/20 ${sizeClass}`}>
+    <div className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-next-navy shadow-soft ring-1 ring-white/20 ${sizeClass}`}>
       {!imageFailed ? (
         <img
           alt="Next Glass"
