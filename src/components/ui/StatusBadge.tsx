@@ -8,6 +8,7 @@ export type BadgeStatus =
 type StatusBadgeProps = {
   label: string;
   status?: BadgeStatus;
+  title?: string;
 };
 
 const statusClasses: Record<BadgeStatus, string> = {
@@ -18,10 +19,11 @@ const statusClasses: Record<BadgeStatus, string> = {
   neutral: "bg-slate-100 text-slate-600 ring-slate-200"
 };
 
-export default function StatusBadge({ label, status = "neutral" }: StatusBadgeProps) {
+export default function StatusBadge({ label, status = "neutral", title }: StatusBadgeProps) {
   return (
     <span
       className={`inline-flex max-w-full items-center rounded-md px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${statusClasses[status]}`}
+      title={title}
     >
       {label}
     </span>

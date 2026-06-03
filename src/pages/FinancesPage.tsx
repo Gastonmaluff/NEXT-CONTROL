@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronRight, Edit3, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -18,7 +18,13 @@ import type {
   FinancialStatus,
   Obra
 } from "../types";
-import { formatCurrencyPYG, formatDateShort, formatDateTime, getTodayInputDate } from "../utils/formatters";
+import {
+  formatCompactGuarani,
+  formatCurrencyPYG,
+  formatDateShort,
+  formatDateTime,
+  getTodayInputDate
+} from "../utils/formatters";
 import {
   calculateFinancialStatus,
   calculateMargenActual,
@@ -290,33 +296,29 @@ export default function FinancesPage() {
 
   return (
     <div className="min-w-0 space-y-6">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
+      <div className="flex min-w-0 flex-col justify-between gap-3 lg:flex-row lg:items-end">
+        <div className="min-w-0">
           <p className="text-sm font-black uppercase text-next-blue">Administracion</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">FINANZAS DE OBRAS</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
             Control financiero por obra: ingresos, compras, egresos y resultado.
           </p>
         </div>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy" type="button" onClick={openCreateWork}>
-          <Plus className="h-5 w-5" aria-hidden="true" />
-          Nueva obra
-        </button>
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
-        <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_220px]">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-3 shadow-soft sm:p-4">
+        <div className="mb-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_auto] xl:grid-cols-[minmax(0,1fr)_200px_auto]">
           <input
-            className="h-11 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
+            className="h-10 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-xs font-semibold outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10 sm:text-sm"
             placeholder="Buscar por obra o cliente"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
           <select
-            className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-next-blue focus:ring-4 focus:ring-next-blue/10"
+            className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold outline-none focus:border-next-blue focus:ring-4 focus:ring-next-blue/10 sm:text-sm"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
           >
@@ -326,10 +328,14 @@ export default function FinancesPage() {
             <option>Margen bajo</option>
             <option>Pendiente de cobro</option>
           </select>
+          <button className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-next-blue px-3 text-xs font-black text-white transition hover:bg-next-navy sm:px-4 sm:text-sm" type="button" onClick={openCreateWork}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Nueva obra
+          </button>
         </div>
 
-        <div className="hidden min-w-0 xl:block">
-          <div className="grid grid-cols-[minmax(180px,1.35fr)_minmax(140px,1fr)_repeat(5,minmax(106px,0.78fr))_minmax(116px,0.7fr)_minmax(126px,auto)] gap-3 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+        <div className="hidden min-w-0 overflow-x-auto md:block">
+          <div className="grid grid-cols-[minmax(128px,1.16fr)_minmax(104px,0.9fr)_repeat(5,minmax(74px,0.62fr))_minmax(86px,0.55fr)_40px] items-center gap-1 border-b border-slate-100 px-1 pb-2 text-[10px] font-black uppercase leading-tight text-next-muted xl:grid-cols-[minmax(168px,1.25fr)_minmax(132px,0.95fr)_repeat(5,minmax(90px,0.65fr))_minmax(96px,0.55fr)_42px] xl:gap-2">
             <span>Obra</span>
             <span>Cliente</span>
             <span>Presupuesto</span>
@@ -352,7 +358,7 @@ export default function FinancesPage() {
           </div>
         </div>
 
-        <div className="space-y-3 xl:hidden">
+        <div className="space-y-3 md:hidden">
           {filteredWorks.map((work) => (
             <FinancialWorkCard
               key={work.id}
@@ -470,11 +476,11 @@ function FinancialDetail({
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <ActionButton label="+ Agregar ingreso" onClick={() => onAddMovement("ingreso")} />
-        <ActionButton label="+ Agregar compra" onClick={() => onAddMovement("compra")} />
-        <ActionButton label="+ Agregar egreso" onClick={() => onAddMovement("egreso")} />
-        <ActionButton label="Editar datos de obra" onClick={onEditWork} secondary />
+      <section className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <ActionButton label="+ Agregar ingreso" shortLabel="Ingreso" onClick={() => onAddMovement("ingreso")} />
+        <ActionButton label="+ Agregar compra" shortLabel="Compra" onClick={() => onAddMovement("compra")} />
+        <ActionButton label="+ Agregar egreso" shortLabel="Egreso" onClick={() => onAddMovement("egreso")} />
+        <ActionButton label="Editar datos de obra" shortLabel="Editar" onClick={onEditWork} secondary />
       </section>
 
       <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
@@ -488,8 +494,8 @@ function FinancialDetail({
           <p className="text-sm font-black text-next-blue">Margen actual: {margen}%</p>
         </div>
 
-        <div className="hidden min-w-0 xl:block">
-          <div className="grid grid-cols-[88px_82px_minmax(170px,1.4fr)_minmax(112px,0.8fr)_96px_118px_118px_minmax(136px,1fr)_112px] gap-2 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+        <div className="hidden min-w-0 overflow-x-auto md:block">
+          <div className="grid grid-cols-[78px_70px_minmax(150px,1.35fr)_minmax(94px,0.72fr)_82px_102px_102px_78px] items-center gap-1 border-b border-slate-100 px-1 pb-2 text-[10px] font-black uppercase leading-tight text-next-muted xl:grid-cols-[86px_76px_minmax(190px,1.45fr)_minmax(112px,0.78fr)_92px_116px_116px_86px] xl:gap-2 xl:text-xs">
             <span>Fecha</span>
             <span>Tipo</span>
             <span>Concepto</span>
@@ -497,7 +503,6 @@ function FinancialDetail({
             <span>Metodo</span>
             <span>Ingreso</span>
             <span>Egreso</span>
-            <span>Proveedor / Cliente</span>
             <span>Acciones</span>
           </div>
           <div className="divide-y divide-slate-100">
@@ -518,7 +523,7 @@ function FinancialDetail({
           </div>
         </div>
 
-        <div className="space-y-3 xl:hidden">
+        <div className="space-y-3 md:hidden">
           {movements.map((movement) => (
             <MovementCard
               key={movement.id}
@@ -587,22 +592,22 @@ function FinancialWorkRow({
 }) {
   const totals = getRowTotals(obra, movements);
   return (
-    <div className="grid grid-cols-[minmax(180px,1.35fr)_minmax(140px,1fr)_repeat(5,minmax(106px,0.78fr))_minmax(116px,0.7fr)_minmax(126px,auto)] items-center gap-3 py-4 text-xs xl:text-sm">
+    <div className="grid grid-cols-[minmax(128px,1.16fr)_minmax(104px,0.9fr)_repeat(5,minmax(74px,0.62fr))_minmax(86px,0.55fr)_40px] items-center gap-1 px-1 py-2 text-[11px] leading-tight xl:grid-cols-[minmax(168px,1.25fr)_minmax(132px,0.95fr)_repeat(5,minmax(90px,0.65fr))_minmax(96px,0.55fr)_42px] xl:gap-2 xl:text-xs">
       <div className="min-w-0">
-        <p className="break-words font-black text-next-text">{obra.nombre}</p>
-        <p className="text-xs font-semibold text-next-muted">{formatDateShort(obra.fechaComprometida ?? obra.fechaEntrega)}</p>
+        <p className="line-clamp-2 font-black text-next-text" title={obra.nombre}>{obra.nombre}</p>
+        <p className="mt-0.5 truncate text-[10px] font-semibold text-next-muted xl:text-[11px]">{formatDateShort(obra.fechaComprometida ?? obra.fechaEntrega)}</p>
       </div>
-      <p className="min-w-0 break-words font-semibold text-next-muted">{obra.cliente}</p>
-      <p className="text-right font-black text-next-text">{formatCurrencyPYG(totals.totalContratado)}</p>
-      <p className="text-right font-black text-next-green">{formatCurrencyPYG(totals.ingresos)}</p>
-      <p className="text-right font-black text-next-red">{formatCurrencyPYG(totals.egresos)}</p>
-      <p className={`text-right font-black ${totals.resultado >= 0 ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(totals.resultado)}</p>
-      <p className="text-right font-black text-next-orange">{formatCurrencyPYG(totals.saldo)}</p>
+      <p className="min-w-0 truncate font-semibold text-next-muted" title={obra.cliente}>{obra.cliente}</p>
+      <p className="text-right font-black text-next-text">{formatCompactGuarani(totals.totalContratado)}</p>
+      <p className="text-right font-black text-next-green">{formatCompactGuarani(totals.ingresos)}</p>
+      <p className="text-right font-black text-next-red">{formatCompactGuarani(totals.egresos)}</p>
+      <p className={`text-right font-black ${totals.resultado >= 0 ? "text-next-green" : "text-next-red"}`}>{formatCompactGuarani(totals.resultado)}</p>
+      <p className="text-right font-black text-next-orange">{formatCompactGuarani(totals.saldo)}</p>
       <div className="min-w-0">
-        <StatusBadge label={formatFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} />
+        <StatusBadge label={formatCompactFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} title={formatFinancialStatus(totals.status)} />
       </div>
-      <button className="whitespace-nowrap rounded-md bg-next-blue px-3 py-2 text-xs font-black text-white" type="button" onClick={onOpen}>
-        Abrir finanzas
+      <button className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-next-blue text-white transition hover:bg-next-navy" type="button" onClick={onOpen} title="Abrir finanzas" aria-label="Abrir finanzas">
+        <Eye className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );
@@ -647,20 +652,19 @@ function MovementRow({
   const isIngreso = movement.tipo === "ingreso";
   return (
     <>
-      <div className={`grid grid-cols-[88px_82px_minmax(170px,1.4fr)_minmax(112px,0.8fr)_96px_118px_118px_minmax(136px,1fr)_112px] items-center gap-2 py-3 text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
+      <div className={`grid grid-cols-[78px_70px_minmax(150px,1.35fr)_minmax(94px,0.72fr)_82px_102px_102px_78px] items-center gap-1 px-1 py-2 text-[11px] leading-tight xl:grid-cols-[86px_76px_minmax(190px,1.45fr)_minmax(112px,0.78fr)_92px_116px_116px_86px] xl:gap-2 xl:text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
         <span className="font-bold text-next-muted">{formatDateShort(movement.fecha)}</span>
-        <span className="font-black uppercase text-next-text">{movement.tipo}</span>
+        <span className="font-black uppercase text-next-text">{formatMovementType(movement.tipo)}</span>
         <span className="min-w-0 break-words font-bold text-next-text">{movement.concepto}</span>
         <span className="min-w-0 break-words">{movement.categoria}</span>
         <span>{movement.metodoPago || "-"}</span>
         <span className="text-right font-black text-next-green">{isIngreso ? formatCurrencyPYG(movement.monto) : "-"}</span>
         <span className="text-right font-black text-next-red">{isIngreso ? "-" : formatCurrencyPYG(movement.monto)}</span>
-        <span className="min-w-0 break-words">{movement.tercero || "-"}</span>
         <span className="flex items-center justify-end gap-1">
-          <button className="icon-button" type="button" onClick={onToggle} title={expanded ? "Ocultar detalle" : "Ver detalle"}>
+          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue" type="button" onClick={onToggle} title={expanded ? "Ocultar detalle" : "Ver detalle"} aria-label={expanded ? "Ocultar detalle" : "Ver detalle"}>
             {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
           </button>
-          <button className="icon-button text-next-red" type="button" onClick={onDelete} title="Eliminar">
+          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-next-red transition hover:border-next-red" type="button" onClick={onDelete} title="Eliminar" aria-label="Eliminar">
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         </span>
@@ -714,10 +718,11 @@ function MovementCard({
 function MovementDetails({ movement, compact = false }: { movement: FinancialMovement; compact?: boolean }) {
   return (
     <div className={`${compact ? "mt-3 rounded-md bg-white/70 p-3" : "rounded-b-md border-t border-slate-100 bg-white px-4 py-3"} text-xs text-next-muted`}>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <DetailItem label="Detalle" value={movement.detalle || "-"} />
         <DetailItem label="Cantidad" value={movement.cantidad ? String(movement.cantidad) : "-"} />
         <DetailItem label="Unidad" value={movement.unidad || "-"} />
+        <DetailItem label="Proveedor / Cliente" value={movement.tercero || "-"} />
         <DetailItem label="Observacion" value={movement.observacion || "-"} />
         <DetailItem label="Creado" value={formatDateTime(movement.createdAt)} />
         {movement.updatedAt ? <DetailItem label="Actualizado" value={formatDateTime(movement.updatedAt)} /> : null}
@@ -887,10 +892,20 @@ function Metric({ label, value, tone = "blue" }: { label: string; value: string;
   );
 }
 
-function ActionButton({ label, onClick, secondary = false }: { label: string; onClick: () => void; secondary?: boolean }) {
+function ActionButton({
+  label,
+  shortLabel,
+  onClick,
+  secondary = false
+}: {
+  label: string;
+  shortLabel?: string;
+  onClick: () => void;
+  secondary?: boolean;
+}) {
   return (
     <button
-      className={`inline-flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-center text-xs font-black transition sm:text-sm ${
+      className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-center text-xs font-black transition sm:text-sm ${
         secondary
           ? "border border-next-blue bg-white text-next-blue hover:bg-next-light"
           : "bg-next-blue text-white hover:bg-next-navy"
@@ -899,7 +914,8 @@ function ActionButton({ label, onClick, secondary = false }: { label: string; on
       onClick={onClick}
     >
       {secondary ? <Edit3 className="h-5 w-5" aria-hidden="true" /> : <Plus className="h-5 w-5" aria-hidden="true" />}
-      {label}
+      <span className="hidden 2xl:inline">{label}</span>
+      <span className="2xl:hidden">{shortLabel ?? label}</span>
     </button>
   );
 }
@@ -951,6 +967,26 @@ function badgeForFinancial(status: FinancialStatus): BadgeStatus {
   if (status === "Saludable") return "success";
   if (status === "Atencion" || status === "Pendiente de cobro") return "warning";
   return "critical";
+}
+
+function formatCompactFinancialStatus(status: FinancialStatus): string {
+  if (status === "Pendiente de cobro") {
+    return "Pend. cobro";
+  }
+
+  return formatFinancialStatus(status);
+}
+
+function formatMovementType(type: FinancialMovementKind): string {
+  if (type === "ingreso") {
+    return "Ing.";
+  }
+
+  if (type === "compra") {
+    return "Comp.";
+  }
+
+  return "Egr.";
 }
 
 function formatFinancialStatus(status: FinancialStatus): string {
