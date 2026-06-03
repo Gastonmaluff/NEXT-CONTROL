@@ -1,5 +1,6 @@
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import BrandLogo from "../brand/BrandLogo";
 import { navigationItems } from "../../data/navigation";
 
 type SidebarProps = {
@@ -16,15 +17,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       <div className={`flex items-center justify-between gap-3 ${collapsed ? "lg:flex-col" : "lg:block"}`}>
         <div className={`min-w-0 ${collapsed ? "lg:text-center" : ""}`}>
-          {collapsed ? (
-            <div className="hidden h-11 w-11 items-center justify-center rounded-md bg-white text-sm font-black text-next-navy lg:inline-flex">
-              NG
-            </div>
-          ) : null}
-          <div className={collapsed ? "lg:hidden" : ""}>
-            <p className="truncate text-lg font-black tracking-wide">NEXT GLASS</p>
-            <p className="truncate text-xs font-medium text-white/70">Vidrios y Aluminios</p>
-          </div>
+          {collapsed ? <BrandLogo variant="compact" className="hidden lg:inline-flex" /> : null}
+          <BrandLogo variant="full" className={collapsed ? "lg:hidden" : ""} />
         </div>
         <button
           className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-white/10 text-white transition hover:bg-white/20"

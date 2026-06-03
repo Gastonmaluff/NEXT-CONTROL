@@ -1,5 +1,6 @@
 import { LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
+import BrandLogo from "../components/brand/BrandLogo";
 import { loginWithEmail } from "../lib/auth";
 import { isFirebaseConfigured } from "../lib/firebase";
 
@@ -40,12 +41,11 @@ export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPagePro
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center justify-center">
         <div className="grid w-full overflow-hidden rounded-lg bg-white shadow-2xl lg:grid-cols-[0.9fr_1.1fr]">
           <div className="bg-next-navy p-8 text-white sm:p-10">
-            <p className="text-lg font-black tracking-wide">NEXT GLASS</p>
-            <p className="mt-1 text-sm font-semibold text-white/70">Vidrios y Aluminios</p>
-            <div className="mt-16">
+            <BrandLogo variant="login" />
+            <div className="mt-12 text-center lg:text-left">
               <h1 className="text-4xl font-black tracking-normal">NEXT CONTROL</h1>
               <p className="mt-4 max-w-md text-sm font-semibold leading-6 text-white/72">
-                Control operativo para obras, produccion, cobros, CRM e instalacion movil.
+                Plataforma de gestion y control integral para obras, finanzas, produccion e instalacion.
               </p>
             </div>
           </div>
