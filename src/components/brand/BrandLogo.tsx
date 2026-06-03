@@ -8,6 +8,7 @@ type BrandLogoProps = {
 };
 
 const logoPath = `${import.meta.env.BASE_URL}logo-next-glass.png`;
+const markPath = `${import.meta.env.BASE_URL}logo-next-glass-mark.png`;
 
 export default function BrandLogo({ variant = "full", className = "" }: BrandLogoProps) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -57,22 +58,22 @@ function LogoFrame({
   onImageError: () => void;
 }) {
   const sizeClass = compact
-    ? "h-11 w-11 p-0.5"
+    ? "h-11 w-11"
     : login
-      ? "h-56 w-56 p-1.5"
-      : "h-36 w-36 p-1";
+      ? "h-60 w-72"
+      : "h-32 w-44";
 
   return (
-    <div className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-next-navy shadow-soft ring-1 ring-white/20 ${sizeClass}`}>
+    <div className={`inline-flex shrink-0 items-center justify-center ${sizeClass}`}>
       {!imageFailed ? (
         <img
           alt="Next Glass"
-          className="h-full w-full object-contain"
-          src={logoPath}
+          className="h-full w-full object-contain drop-shadow-[0_10px_24px_rgba(0,0,0,0.22)]"
+          src={compact ? markPath : logoPath}
           onError={onImageError}
         />
       ) : (
-        <span className={`${compact ? "text-sm" : "text-xl"} font-black tracking-wide text-next-navy`}>
+        <span className={`${compact ? "text-sm" : "text-xl"} font-black tracking-wide text-white`}>
           NG
         </span>
       )}
