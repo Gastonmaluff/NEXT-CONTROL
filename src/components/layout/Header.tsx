@@ -11,9 +11,9 @@ export default function Header() {
   }
 
   return (
-    <header className="sticky top-[92px] z-20 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:top-0 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="relative w-full max-w-xl">
+    <header className="sticky top-[92px] z-20 min-w-0 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:top-0 lg:px-8">
+      <div className="mx-auto flex w-full max-w-none min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="relative min-w-0 flex-1 sm:max-w-xl">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-next-muted"
             aria-hidden="true"
@@ -25,7 +25,7 @@ export default function Header() {
           />
         </label>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 sm:justify-end">
           <button
             className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue"
             type="button"
@@ -34,11 +34,11 @@ export default function Header() {
           >
             <Bell className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
+          <div className="flex min-w-0 items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-next-blue text-sm font-bold text-white">
               A
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-bold leading-5">Admin</p>
               <p className="text-xs font-medium text-next-muted">Administrador</p>
             </div>

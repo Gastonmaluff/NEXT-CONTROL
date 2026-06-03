@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit3, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Edit3, Plus, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -18,7 +18,7 @@ import type {
   FinancialStatus,
   Obra
 } from "../types";
-import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
+import { formatCurrencyPYG, formatDateShort, formatDateTime, getTodayInputDate } from "../utils/formatters";
 import {
   calculateFinancialStatus,
   calculateMargenActual,
@@ -289,7 +289,7 @@ export default function FinancesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <p className="text-sm font-black uppercase text-next-blue">Administracion</p>
@@ -307,7 +307,7 @@ export default function FinancesPage() {
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
         <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_220px]">
           <input
             className="h-11 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
@@ -328,8 +328,8 @@ export default function FinancesPage() {
           </select>
         </div>
 
-        <div className="hidden lg:block">
-          <div className="grid grid-cols-[1.4fr_1fr_repeat(5,0.9fr)_150px] gap-3 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+        <div className="hidden min-w-0 xl:block">
+          <div className="grid grid-cols-[minmax(180px,1.35fr)_minmax(140px,1fr)_repeat(5,minmax(106px,0.78fr))_minmax(116px,0.7fr)_minmax(126px,auto)] gap-3 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
             <span>Obra</span>
             <span>Cliente</span>
             <span>Presupuesto</span>
@@ -338,6 +338,7 @@ export default function FinancesPage() {
             <span>Resultado</span>
             <span>Saldo</span>
             <span>Estado</span>
+            <span>Accion</span>
           </div>
           <div className="divide-y divide-slate-100">
             {filteredWorks.map((work) => (
@@ -351,7 +352,7 @@ export default function FinancesPage() {
           </div>
         </div>
 
-        <div className="space-y-3 lg:hidden">
+        <div className="space-y-3 xl:hidden">
           {filteredWorks.map((work) => (
             <FinancialWorkCard
               key={work.id}
@@ -415,9 +416,16 @@ function FinancialDetail({
   onSaveMovement: (event: FormEvent<HTMLFormElement>) => void;
   onCloseMovementModal: () => void;
 }) {
+  const [expandedMovements, setExpandedMovements] = useState<Record<string, boolean>>({});
   const totalContratado = getTotalContratado(obra);
   const totalIngresos = calculateTotalIngresos(movements);
   const totalEgresos = calculateTotalEgresos(movements);
+  const totalCompras = movements
+    .filter((movement) => movement.tipo === "compra")
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const totalEgresosOperativos = movements
+    .filter((movement) => movement.tipo === "egreso")
+    .reduce((sum, movement) => sum + movement.monto, 0);
   const resultado = calculateResultadoActual(obra, movements);
   const saldo = calculateSaldoPendiente(obra, movements);
   const margen = calculateMargenActual(obra, movements);
@@ -425,7 +433,7 @@ function FinancialDetail({
   const ingresosByCategory = groupIngresosByCategoria(movements);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <button className="mb-3 inline-flex items-center gap-2 text-sm font-black text-next-blue" type="button" onClick={onBack}>
@@ -440,7 +448,7 @@ function FinancialDetail({
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
         <div className="mb-5 flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
           <div>
             <h2 className="text-2xl font-black text-next-text">{obra.nombre}</h2>
@@ -454,20 +462,22 @@ function FinancialDetail({
           <Metric label="Descuentos" value={formatCurrencyPYG(obra.descuentos ?? 0)} />
           <Metric label="Total contratado" value={formatCurrencyPYG(totalContratado)} />
           <Metric label="Total ingresado" value={formatCurrencyPYG(totalIngresos)} tone="green" />
+          <Metric label="Total compras" value={formatCurrencyPYG(totalCompras)} tone="red" />
+          <Metric label="Egresos operativos" value={formatCurrencyPYG(totalEgresosOperativos)} tone="orange" />
           <Metric label="Total egresado" value={formatCurrencyPYG(totalEgresos)} tone="red" />
           <Metric label="Resultado actual" value={formatCurrencyPYG(resultado)} tone={resultado >= 0 ? "green" : "red"} />
           <Metric label="Saldo pendiente" value={formatCurrencyPYG(saldo)} tone="orange" />
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <ActionButton label="+ Agregar ingreso" onClick={() => onAddMovement("ingreso")} />
         <ActionButton label="+ Agregar compra" onClick={() => onAddMovement("compra")} />
         <ActionButton label="+ Agregar egreso" onClick={() => onAddMovement("egreso")} />
         <ActionButton label="Editar datos de obra" onClick={onEditWork} secondary />
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
         <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
           <div>
             <h2 className="text-lg font-black text-next-text">Movimientos de la obra</h2>
@@ -478,32 +488,50 @@ function FinancialDetail({
           <p className="text-sm font-black text-next-blue">Margen actual: {margen}%</p>
         </div>
 
-        <div className="hidden xl:block">
-          <div className="grid grid-cols-[92px_82px_1.1fr_110px_1fr_80px_70px_110px_120px_120px_1fr_1fr_80px] gap-2 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
+        <div className="hidden min-w-0 xl:block">
+          <div className="grid grid-cols-[88px_82px_minmax(170px,1.4fr)_minmax(112px,0.8fr)_96px_118px_118px_minmax(136px,1fr)_112px] gap-2 border-b border-slate-100 pb-3 text-xs font-black uppercase text-next-muted">
             <span>Fecha</span>
             <span>Tipo</span>
             <span>Concepto</span>
             <span>Categoria</span>
-            <span>Detalle</span>
-            <span>Cant.</span>
-            <span>Unidad</span>
             <span>Metodo</span>
             <span>Ingreso</span>
             <span>Egreso</span>
             <span>Proveedor / Cliente</span>
-            <span>Observacion</span>
             <span>Acciones</span>
           </div>
           <div className="divide-y divide-slate-100">
             {movements.map((movement) => (
-              <MovementRow key={movement.id} movement={movement} onDelete={() => onDeleteMovement(movement.id)} />
+              <MovementRow
+                key={movement.id}
+                movement={movement}
+                expanded={Boolean(expandedMovements[movement.id])}
+                onToggle={() =>
+                  setExpandedMovements((current) => ({
+                    ...current,
+                    [movement.id]: !current[movement.id]
+                  }))
+                }
+                onDelete={() => onDeleteMovement(movement.id)}
+              />
             ))}
           </div>
         </div>
 
         <div className="space-y-3 xl:hidden">
           {movements.map((movement) => (
-            <MovementCard key={movement.id} movement={movement} onDelete={() => onDeleteMovement(movement.id)} />
+            <MovementCard
+              key={movement.id}
+              movement={movement}
+              expanded={Boolean(expandedMovements[movement.id])}
+              onToggle={() =>
+                setExpandedMovements((current) => ({
+                  ...current,
+                  [movement.id]: !current[movement.id]
+                }))
+              }
+              onDelete={() => onDeleteMovement(movement.id)}
+            />
           ))}
         </div>
 
@@ -559,23 +587,23 @@ function FinancialWorkRow({
 }) {
   const totals = getRowTotals(obra, movements);
   return (
-    <div className="grid grid-cols-[1.4fr_1fr_repeat(5,0.9fr)_150px] items-center gap-3 py-4 text-sm">
-      <div>
-        <p className="font-black text-next-text">{obra.nombre}</p>
+    <div className="grid grid-cols-[minmax(180px,1.35fr)_minmax(140px,1fr)_repeat(5,minmax(106px,0.78fr))_minmax(116px,0.7fr)_minmax(126px,auto)] items-center gap-3 py-4 text-xs xl:text-sm">
+      <div className="min-w-0">
+        <p className="break-words font-black text-next-text">{obra.nombre}</p>
         <p className="text-xs font-semibold text-next-muted">{formatDateShort(obra.fechaComprometida ?? obra.fechaEntrega)}</p>
       </div>
-      <p className="font-semibold text-next-muted">{obra.cliente}</p>
-      <p className="font-black text-next-text">{formatCurrencyPYG(totals.totalContratado)}</p>
-      <p className="font-black text-next-green">{formatCurrencyPYG(totals.ingresos)}</p>
-      <p className="font-black text-next-red">{formatCurrencyPYG(totals.egresos)}</p>
-      <p className={`font-black ${totals.resultado >= 0 ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(totals.resultado)}</p>
-      <p className="font-black text-next-orange">{formatCurrencyPYG(totals.saldo)}</p>
-      <div className="flex items-center justify-between gap-2">
+      <p className="min-w-0 break-words font-semibold text-next-muted">{obra.cliente}</p>
+      <p className="text-right font-black text-next-text">{formatCurrencyPYG(totals.totalContratado)}</p>
+      <p className="text-right font-black text-next-green">{formatCurrencyPYG(totals.ingresos)}</p>
+      <p className="text-right font-black text-next-red">{formatCurrencyPYG(totals.egresos)}</p>
+      <p className={`text-right font-black ${totals.resultado >= 0 ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(totals.resultado)}</p>
+      <p className="text-right font-black text-next-orange">{formatCurrencyPYG(totals.saldo)}</p>
+      <div className="min-w-0">
         <StatusBadge label={formatFinancialStatus(totals.status)} status={badgeForFinancial(totals.status)} />
-        <button className="rounded-md bg-next-blue px-3 py-2 text-xs font-black text-white" type="button" onClick={onOpen}>
-          Abrir finanzas
-        </button>
       </div>
+      <button className="whitespace-nowrap rounded-md bg-next-blue px-3 py-2 text-xs font-black text-white" type="button" onClick={onOpen}>
+        Abrir finanzas
+      </button>
     </div>
   );
 }
@@ -605,30 +633,54 @@ function FinancialWorkCard({ obra, movements, onOpen }: { obra: Obra; movements:
   );
 }
 
-function MovementRow({ movement, onDelete }: { movement: FinancialMovement; onDelete: () => void }) {
+function MovementRow({
+  movement,
+  expanded,
+  onToggle,
+  onDelete
+}: {
+  movement: FinancialMovement;
+  expanded: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
   const isIngreso = movement.tipo === "ingreso";
   return (
-    <div className={`grid grid-cols-[92px_82px_1.1fr_110px_1fr_80px_70px_110px_120px_120px_1fr_1fr_80px] items-center gap-2 py-3 text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
-      <span className="font-bold text-next-muted">{formatDateShort(movement.fecha)}</span>
-      <span className="font-black uppercase text-next-text">{movement.tipo}</span>
-      <span className="font-bold text-next-text">{movement.concepto}</span>
-      <span>{movement.categoria}</span>
-      <span>{movement.detalle || "-"}</span>
-      <span>{movement.cantidad ?? "-"}</span>
-      <span>{movement.unidad || "-"}</span>
-      <span>{movement.metodoPago || "-"}</span>
-      <span className="font-black text-next-green">{isIngreso ? formatCurrencyPYG(movement.monto) : "-"}</span>
-      <span className="font-black text-next-red">{isIngreso ? "-" : formatCurrencyPYG(movement.monto)}</span>
-      <span>{movement.tercero || "-"}</span>
-      <span>{movement.observacion || "-"}</span>
-      <button className="icon-button text-next-red" type="button" onClick={onDelete} title="Eliminar">
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-      </button>
-    </div>
+    <>
+      <div className={`grid grid-cols-[88px_82px_minmax(170px,1.4fr)_minmax(112px,0.8fr)_96px_118px_118px_minmax(136px,1fr)_112px] items-center gap-2 py-3 text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
+        <span className="font-bold text-next-muted">{formatDateShort(movement.fecha)}</span>
+        <span className="font-black uppercase text-next-text">{movement.tipo}</span>
+        <span className="min-w-0 break-words font-bold text-next-text">{movement.concepto}</span>
+        <span className="min-w-0 break-words">{movement.categoria}</span>
+        <span>{movement.metodoPago || "-"}</span>
+        <span className="text-right font-black text-next-green">{isIngreso ? formatCurrencyPYG(movement.monto) : "-"}</span>
+        <span className="text-right font-black text-next-red">{isIngreso ? "-" : formatCurrencyPYG(movement.monto)}</span>
+        <span className="min-w-0 break-words">{movement.tercero || "-"}</span>
+        <span className="flex items-center justify-end gap-1">
+          <button className="icon-button" type="button" onClick={onToggle} title={expanded ? "Ocultar detalle" : "Ver detalle"}>
+            {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+          </button>
+          <button className="icon-button text-next-red" type="button" onClick={onDelete} title="Eliminar">
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </span>
+      </div>
+      {expanded ? <MovementDetails movement={movement} /> : null}
+    </>
   );
 }
 
-function MovementCard({ movement, onDelete }: { movement: FinancialMovement; onDelete: () => void }) {
+function MovementCard({
+  movement,
+  expanded,
+  onToggle,
+  onDelete
+}: {
+  movement: FinancialMovement;
+  expanded: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
   const isIngreso = movement.tipo === "ingreso";
   return (
     <article className={`rounded-lg border p-4 ${isIngreso ? "border-green-100 bg-green-50" : "border-orange-100 bg-orange-50"}`}>
@@ -641,17 +693,45 @@ function MovementCard({ movement, onDelete }: { movement: FinancialMovement; onD
         <p className={`text-right text-lg font-black ${isIngreso ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(movement.monto)}</p>
       </div>
       <div className="mt-3 grid gap-2 text-sm text-next-muted">
-        <RowLabel label="Detalle" value={movement.detalle || "-"} />
-        <RowLabel label="Cantidad" value={movement.cantidad ? `${movement.cantidad} ${movement.unidad ?? ""}` : "-"} />
         <RowLabel label="Metodo" value={movement.metodoPago || "-"} />
         <RowLabel label="Proveedor / Cliente" value={movement.tercero || "-"} />
-        <RowLabel label="Observacion" value={movement.observacion || "-"} />
       </div>
-      <button className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-red-100 bg-white px-3 text-xs font-black text-next-red" type="button" onClick={onDelete}>
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-        Eliminar
-      </button>
+      {expanded ? <MovementDetails movement={movement} compact /> : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-next-blue" type="button" onClick={onToggle}>
+          {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+          {expanded ? "Ocultar detalle" : "Ver detalle"}
+        </button>
+        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-red-100 bg-white px-3 text-xs font-black text-next-red" type="button" onClick={onDelete}>
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Eliminar
+        </button>
+      </div>
     </article>
+  );
+}
+
+function MovementDetails({ movement, compact = false }: { movement: FinancialMovement; compact?: boolean }) {
+  return (
+    <div className={`${compact ? "mt-3 rounded-md bg-white/70 p-3" : "rounded-b-md border-t border-slate-100 bg-white px-4 py-3"} text-xs text-next-muted`}>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <DetailItem label="Detalle" value={movement.detalle || "-"} />
+        <DetailItem label="Cantidad" value={movement.cantidad ? String(movement.cantidad) : "-"} />
+        <DetailItem label="Unidad" value={movement.unidad || "-"} />
+        <DetailItem label="Observacion" value={movement.observacion || "-"} />
+        <DetailItem label="Creado" value={formatDateTime(movement.createdAt)} />
+        {movement.updatedAt ? <DetailItem label="Actualizado" value={formatDateTime(movement.updatedAt)} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="font-black uppercase text-next-muted">{label}</p>
+      <p className="mt-1 break-words font-semibold text-next-text">{value}</p>
+    </div>
   );
 }
 
@@ -773,7 +853,7 @@ function SummaryBlock({
     : fallback.map((category) => [category, 0] as [string, number]);
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+    <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
       <h2 className="text-base font-black text-next-text">{title}</h2>
       <div className="mt-4 space-y-3">
         {entries.map(([category, value]) => (
@@ -810,7 +890,7 @@ function Metric({ label, value, tone = "blue" }: { label: string; value: string;
 function ActionButton({ label, onClick, secondary = false }: { label: string; onClick: () => void; secondary?: boolean }) {
   return (
     <button
-      className={`inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-black transition ${
+      className={`inline-flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-center text-xs font-black transition sm:text-sm ${
         secondary
           ? "border border-next-blue bg-white text-next-blue hover:bg-next-light"
           : "bg-next-blue text-white hover:bg-next-navy"
