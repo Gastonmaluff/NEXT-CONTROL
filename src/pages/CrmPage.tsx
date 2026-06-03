@@ -48,7 +48,7 @@ export default function CrmPage() {
     try {
       setOportunidades(await getOportunidades());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar CRM.");
+      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar clientes.");
     } finally {
       setLoading(false);
     }
@@ -74,7 +74,7 @@ export default function CrmPage() {
       });
       setLeadForm(emptyLead);
       setShowForm(false);
-      setMessage("Lead creado.");
+      setMessage("Prospecto creado.");
       await load();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "No se pudo crear el lead.");
@@ -102,7 +102,7 @@ export default function CrmPage() {
   }
 
   if (loading) {
-    return <StateCard text="Cargando CRM..." />;
+    return <StateCard text="Cargando clientes..." />;
   }
 
   return (
@@ -110,7 +110,10 @@ export default function CrmPage() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <p className="text-sm font-black uppercase text-next-blue">Comercial</p>
-          <h1 className="mt-1 text-3xl font-black tracking-normal">CRM DE OBRAS</h1>
+          <h1 className="mt-1 text-3xl font-black tracking-normal">CLIENTES</h1>
+          <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-next-muted">
+            Clientes, prospectos, presupuestos enviados y seguimiento comercial.
+          </p>
         </div>
         <button
           className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy"
@@ -118,7 +121,7 @@ export default function CrmPage() {
           onClick={() => setShowForm((current) => !current)}
         >
           <Plus className="h-5 w-5" aria-hidden="true" />
-          Nuevo lead
+          Nuevo prospecto
         </button>
       </div>
 
@@ -126,14 +129,14 @@ export default function CrmPage() {
       {error ? <Notice tone="error" text={error} /> : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Leads activos" value={`${metrics.activos}`} icon={Users} />
+        <KpiCard label="Prospectos activos" value={`${metrics.activos}`} icon={Users} />
         <KpiCard label="Presupuestos enviados" value={`${metrics.enviados}`} icon={FileSpreadsheet} tone="orange" />
         <KpiCard label="Tasa de conversion" value={`${metrics.conversion}%`} icon={BarChart3} tone="green" />
         <KpiCard label="Ventas estimadas" value={formatCurrencyPYG(metrics.ventas)} icon={Receipt} />
       </section>
 
       {showForm ? (
-        <DataCard title="Nuevo lead">
+        <DataCard title="Nuevo prospecto">
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleCreateLead}>
             <input className="field" required placeholder="Proyecto" value={leadForm.proyecto} onChange={(event) => setLeadForm({ ...leadForm, proyecto: event.target.value })} />
             <input className="field" required placeholder="Cliente" value={leadForm.cliente} onChange={(event) => setLeadForm({ ...leadForm, cliente: event.target.value })} />
@@ -150,7 +153,7 @@ export default function CrmPage() {
             <input className="field" type="date" value={leadForm.proximoSeguimiento} onChange={(event) => setLeadForm({ ...leadForm, proximoSeguimiento: event.target.value })} />
             <input className="field" placeholder="Observacion" value={leadForm.observacion} onChange={(event) => setLeadForm({ ...leadForm, observacion: event.target.value })} />
             <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white sm:col-span-2" type="submit">
-              Guardar lead
+              Guardar prospecto
             </button>
           </form>
         </DataCard>

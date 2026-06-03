@@ -1,4 +1,5 @@
 import type { StoredData } from "../types";
+import { getDefaultCostBudget } from "../utils/finances";
 
 export const initialRubros = [
   { id: "rubro-carpinteria", nombre: "Carpinteria", peso: 40, avance: 100 },
@@ -32,8 +33,45 @@ export const seedData: StoredData = {
       fechaInicio: "2026-05-05",
       fechaEntrega: "2026-06-30",
       responsable: "Juan Martinez",
+      supervisor: "Fiscalizador: Hugo Franco",
       estado: "Instalacion",
       saldoPendienteCobro: 215680000,
+      presupuestoAprobado: 1195680000,
+      adicionalesAprobados: 65000000,
+      descuentos: 15000000,
+      valorFinalContratado: 1245680000,
+      costosEstimados: getDefaultCostBudget(1245680000),
+      movimientosFinancieros: [
+        {
+          id: "fin-pal-1",
+          tipo: "Anticipo",
+          categoria: "Ingreso",
+          fecha: "2026-05-08",
+          concepto: "Anticipo inicial",
+          monto: 450000000,
+          metodoPago: "Transferencia"
+        },
+        {
+          id: "fin-pal-2",
+          tipo: "Compra",
+          categoria: "Compra",
+          fecha: "2026-05-12",
+          concepto: "Compra de vidrios DVH",
+          monto: 210000000,
+          metodoPago: "Transferencia",
+          proveedor: "Proveedor Vidrios PY"
+        },
+        {
+          id: "fin-pal-3",
+          tipo: "Mano de obra",
+          categoria: "Egreso",
+          fecha: "2026-05-30",
+          concepto: "Mano de obra de instalacion",
+          monto: 84000000,
+          metodoPago: "Efectivo",
+          proveedor: "Cuadrilla B"
+        }
+      ],
       rubrosAvance: initialRubros,
       etapasProduccion: initialProductionStages,
       materialesFaltantes: [
@@ -69,8 +107,48 @@ export const seedData: StoredData = {
       fechaInicio: "2026-04-18",
       fechaEntrega: "2026-06-18",
       responsable: "Marta Lopez",
+      supervisor: "Fiscalizador: Andrea Ruiz",
       estado: "Atrasada",
       saldoPendienteCobro: 360000000,
+      presupuestoAprobado: 824900000,
+      adicionalesAprobados: 0,
+      descuentos: 0,
+      valorFinalContratado: 824900000,
+      costosEstimados: getDefaultCostBudget(824900000).map((item) => ({
+        ...item,
+        real: Math.round(item.estimado * 1.08)
+      })),
+      movimientosFinancieros: [
+        {
+          id: "fin-aur-1",
+          tipo: "Anticipo",
+          categoria: "Ingreso",
+          fecha: "2026-04-25",
+          concepto: "Anticipo y compra de materiales",
+          monto: 464900000,
+          metodoPago: "Transferencia"
+        },
+        {
+          id: "fin-aur-2",
+          tipo: "Materia prima",
+          categoria: "Compra",
+          fecha: "2026-05-03",
+          concepto: "Aluminio y accesorios",
+          monto: 246000000,
+          metodoPago: "Cheque",
+          proveedor: "Aluminio del Este"
+        },
+        {
+          id: "fin-aur-3",
+          tipo: "Gasto extraordinario",
+          categoria: "Egreso",
+          fecha: "2026-06-01",
+          concepto: "Reproceso por ajuste de fachada",
+          monto: 42000000,
+          metodoPago: "Transferencia",
+          proveedor: "Servicio externo"
+        }
+      ],
       rubrosAvance: [
         { id: "aur-carp", nombre: "Carpinteria", peso: 40, avance: 90 },
         { id: "aur-vid", nombre: "Vidrios", peso: 35, avance: 60 },
@@ -105,8 +183,35 @@ export const seedData: StoredData = {
       fechaInicio: "2026-05-20",
       fechaEntrega: "2026-07-22",
       responsable: "Carlos Duarte",
+      supervisor: "Fiscalizador: Victor Sosa",
       estado: "Produccion",
       saldoPendienteCobro: 420000000,
+      presupuestoAprobado: 690300000,
+      adicionalesAprobados: 25000000,
+      descuentos: 10000000,
+      valorFinalContratado: 705300000,
+      costosEstimados: getDefaultCostBudget(705300000),
+      movimientosFinancieros: [
+        {
+          id: "fin-kat-1",
+          tipo: "Anticipo",
+          categoria: "Ingreso",
+          fecha: "2026-05-22",
+          concepto: "Anticipo de obra",
+          monto: 285300000,
+          metodoPago: "Transferencia"
+        },
+        {
+          id: "fin-kat-2",
+          tipo: "Materia prima",
+          categoria: "Compra",
+          fecha: "2026-05-28",
+          concepto: "Perfiles y accesorios iniciales",
+          monto: 138000000,
+          metodoPago: "Transferencia",
+          proveedor: "Next Supply"
+        }
+      ],
       rubrosAvance: [
         { id: "kat-carp", nombre: "Carpinteria", peso: 45, avance: 65 },
         { id: "kat-vid", nombre: "Vidrios", peso: 30, avance: 35 },

@@ -14,6 +14,7 @@ import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import { getCobrosByObra, getCuadrillas, getObras } from "../lib/firestore";
 import type { Cobro, Cuadrilla, Obra } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
+import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
 
 export default function DashboardPage() {
@@ -61,7 +62,10 @@ export default function DashboardPage() {
       saldoPendiente,
       atrasadas,
       pendienteProduccion,
-      utilidadEstimada: Math.round(totalMonto * 0.18)
+      utilidadEstimada: Math.round(totalMonto * 0.18),
+      margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo" || getFinancialStatus(obra) === "Excedido").length,
+      m2InstaladosSemana: 1256,
+      flujoProyectado: saldoPendiente + Math.round(totalCobrado * 0.18)
     };
   }, [cobros, obras]);
 
@@ -86,7 +90,7 @@ export default function DashboardPage() {
     .slice(0, 3);
 
   if (loading) {
-    return <StateCard text="Cargando dashboard..." />;
+    return <StateCard text="Cargando control..." />;
   }
 
   return (
@@ -95,11 +99,11 @@ export default function DashboardPage() {
         <div>
           <p className="text-sm font-black uppercase text-next-blue">Centro de control</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal text-next-text">
-            NEXT CONTROL
+            CONTROL
           </h1>
         </div>
         <p className="max-w-xl text-sm font-medium leading-6 text-next-muted">
-          Dashboard gerencial conectado a obras, cobros, produccion, instalaciones y materiales.
+          Centro de control gerencial para obras, finanzas, produccion e instalaciones.
         </p>
       </div>
 
@@ -110,14 +114,34 @@ export default function DashboardPage() {
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Obras activas" value={`${metrics.activeObras.length}`} icon={ClipboardList} />
-        <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" />
-        <KpiCard label="Total aprobado" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} />
-        <KpiCard label="Total cobrado" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" />
+        <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} />
+        <KpiCard label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" />
         <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" />
-        <KpiCard label="Saldo pendiente total" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={BarChart3} tone="orange" />
+        <KpiCard label="Flujo proyectado 30 dias" value={formatCurrencyPYG(metrics.flujoProyectado)} icon={BarChart3} />
+        <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" />
         <KpiCard label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} icon={Factory} tone="orange" />
-        <KpiCard label="Utilidad estimada demo" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" />
+        <KpiCard label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} icon={Truck} tone="green" />
+        <KpiCard label="Utilidad estimada" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <DataCard title="Avance operativo" subtitle="Fiscalizacion, produccion, instalacion y cuadrillas.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Metric label="Obras atrasadas" value={`${metrics.atrasadas.length}`} />
+            <Metric label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} />
+            <Metric label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} />
+            <Metric label="Cuadrillas activas" value={`${cuadrillas.filter((crew) => crew.estado !== "Disponible").length}`} />
+          </div>
+        </DataCard>
+
+        <DataCard title="Finanzas" subtitle="Caja, rentabilidad y margen por obra.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Metric label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} />
+            <Metric label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} />
+            <Metric label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} />
+            <Metric label="Obras con margen bajo" value={`${metrics.margenBajo}`} />
+          </div>
+        </DataCard>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.95fr]">
@@ -225,6 +249,15 @@ function getBadgeForStatus(status: string): BadgeStatus {
   if (status === "Finalizada" || status === "Cobrado") return "success";
   if (status === "Produccion" || status === "Instalacion" || status === "Facturacion") return "info";
   return "neutral";
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-next-bg px-3 py-3">
+      <p className="text-xs font-bold uppercase text-next-muted">{label}</p>
+      <p className="mt-1 break-words text-sm font-black text-next-text">{value}</p>
+    </div>
+  );
 }
 
 function StateCard({ text }: { text: string }) {

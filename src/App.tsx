@@ -5,6 +5,7 @@ import MobileInstallationsView from "./components/mobile/MobileInstallationsView
 import { subscribeToAuthChanges } from "./lib/auth";
 import CrmPage from "./pages/CrmPage";
 import DashboardPage from "./pages/DashboardPage";
+import FinancesPage from "./pages/FinancesPage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
@@ -54,18 +55,24 @@ export default function App() {
     <Routes>
       <Route path="/instalaciones/mobile" element={<MobileInstallationsView />} />
       <Route element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="/crm" element={<CrmPage />} />
-        <Route path="/obras" element={<ProjectControlPage />} />
+        <Route index element={<Navigate to="/control" replace />} />
+        <Route path="/control" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<Navigate to="/control" replace />} />
+        <Route path="/clientes" element={<CrmPage />} />
+        <Route path="/crm" element={<Navigate to="/clientes" replace />} />
+        <Route path="/crm-obras" element={<Navigate to="/clientes" replace />} />
+        <Route path="/avance-obras" element={<ProjectControlPage />} />
+        <Route path="/obras" element={<Navigate to="/avance-obras" replace />} />
+        <Route path="/finanzas-obras" element={<FinancesPage />} />
         <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
         <Route path="/produccion" element={<ProjectControlPage />} />
-        <Route path="/cobros" element={<ProjectControlPage />} />
+        <Route path="/cobros" element={<FinancesPage />} />
         <Route path="/proveedores" element={<PlaceholderPage title="Proveedores" />} />
         <Route path="/inventario" element={<PlaceholderPage title="Inventario" />} />
         <Route path="/reportes" element={<PlaceholderPage title="Reportes" />} />
         <Route path="/configuracion" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/control" replace />} />
     </Routes>
   );
 }

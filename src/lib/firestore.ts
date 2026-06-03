@@ -18,6 +18,7 @@ import type {
   OportunidadCRM,
   TareaInstalacion
 } from "../types";
+import { getDefaultCostBudget } from "../utils/finances";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
@@ -144,8 +145,22 @@ export async function getObraById(id: string): Promise<Obra | null> {
 
 export async function createObra(data: ObraInput): Promise<Obra> {
   const createdAt = data.createdAt ?? now();
+  const presupuestoAprobado = data.presupuestoAprobado ?? data.montoAprobado;
+  const adicionalesAprobados = data.adicionalesAprobados ?? 0;
+  const descuentos = data.descuentos ?? 0;
+  const valorFinalContratado =
+    data.valorFinalContratado ?? presupuestoAprobado + adicionalesAprobados - descuentos;
+
   return createDocument<Obra>("obras", {
     ...data,
+    presupuestoAprobado,
+    adicionalesAprobados,
+    descuentos,
+    valorFinalContratado,
+    costosEstimados: data.costosEstimados?.length
+      ? data.costosEstimados
+      : getDefaultCostBudget(valorFinalContratado),
+    movimientosFinancieros: data.movimientosFinancieros ?? [],
     rubrosAvance: data.rubrosAvance?.length ? data.rubrosAvance : initialRubros,
     etapasProduccion: data.etapasProduccion?.length ? data.etapasProduccion : initialProductionStages,
     materialesFaltantes: data.materialesFaltantes ?? [],

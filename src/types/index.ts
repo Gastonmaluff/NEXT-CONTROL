@@ -24,6 +24,55 @@ export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
 export type PaymentMethod = "Efectivo" | "Transferencia" | "Cheque" | "Otro";
 export type InstallationTaskStatus = "Pendiente" | "Completada";
+export type FinancialStatus =
+  | "Saludable"
+  | "Atencion"
+  | "Margen bajo"
+  | "Excedido"
+  | "Pendiente de cobro";
+
+export type CostCategoryName =
+  | "Vidrios"
+  | "Aluminio"
+  | "Accesorios"
+  | "Mano de obra fabrica"
+  | "Mano de obra instalacion"
+  | "Cielorrasos"
+  | "ACM"
+  | "WPC"
+  | "Transporte"
+  | "Equipos y alquileres"
+  | "Otros";
+
+export type CostBudgetItem = {
+  id: string;
+  categoria: CostCategoryName;
+  estimado: number;
+  real: number;
+};
+
+export type FinancialMovementType =
+  | "Anticipo"
+  | "Certificacion"
+  | "Pago recibido"
+  | "Retencion"
+  | "Compra"
+  | "Materia prima"
+  | "Mano de obra"
+  | "Logistica"
+  | "Gasto extraordinario";
+
+export type FinancialMovement = {
+  id: string;
+  tipo: FinancialMovementType;
+  categoria: "Ingreso" | "Egreso" | "Compra";
+  fecha: string;
+  concepto: string;
+  monto: number;
+  metodoPago?: PaymentMethod;
+  proveedor?: string;
+  comprobanteUrl?: string;
+};
 
 export type ProgressItem = {
   id: string;
@@ -58,11 +107,18 @@ export type Obra = {
   fechaInicio: string;
   fechaEntrega: string;
   responsable: string;
+  supervisor?: string;
   estado: WorkStatus;
   saldoPendienteCobro: number;
   rubrosAvance: ProgressItem[];
   etapasProduccion: ProductionStage[];
   materialesFaltantes: MissingMaterial[];
+  presupuestoAprobado?: number;
+  adicionalesAprobados?: number;
+  descuentos?: number;
+  valorFinalContratado?: number;
+  costosEstimados?: CostBudgetItem[];
+  movimientosFinancieros?: FinancialMovement[];
   createdAt: string;
   updatedAt: string;
 };
