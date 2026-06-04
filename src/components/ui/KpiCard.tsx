@@ -20,7 +20,7 @@ export default function KpiCard({ label, value, icon: Icon, tone = "blue" }: Kpi
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-next-muted">{label}</p>
-          <p className="mt-3 break-words text-2xl font-black tracking-normal text-next-text">
+          <p className="mt-3 max-w-full whitespace-nowrap text-[clamp(1rem,1.35vw,1.5rem)] font-black leading-none tracking-normal text-next-text">
             {value}
           </p>
         </div>

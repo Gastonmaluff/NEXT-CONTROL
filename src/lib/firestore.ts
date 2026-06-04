@@ -17,10 +17,17 @@ import type {
   FinancialMovement,
   Obra,
   OportunidadCRM,
-  TareaInstalacion
+  ProgressActivityLog,
+  ProgressMaterialReport,
+  ProgressReport,
+  TareaInstalacion,
+  WorkProgressRubric
 } from "../types";
 import { calculateSaldoPendiente } from "../utils/finance";
 import { getDefaultCostBudget } from "../utils/finances";
+import {
+  calculateRubricProgress
+} from "../utils/progress";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
@@ -34,7 +41,11 @@ const collections = {
   actividades: "actividades",
   cuadrillas: "cuadrillas",
   tareasInstalacion: "tareasInstalacion",
-  movimientosFinancieros: "movimientosFinancieros"
+  movimientosFinancieros: "movimientosFinancieros",
+  rubrosAvanceConfigurados: "rubrosAvanceConfigurados",
+  reportesAvance: "reportesAvance",
+  materialesPendientes: "materialesPendientes",
+  actividadesAvance: "actividadesAvance"
 } as const;
 
 function shouldUseFirebase() {
@@ -102,12 +113,18 @@ async function updateDocument<T extends { id: string }>(
   }
 
   try {
-    await updateDoc(doc(firestoreDb, collections[name], id), data as Record<string, unknown>);
+    await updateDoc(doc(firestoreDb, collections[name], id), stripUndefined(data) as Record<string, unknown>);
     const updated = await getDoc(doc(firestoreDb, collections[name], id));
     return { id: updated.id, ...updated.data() } as T;
   } catch (error) {
     throw withError(error, `No se pudo actualizar ${collections[name]}.`);
   }
+}
+
+function stripUndefined<T extends Record<string, unknown> | object>(data: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
 }
 
 async function deleteDocument<T extends { id: string }>(
@@ -189,6 +206,10 @@ export async function deleteObra(id: string): Promise<void> {
     stored.movimientosFinancieros = stored.movimientosFinancieros.filter(
       (movement) => movement.obraId !== id
     );
+    stored.rubrosAvanceConfigurados = stored.rubrosAvanceConfigurados.filter((rubro) => rubro.obraId !== id);
+    stored.reportesAvance = stored.reportesAvance.filter((report) => report.obraId !== id);
+    stored.materialesPendientes = stored.materialesPendientes.filter((material) => material.obraId !== id);
+    stored.actividadesAvance = stored.actividadesAvance.filter((activity) => activity.obraId !== id);
     saveStoredData(stored);
     return;
   }
@@ -415,6 +436,272 @@ export async function deleteMovement(obraId: string, movementId: string): Promis
   await syncFinancialWorkSaldo(obraId);
 }
 
+export async function getProgressRubricsByWork(obraId: string): Promise<WorkProgressRubric[]> {
+  try {
+    const rubrics = (await getCollection<WorkProgressRubric>("rubrosAvanceConfigurados"))
+      .filter((rubro) => rubro.obraId === obraId)
+      .sort((a, b) => a.orden - b.orden);
+
+    if (rubrics.length) {
+      return rubrics;
+    }
+
+    const obra = await getObraById(obraId);
+    if (!obra) {
+      return [];
+    }
+
+    const created: WorkProgressRubric[] = [];
+    for (const [index, rubro] of obra.rubrosAvance.entries()) {
+      created.push(await createProgressRubric({
+        obraId,
+        nombre: rubro.nombre,
+        unidad: inferProgressUnit(rubro.nombre),
+        cantidadTotalPrevista: 100,
+        pesoOperativo: rubro.peso,
+        modoCalculo: "manual",
+        avanceManualPermitido: true,
+        orden: index + 1
+      }));
+    }
+    return created;
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar los rubros de avance.");
+  }
+}
+
+export async function createProgressRubric(
+  data: Omit<WorkProgressRubric, "id" | "createdAt" | "updatedAt">
+): Promise<WorkProgressRubric> {
+  try {
+    const created = await createDocument<WorkProgressRubric>("rubrosAvanceConfigurados", {
+      ...data,
+      pesoOperativo: Math.max(0, Math.min(100, data.pesoOperativo)),
+      cantidadTotalPrevista: Math.max(0, data.cantidadTotalPrevista),
+      createdAt: now()
+    });
+    await createProgressActivity({
+      obraId: data.obraId,
+      tipo: "configuracion",
+      descripcion: `Se configuro el rubro ${data.nombre}.`,
+      userId: "demo-admin",
+      userName: "Richard",
+      fechaHora: now(),
+      newValue: created
+    });
+    return created;
+  } catch (error) {
+    throw withError(error, "No se pudo crear el rubro de avance.");
+  }
+}
+
+export async function updateProgressRubric(
+  id: string,
+  data: Partial<WorkProgressRubric>
+): Promise<WorkProgressRubric> {
+  try {
+    const updated = await updateDocument<WorkProgressRubric>("rubrosAvanceConfigurados", id, {
+      ...data,
+      pesoOperativo: data.pesoOperativo === undefined ? undefined : Math.max(0, Math.min(100, data.pesoOperativo)),
+      cantidadTotalPrevista: data.cantidadTotalPrevista === undefined ? undefined : Math.max(0, data.cantidadTotalPrevista),
+      updatedAt: now()
+    });
+    await syncWorkProgressCache(updated.obraId);
+    return updated;
+  } catch (error) {
+    throw withError(error, "No se pudo actualizar el rubro de avance.");
+  }
+}
+
+export async function deleteProgressRubric(id: string): Promise<void> {
+  try {
+    const existing = (await getCollection<WorkProgressRubric>("rubrosAvanceConfigurados")).find((item) => item.id === id);
+    await deleteDocument<WorkProgressRubric>("rubrosAvanceConfigurados", id);
+    if (existing) {
+      await syncWorkProgressCache(existing.obraId);
+    }
+  } catch (error) {
+    throw withError(error, "No se pudo eliminar el rubro de avance.");
+  }
+}
+
+export async function getProgressReportsByWork(obraId: string): Promise<ProgressReport[]> {
+  try {
+    return (await getCollection<ProgressReport>("reportesAvance"))
+      .filter((report) => report.obraId === obraId)
+      .sort((a, b) => `${b.fecha}T${b.hora}`.localeCompare(`${a.fecha}T${a.hora}`));
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar los reportes de avance.");
+  }
+}
+
+export async function createProgressReport(
+  data: Omit<ProgressReport, "id" | "createdAt" | "updatedAt">
+): Promise<ProgressReport> {
+  try {
+    const report = await createDocument<ProgressReport>("reportesAvance", {
+      ...data,
+      createdAt: now()
+    });
+
+    for (const material of data.materialsReported ?? []) {
+      const { id: _discardedId, ...materialData } = material;
+      await createPendingMaterial({
+        ...materialData,
+        obraId: data.obraId,
+        reportadoPor: data.userName,
+        fechaReporte: data.fecha
+      });
+    }
+
+    await createProgressActivity({
+      obraId: data.obraId,
+      tipo: "avance",
+      descripcion: `Se registro un parte de avance con ${data.entries.length} rubro(s).`,
+      userId: data.userId,
+      userName: data.userName,
+      fechaHora: `${data.fecha}T${data.hora}`,
+      newValue: data.entries,
+      reportId: report.id
+    });
+
+    await createActividad({
+      obraId: data.obraId,
+      tipo: "avance",
+      descripcion: `Se registro un parte de avance por ${data.userName}.`,
+      usuario: data.userName,
+      fecha: now()
+    });
+
+    await syncWorkProgressCache(data.obraId);
+    return report;
+  } catch (error) {
+    throw withError(error, "No se pudo crear el parte de avance.");
+  }
+}
+
+export async function updateProgressReport(
+  id: string,
+  data: Partial<ProgressReport>
+): Promise<ProgressReport> {
+  try {
+    const updated = await updateDocument<ProgressReport>("reportesAvance", id, {
+      ...data,
+      updatedAt: now()
+    });
+    await syncWorkProgressCache(updated.obraId);
+    return updated;
+  } catch (error) {
+    throw withError(error, "No se pudo actualizar el parte de avance.");
+  }
+}
+
+export async function deleteProgressReport(id: string): Promise<void> {
+  try {
+    const existing = (await getCollection<ProgressReport>("reportesAvance")).find((item) => item.id === id);
+    await deleteDocument<ProgressReport>("reportesAvance", id);
+    if (existing) {
+      await syncWorkProgressCache(existing.obraId);
+    }
+  } catch (error) {
+    throw withError(error, "No se pudo eliminar el parte de avance.");
+  }
+}
+
+export async function getPendingMaterialsByWork(obraId: string): Promise<ProgressMaterialReport[]> {
+  try {
+    return (await getCollection<ProgressMaterialReport>("materialesPendientes"))
+      .filter((material) => material.obraId === obraId)
+      .sort((a, b) => b.fechaReporte.localeCompare(a.fechaReporte));
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar los materiales pendientes.");
+  }
+}
+
+export async function createPendingMaterial(
+  data: Omit<ProgressMaterialReport, "id">
+): Promise<ProgressMaterialReport> {
+  try {
+    const material = await createDocument<ProgressMaterialReport>("materialesPendientes", data);
+    const obra = await getObraById(data.obraId);
+    if (obra) {
+      await updateObra(data.obraId, {
+        materialesFaltantes: [
+          {
+            id: material.id,
+            material: material.material,
+            cantidad: material.cantidad,
+            unidad: material.unidad,
+            observacion: material.observacion ?? "",
+            estado: material.estado === "Resuelto" ? "Resuelto" : "Pendiente",
+            createdAt: material.fechaReporte
+          },
+          ...obra.materialesFaltantes.filter((item) => item.id !== material.id)
+        ]
+      });
+    }
+    await createProgressActivity({
+      obraId: data.obraId,
+      tipo: "materiales",
+      descripcion: `Material pendiente reportado: ${data.material}.`,
+      userId: "demo-user",
+      userName: data.reportadoPor,
+      fechaHora: now(),
+      newValue: material
+    });
+    return material;
+  } catch (error) {
+    throw withError(error, "No se pudo crear el material pendiente.");
+  }
+}
+
+export async function updatePendingMaterial(
+  id: string,
+  data: Partial<ProgressMaterialReport>
+): Promise<ProgressMaterialReport> {
+  try {
+    const updated = await updateDocument<ProgressMaterialReport>("materialesPendientes", id, data);
+    const obra = await getObraById(updated.obraId);
+    if (obra) {
+      await updateObra(updated.obraId, {
+        materialesFaltantes: obra.materialesFaltantes.map((item) =>
+          item.id === id
+            ? { ...item, estado: updated.estado === "Resuelto" ? "Resuelto" : "Pendiente" }
+            : item
+        )
+      });
+    }
+    await createProgressActivity({
+      obraId: updated.obraId,
+      tipo: "materiales",
+      descripcion: `Material ${updated.material} cambio a ${updated.estado}.`,
+      userId: "demo-user",
+      userName: updated.reportadoPor,
+      fechaHora: now(),
+      newValue: updated
+    });
+    return updated;
+  } catch (error) {
+    throw withError(error, "No se pudo actualizar el material pendiente.");
+  }
+}
+
+export async function getProgressActivityByWork(obraId: string): Promise<ProgressActivityLog[]> {
+  try {
+    return (await getCollection<ProgressActivityLog>("actividadesAvance"))
+      .filter((activity) => activity.obraId === obraId)
+      .sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
+  } catch (error) {
+    throw withError(error, "No se pudo cargar la actividad de avance.");
+  }
+}
+
+export async function createProgressActivity(
+  data: Omit<ProgressActivityLog, "id">
+): Promise<ProgressActivityLog> {
+  return createDocument<ProgressActivityLog>("actividadesAvance", data);
+}
+
 async function syncFinancialWorkSaldo(obraId: string): Promise<void> {
   const obra = await getObraById(obraId);
   if (!obra) {
@@ -425,6 +712,34 @@ async function syncFinancialWorkSaldo(obraId: string): Promise<void> {
   await updateObra(obraId, {
     saldoPendienteCobro: calculateSaldoPendiente(obra, movements)
   });
+}
+
+async function syncWorkProgressCache(obraId: string): Promise<void> {
+  const [rubrics, reports] = await Promise.all([
+    getProgressRubricsByWork(obraId),
+    getProgressReportsByWork(obraId)
+  ]);
+
+  if (!rubrics.length) {
+    return;
+  }
+
+  await updateObra(obraId, {
+    progressConfigured: true,
+    rubrosAvance: rubrics.map((rubro) => ({
+      id: rubro.id,
+      nombre: rubro.nombre,
+      peso: rubro.pesoOperativo,
+      avance: calculateRubricProgress(rubro, reports)
+    }))
+  });
+}
+
+function inferProgressUnit(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("vidrio") || normalized.includes("sellado")) return "m2";
+  if (normalized.includes("perfil")) return "metros";
+  return "unidades";
 }
 
 type WorkStatusLike = Obra["estado"];

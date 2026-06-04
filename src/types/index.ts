@@ -1,4 +1,12 @@
-export type UserRole = "admin" | "administracion" | "produccion" | "instalador";
+export type UserRole =
+  | "admin"
+  | "gerencia"
+  | "supervisor"
+  | "fiscalizador"
+  | "encargado"
+  | "administracion"
+  | "produccion"
+  | "instalador";
 
 export type WorkStatus =
   | "Prospecto"
@@ -22,6 +30,8 @@ export type PipelineStatus =
 
 export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
+export type ProgressMaterialStatus = "Pendiente" | "Solicitado" | "Recibido" | "Resuelto";
+export type ProgressCalculationMode = "cantidad" | "manual";
 export type PaymentMethod = "Efectivo" | "Transferencia" | "Cheque" | "Otro";
 export type FinancialPaymentMethod = PaymentMethod | "Credito";
 export type InstallationTaskStatus = "Pendiente" | "Completada";
@@ -82,6 +92,81 @@ export type ProgressItem = {
   avance: number;
 };
 
+export type WorkProgressRubric = {
+  id: string;
+  obraId: string;
+  nombre: string;
+  unidad: string;
+  cantidadTotalPrevista: number;
+  pesoOperativo: number;
+  modoCalculo: ProgressCalculationMode;
+  avanceManualPermitido: boolean;
+  orden: number;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type ProgressReportEntry = {
+  id: string;
+  rubroId: string;
+  rubroNombre: string;
+  cantidadAnterior?: number;
+  cantidadEjecutadaHoy?: number;
+  cantidadAcumuladaNueva?: number;
+  porcentajeAnterior: number;
+  porcentajeNuevo: number;
+  modo: ProgressCalculationMode;
+  justificacionManual?: string;
+  observacion?: string;
+};
+
+export type ProgressMaterialReport = {
+  id: string;
+  obraId: string;
+  material: string;
+  cantidad: number;
+  unidad: string;
+  observacion?: string;
+  estado: ProgressMaterialStatus;
+  reportadoPor: string;
+  fechaReporte: string;
+  urgencia?: "Baja" | "Media" | "Alta";
+};
+
+export type ProgressReport = {
+  id: string;
+  obraId: string;
+  fecha: string;
+  hora: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  cuadrillaId?: string;
+  cuadrillaNombre?: string;
+  seTrabajoHoy: boolean;
+  observacionGeneral?: string;
+  incidentes?: string;
+  proximoTrabajo?: string;
+  photos?: string[];
+  entries: ProgressReportEntry[];
+  materialsReported?: ProgressMaterialReport[];
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type ProgressActivityLog = {
+  id: string;
+  obraId: string;
+  tipo: string;
+  descripcion: string;
+  userId: string;
+  userName: string;
+  fechaHora: string;
+  previousValue?: unknown;
+  newValue?: unknown;
+  reportId?: string;
+};
+
 export type ProductionStage = {
   id: string;
   nombre: string;
@@ -126,6 +211,8 @@ export type Obra = {
   observacionInicial?: string;
   costosEstimados?: CostBudgetItem[];
   movimientosFinancieros?: FinancialMovement[];
+  assignedUserIds?: string[];
+  progressConfigured?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -193,6 +280,10 @@ export type StoredData = {
   cuadrillas: Cuadrilla[];
   tareasInstalacion: TareaInstalacion[];
   movimientosFinancieros: FinancialMovement[];
+  rubrosAvanceConfigurados: WorkProgressRubric[];
+  reportesAvance: ProgressReport[];
+  materialesPendientes: ProgressMaterialReport[];
+  actividadesAvance: ProgressActivityLog[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

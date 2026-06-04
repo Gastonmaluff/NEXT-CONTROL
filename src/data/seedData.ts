@@ -406,5 +406,378 @@ export const seedData: StoredData = {
       tercero: "Cuadrilla A",
       createdAt: now
     }
+  ],
+  rubrosAvanceConfigurados: [
+    {
+      id: "prog-pal-carp",
+      obraId: "obra-palmanova",
+      nombre: "Carpinteria instalada",
+      unidad: "unidades",
+      cantidadTotalPrevista: 250,
+      pesoOperativo: 35,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 1,
+      createdAt: now
+    },
+    {
+      id: "prog-pal-vid",
+      obraId: "obra-palmanova",
+      nombre: "Vidrios instalados",
+      unidad: "m2",
+      cantidadTotalPrevista: 500,
+      pesoOperativo: 40,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 2,
+      createdAt: now
+    },
+    {
+      id: "prog-pal-contra",
+      obraId: "obra-palmanova",
+      nombre: "Contramarcos",
+      unidad: "unidades",
+      cantidadTotalPrevista: 180,
+      pesoOperativo: 15,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 3,
+      createdAt: now
+    },
+    {
+      id: "prog-pal-sell",
+      obraId: "obra-palmanova",
+      nombre: "Sellado final",
+      unidad: "m2",
+      cantidadTotalPrevista: 500,
+      pesoOperativo: 10,
+      modoCalculo: "manual",
+      avanceManualPermitido: true,
+      orden: 4,
+      createdAt: now
+    },
+    {
+      id: "prog-aur-carp",
+      obraId: "obra-aurora",
+      nombre: "Carpinteria instalada",
+      unidad: "unidades",
+      cantidadTotalPrevista: 180,
+      pesoOperativo: 40,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 1,
+      createdAt: now
+    },
+    {
+      id: "prog-aur-vid",
+      obraId: "obra-aurora",
+      nombre: "Vidrios instalados",
+      unidad: "m2",
+      cantidadTotalPrevista: 350,
+      pesoOperativo: 35,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 2,
+      createdAt: now
+    },
+    {
+      id: "prog-aur-contra",
+      obraId: "obra-aurora",
+      nombre: "Contramarcos",
+      unidad: "unidades",
+      cantidadTotalPrevista: 120,
+      pesoOperativo: 15,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 3,
+      createdAt: now
+    },
+    {
+      id: "prog-aur-sell",
+      obraId: "obra-aurora",
+      nombre: "Sellado final",
+      unidad: "m2",
+      cantidadTotalPrevista: 350,
+      pesoOperativo: 10,
+      modoCalculo: "manual",
+      avanceManualPermitido: true,
+      orden: 4,
+      createdAt: now
+    },
+    {
+      id: "prog-kat-carp",
+      obraId: "obra-katuete",
+      nombre: "Carpinteria instalada",
+      unidad: "unidades",
+      cantidadTotalPrevista: 220,
+      pesoOperativo: 45,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 1,
+      createdAt: now
+    },
+    {
+      id: "prog-kat-vid",
+      obraId: "obra-katuete",
+      nombre: "Vidrios instalados",
+      unidad: "m2",
+      cantidadTotalPrevista: 420,
+      pesoOperativo: 30,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 2,
+      createdAt: now
+    },
+    {
+      id: "prog-kat-contra",
+      obraId: "obra-katuete",
+      nombre: "Contramarcos",
+      unidad: "unidades",
+      cantidadTotalPrevista: 150,
+      pesoOperativo: 15,
+      modoCalculo: "cantidad",
+      avanceManualPermitido: false,
+      orden: 3,
+      createdAt: now
+    },
+    {
+      id: "prog-kat-sell",
+      obraId: "obra-katuete",
+      nombre: "Sellado final",
+      unidad: "m2",
+      cantidadTotalPrevista: 420,
+      pesoOperativo: 10,
+      modoCalculo: "manual",
+      avanceManualPermitido: true,
+      orden: 4,
+      createdAt: now
+    }
+  ],
+  reportesAvance: [
+    {
+      id: "rep-pal-1",
+      obraId: "obra-palmanova",
+      fecha: "2026-05-28",
+      hora: "16:20",
+      userId: "sup-hugo",
+      userName: "Hugo Franco",
+      userRole: "supervisor",
+      cuadrillaId: "cuad-b",
+      cuadrillaNombre: "Cuadrilla B",
+      seTrabajoHoy: true,
+      observacionGeneral: "Se completo carpinteria y se avanzo con DVH de fachada norte.",
+      proximoTrabajo: "Completar vidrios restantes y revisar sellado.",
+      photos: [],
+      entries: [
+        {
+          id: "entry-pal-carp-1",
+          rubroId: "prog-pal-carp",
+          rubroNombre: "Carpinteria instalada",
+          cantidadAnterior: 210,
+          cantidadEjecutadaHoy: 40,
+          cantidadAcumuladaNueva: 250,
+          porcentajeAnterior: 84,
+          porcentajeNuevo: 100,
+          modo: "cantidad",
+          observacion: "Carpinteria instalada completa."
+        },
+        {
+          id: "entry-pal-vid-1",
+          rubroId: "prog-pal-vid",
+          rubroNombre: "Vidrios instalados",
+          cantidadAnterior: 360,
+          cantidadEjecutadaHoy: 40,
+          cantidadAcumuladaNueva: 400,
+          porcentajeAnterior: 72,
+          porcentajeNuevo: 80,
+          modo: "cantidad",
+          observacion: "DVH fachada norte."
+        }
+      ],
+      createdAt: "2026-05-28T16:20:00.000Z"
+    },
+    {
+      id: "rep-pal-2",
+      obraId: "obra-palmanova",
+      fecha: "2026-06-02",
+      hora: "11:32",
+      userId: "sup-hugo",
+      userName: "Hugo Franco",
+      userRole: "supervisor",
+      cuadrillaId: "cuad-b",
+      cuadrillaNombre: "Cuadrilla B",
+      seTrabajoHoy: true,
+      observacionGeneral: "Contramarcos sector B y sellado inicial controlado.",
+      incidentes: "Faltan cerraduras multipunto para cuatro aberturas.",
+      proximoTrabajo: "Recibir cerraduras y continuar sellado.",
+      photos: [],
+      entries: [
+        {
+          id: "entry-pal-contra-1",
+          rubroId: "prog-pal-contra",
+          rubroNombre: "Contramarcos",
+          cantidadAnterior: 70,
+          cantidadEjecutadaHoy: 20,
+          cantidadAcumuladaNueva: 90,
+          porcentajeAnterior: 39,
+          porcentajeNuevo: 50,
+          modo: "cantidad",
+          observacion: "Sector B."
+        },
+        {
+          id: "entry-pal-sell-1",
+          rubroId: "prog-pal-sell",
+          rubroNombre: "Sellado final",
+          porcentajeAnterior: 10,
+          porcentajeNuevo: 20,
+          modo: "manual",
+          justificacionManual: "Fachada norte iniciada y revisada por fiscalizacion.",
+          observacion: "Sellado inicial."
+        }
+      ],
+      materialsReported: [
+        {
+          id: "matrep-pal-dvh",
+          obraId: "obra-palmanova",
+          material: "DVH 8+12+8",
+          cantidad: 32,
+          unidad: "m2",
+          observacion: "Fachada norte",
+          estado: "Pendiente",
+          reportadoPor: "Hugo Franco",
+          fechaReporte: "2026-06-02",
+          urgencia: "Alta"
+        }
+      ],
+      createdAt: "2026-06-02T11:32:00.000Z"
+    },
+    {
+      id: "rep-aur-1",
+      obraId: "obra-aurora",
+      fecha: "2026-06-01",
+      hora: "17:05",
+      userId: "sup-andrea",
+      userName: "Andrea Ruiz",
+      userRole: "fiscalizador",
+      cuadrillaId: "cuad-a",
+      cuadrillaNombre: "Cuadrilla A",
+      seTrabajoHoy: true,
+      observacionGeneral: "Avance parcial con atraso por perfiles faltantes.",
+      entries: [
+        {
+          id: "entry-aur-carp-1",
+          rubroId: "prog-aur-carp",
+          rubroNombre: "Carpinteria instalada",
+          cantidadAnterior: 150,
+          cantidadEjecutadaHoy: 12,
+          cantidadAcumuladaNueva: 162,
+          porcentajeAnterior: 83,
+          porcentajeNuevo: 90,
+          modo: "cantidad"
+        },
+        {
+          id: "entry-aur-vid-1",
+          rubroId: "prog-aur-vid",
+          rubroNombre: "Vidrios instalados",
+          cantidadAnterior: 175,
+          cantidadEjecutadaHoy: 35,
+          cantidadAcumuladaNueva: 210,
+          porcentajeAnterior: 50,
+          porcentajeNuevo: 60,
+          modo: "cantidad"
+        },
+        {
+          id: "entry-aur-contra-1",
+          rubroId: "prog-aur-contra",
+          rubroNombre: "Contramarcos",
+          cantidadAnterior: 72,
+          cantidadEjecutadaHoy: 12,
+          cantidadAcumuladaNueva: 84,
+          porcentajeAnterior: 60,
+          porcentajeNuevo: 70,
+          modo: "cantidad"
+        },
+        {
+          id: "entry-aur-sell-1",
+          rubroId: "prog-aur-sell",
+          rubroNombre: "Sellado final",
+          porcentajeAnterior: 15,
+          porcentajeNuevo: 25,
+          modo: "manual",
+          justificacionManual: "Sector A terminado, sector B pendiente."
+        }
+      ],
+      createdAt: "2026-06-01T17:05:00.000Z"
+    }
+  ],
+  materialesPendientes: [
+    {
+      id: "matrep-pal-dvh",
+      obraId: "obra-palmanova",
+      material: "DVH 8+12+8",
+      cantidad: 32,
+      unidad: "m2",
+      observacion: "Fachada norte",
+      estado: "Pendiente",
+      reportadoPor: "Hugo Franco",
+      fechaReporte: "2026-06-02",
+      urgencia: "Alta"
+    },
+    {
+      id: "matrep-pal-cerr",
+      obraId: "obra-palmanova",
+      material: "Cerraduras multipunto",
+      cantidad: 4,
+      unidad: "unidades",
+      observacion: "Sector B",
+      estado: "Solicitado",
+      reportadoPor: "Hugo Franco",
+      fechaReporte: "2026-06-02",
+      urgencia: "Media"
+    },
+    {
+      id: "matrep-aur-perfil",
+      obraId: "obra-aurora",
+      material: "Perfil linea A30",
+      cantidad: 120,
+      unidad: "metros",
+      observacion: "Reposicion para remates",
+      estado: "Pendiente",
+      reportadoPor: "Andrea Ruiz",
+      fechaReporte: "2026-06-01",
+      urgencia: "Alta"
+    }
+  ],
+  actividadesAvance: [
+    {
+      id: "actprog-pal-1",
+      obraId: "obra-palmanova",
+      tipo: "avance",
+      descripcion: "Hugo Franco registro avance de vidrios y carpinteria.",
+      userId: "sup-hugo",
+      userName: "Hugo Franco",
+      fechaHora: "2026-05-28T16:20:00.000Z",
+      reportId: "rep-pal-1"
+    },
+    {
+      id: "actprog-pal-2",
+      obraId: "obra-palmanova",
+      tipo: "materiales",
+      descripcion: "Material pendiente reportado: DVH 8+12+8.",
+      userId: "sup-hugo",
+      userName: "Hugo Franco",
+      fechaHora: "2026-06-02T11:32:00.000Z",
+      reportId: "rep-pal-2"
+    },
+    {
+      id: "actprog-aur-1",
+      obraId: "obra-aurora",
+      tipo: "avance",
+      descripcion: "Andrea Ruiz registro avance parcial con alerta por atraso.",
+      userId: "sup-andrea",
+      userName: "Andrea Ruiz",
+      fechaHora: "2026-06-01T17:05:00.000Z",
+      reportId: "rep-aur-1"
+    }
   ]
 };

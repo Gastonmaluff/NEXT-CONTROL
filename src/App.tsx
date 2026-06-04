@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
 import SettingsPage from "./pages/SettingsPage";
+import SupervisorPage from "./pages/SupervisorPage";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -64,6 +65,8 @@ export default function App() {
         <Route path="/avance-obras" element={<ProjectControlPage />} />
         <Route path="/avance-obras/:obraId" element={<ProjectControlPage />} />
         <Route path="/obras" element={<Navigate to="/avance-obras" replace />} />
+        <Route path="/supervisor" element={<SupervisorPage />} />
+        <Route path="/campo" element={<SupervisorPage />} />
         <Route path="/finanzas-obras" element={<FinancesPage />} />
         <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
         <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
