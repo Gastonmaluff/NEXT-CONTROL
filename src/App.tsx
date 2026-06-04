@@ -22,7 +22,7 @@ export default function App() {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, loading, profile } = useAuth();
+  const { authUser, isAuthenticated, loading, logout, profile } = useAuth();
 
   if (loading) {
     return (
@@ -34,12 +34,16 @@ function AppRoutes() {
     );
   }
 
+  const authenticatedWithoutProfile = Boolean(authUser && !profile);
+
   return (
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/control" replace /> : <LoginPage />} />
 
       {!isAuthenticated ? (
         <Route path="*" element={<Navigate to="/login" replace />} />
+      ) : authenticatedWithoutProfile ? (
+        <Route path="*" element={<MissingProfilePage onLogout={logout} />} />
       ) : (
         <>
           <Route path="/instalaciones/mobile" element={<MobileInstallationsView />} />
@@ -73,5 +77,26 @@ function AppRoutes() {
         </>
       )}
     </Routes>
+  );
+}
+
+function MissingProfilePage({ onLogout }: { onLogout: () => Promise<void> }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-next-bg px-4">
+      <section className="w-full max-w-lg rounded-lg border border-orange-100 bg-white p-6 text-center shadow-soft">
+        <p className="text-sm font-black uppercase text-next-orange">Perfil pendiente</p>
+        <h1 className="mt-2 text-2xl font-black text-next-text">Cuenta sin rol asignado</h1>
+        <p className="mt-3 text-sm font-semibold leading-6 text-next-muted">
+          Tu cuenta existe, pero todavia no tiene un perfil y rol asignados. Contacta al administrador.
+        </p>
+        <button
+          className="mt-5 h-11 rounded-md bg-next-blue px-5 text-sm font-black text-white transition hover:bg-next-navy"
+          type="button"
+          onClick={() => void onLogout()}
+        >
+          Cerrar sesion
+        </button>
+      </section>
+    </main>
   );
 }

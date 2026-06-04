@@ -2,113 +2,140 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function profile() {
+    function userProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function role() {
-      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? profile().role
+    function hasUserProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return hasUserProfile()
+        ? userProfile().role
         : null;
     }
 
-    function active() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && profile().active == true;
+    function isActiveUser() {
+      return hasUserProfile() && userProfile().active == true;
     }
 
-    function admin() {
-      return active() && role() == "admin";
+    function isAdmin() {
+      return isActiveUser() && userRole() == "admin";
     }
 
-    function gerencia() {
-      return active() && (role() == "admin" || role() == "gerencia");
+    function isManagement() {
+      return isActiveUser() && userRole() in ["admin", "gerencia"];
     }
 
-    function administracion() {
-      return active() && (role() in ["admin", "gerencia", "administracion"]);
+    function canReadFinance() {
+      return isActiveUser() && userRole() in ["admin", "gerencia", "administracion"];
     }
 
-    function operativo() {
-      return active() && (role() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado"]);
+    function canWriteOperational() {
+      return isActiveUser()
+        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado"];
     }
 
-    function assignedToWork(workId) {
-      return active()
-        && (
-          role() in ["admin", "gerencia", "administracion"]
-          || workId in profile().assignedWorkIds
-        );
+    function isAssignedToWork(workId) {
+      return isActiveUser()
+        && userProfile().assignedWorkIds is list
+        && workId in userProfile().assignedWorkIds;
+    }
+
+    function canReadWork(workId) {
+      return isManagement() || canReadFinance() || isAssignedToWork(workId);
+    }
+
+    function canWriteWork(workId) {
+      return isManagement() || canReadFinance() || isAssignedToWork(workId);
+    }
+
+    function canReadOperationalRecord() {
+      return isManagement() || isAssignedToWork(resource.data.obraId);
+    }
+
+    function canCreateOperationalRecord() {
+      return isManagement() || isAssignedToWork(request.resource.data.obraId);
     }
 
     match /users/{uid} {
-      allow read: if active() && (request.auth.uid == uid || gerencia());
-      allow create, update, delete: if admin();
+      allow get: if (isSignedIn() && request.auth.uid == uid) || isManagement();
+      allow list: if isManagement();
+      allow create, update, delete: if isAdmin();
     }
 
     match /obras/{obraId} {
-      allow read: if assignedToWork(obraId);
-      allow create: if administracion();
-      allow update: if assignedToWork(obraId) && active();
-      allow delete: if gerencia();
+      allow read: if canReadWork(obraId);
+      allow create: if canReadFinance();
+      allow update: if canWriteWork(obraId);
+      allow delete: if isManagement();
     }
 
     match /rubrosAvance/{id} {
-      allow read: if active() && assignedToWork(resource.data.obraId);
-      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
-      allow update, delete: if operativo() && assignedToWork(resource.data.obraId);
+      allow read: if canReadOperationalRecord();
+      allow create: if canWriteOperational() && canCreateOperationalRecord();
+      allow update, delete: if canWriteOperational() && canReadOperationalRecord();
     }
 
     match /reportesAvance/{id} {
-      allow read: if active() && assignedToWork(resource.data.obraId);
-      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
-      allow update, delete: if gerencia();
+      allow read: if canReadOperationalRecord();
+      allow create: if canWriteOperational() && canCreateOperationalRecord();
+      allow update, delete: if isManagement();
     }
 
     match /actividadesAvance/{id} {
-      allow read: if active() && assignedToWork(resource.data.obraId);
-      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
-      allow update, delete: if gerencia();
+      allow read: if canReadOperationalRecord();
+      allow create: if canWriteOperational() && canCreateOperationalRecord();
+      allow update, delete: if isManagement();
     }
 
     match /materialesPendientes/{id} {
-      allow read: if active() && assignedToWork(resource.data.obraId);
-      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
-      allow update: if active() && assignedToWork(resource.data.obraId);
-      allow delete: if gerencia();
+      allow read: if canReadOperationalRecord();
+      allow create: if canWriteOperational() && canCreateOperationalRecord();
+      allow update: if canWriteOperational() && canReadOperationalRecord();
+      allow delete: if isManagement();
     }
 
     match /movimientosFinancieros/{id} {
-      allow read, write: if administracion();
+      allow read, write: if canReadFinance();
     }
 
     match /cobros/{id} {
-      allow read, write: if administracion();
+      allow read, write: if canReadFinance();
     }
 
     match /oportunidades/{id} {
-      allow read, write: if administracion();
+      allow read, write: if canReadFinance();
     }
 
     match /cuadrillas/{id} {
-      allow read: if active();
-      allow write: if active() && (role() in ["admin", "gerencia", "supervisor", "encargado", "instalador"]);
+      allow read: if isActiveUser();
+      allow write: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "supervisor", "encargado", "instalador"];
     }
 
     match /tareasInstalacion/{id} {
-      allow read: if active();
-      allow write: if active() && (role() in ["admin", "gerencia", "supervisor", "encargado", "instalador"]);
+      allow read: if isActiveUser();
+      allow write: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "supervisor", "encargado", "instalador"];
+    }
+
+    match /jornadasInstalacion/{id} {
+      allow read: if isActiveUser();
+      allow write: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "supervisor", "encargado", "instalador"];
     }
 
     match /actividades/{id} {
-      allow read: if active() && assignedToWork(resource.data.obraId);
-      allow create: if active() && assignedToWork(request.resource.data.obraId);
-      allow update, delete: if gerencia();
+      allow read: if canReadOperationalRecord();
+      allow create: if isActiveUser() && canCreateOperationalRecord();
+      allow update, delete: if isManagement();
     }
 
     match /{document=**} {

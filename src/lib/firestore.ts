@@ -5,8 +5,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   setDoc,
   updateDoc,
+  where,
   writeBatch
 } from "firebase/firestore";
 import { initialProductionStages, initialRubros, seedData } from "../data/seedData";
@@ -29,6 +31,8 @@ import {
   calculateRubricProgress
 } from "../utils/progress";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
+import { getCurrentUserProfile } from "./auth";
+import { canManageFinances, canViewAllWorks } from "./roles";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
 type ObraInput = Omit<Obra, "id" | "createdAt" | "updatedAt"> &
@@ -58,7 +62,30 @@ function now() {
 }
 
 function withError(error: unknown, fallback: string): Error {
+  console.error(fallback, error);
+
+  if (isPermissionDenied(error)) {
+    return new Error("No tenes permisos para consultar esta informacion. Verifica que tu usuario tenga un rol activo.");
+  }
+
   return new Error(error instanceof Error ? error.message : fallback);
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  const candidate = error as { code?: string; message?: string };
+  return candidate.code === "permission-denied"
+    || candidate.message?.toLowerCase().includes("missing or insufficient permissions") === true;
+}
+
+async function getActiveProfile() {
+  const profile = await getCurrentUserProfile();
+  if (!profile) {
+    throw new Error("Tu cuenta existe, pero todavia no tiene un perfil y rol asignados. Contacta al administrador.");
+  }
+  if (!profile.active) {
+    throw new Error("Tu usuario esta inactivo. Contacta al administrador.");
+  }
+  return profile;
 }
 
 async function getCollection<T extends { id: string }>(name: keyof typeof collections): Promise<T[]> {
@@ -67,10 +94,47 @@ async function getCollection<T extends { id: string }>(name: keyof typeof collec
   }
 
   try {
-    const snapshot = await getDocs(collection(firestoreDb, collections[name]));
+    const db = firestoreDb;
+    if (name === "obras") {
+      const profile = await getActiveProfile();
+      if (!canViewAllWorks(profile.role)) {
+        const ids = profile.assignedWorkIds ?? [];
+        if (!ids.length) return [];
+
+        const docs = await Promise.all(
+          ids.map((id) => getDoc(doc(db, collections.obras, id)))
+        );
+        return docs
+          .filter((item) => item.exists())
+          .map((item) => ({ id: item.id, ...item.data() }) as T);
+      }
+    }
+
+    const snapshot = await getDocs(collection(db, collections[name]));
     return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as T);
   } catch (error) {
     throw withError(error, `No se pudo leer ${collections[name]}.`);
+  }
+}
+
+async function getCollectionByWork<T extends { id: string }>(
+  name: keyof typeof collections,
+  obraId: string
+): Promise<T[]> {
+  if (!shouldUseFirebase() || !firestoreDb) {
+    return (getStoredData()[name] as unknown as T[]).filter((item) => {
+      const record = item as unknown as { obraId?: string };
+      return record.obraId === obraId;
+    });
+  }
+
+  try {
+    const snapshot = await getDocs(
+      query(collection(firestoreDb, collections[name]), where("obraId", "==", obraId))
+    );
+    return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as T);
+  } catch (error) {
+    throw withError(error, `No se pudo leer ${collections[name]} para la obra ${obraId}.`);
   }
 }
 
@@ -280,7 +344,14 @@ export async function convertirOportunidadEnObra(id: string): Promise<Obra> {
 }
 
 export async function getCobrosByObra(obraId: string): Promise<Cobro[]> {
-  return (await getCollection<Cobro>("cobros")).filter((cobro) => cobro.obraId === obraId);
+  if (shouldUseFirebase()) {
+    const profile = await getActiveProfile();
+    if (!canManageFinances(profile.role)) {
+      return [];
+    }
+  }
+
+  return getCollectionByWork<Cobro>("cobros", obraId);
 }
 
 export async function createCobro(data: Omit<Cobro, "id" | "createdAt">): Promise<Cobro> {
@@ -311,8 +382,7 @@ export async function deleteCobro(id: string): Promise<void> {
 }
 
 export async function getActividadesByObra(obraId: string): Promise<Actividad[]> {
-  return (await getCollection<Actividad>("actividades"))
-    .filter((actividad) => actividad.obraId === obraId)
+  return (await getCollectionByWork<Actividad>("actividades", obraId))
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
@@ -332,9 +402,7 @@ export async function updateCuadrilla(
 }
 
 export async function getTareasByObra(obraId: string): Promise<TareaInstalacion[]> {
-  return (await getCollection<TareaInstalacion>("tareasInstalacion")).filter(
-    (tarea) => tarea.obraId === obraId
-  );
+  return getCollectionByWork<TareaInstalacion>("tareasInstalacion", obraId);
 }
 
 export async function updateTareaInstalacion(
@@ -401,8 +469,7 @@ export async function deleteFinancialWork(id: string): Promise<void> {
 }
 
 export async function getMovementsByWork(obraId: string): Promise<FinancialMovement[]> {
-  return (await getCollection<FinancialMovement>("movimientosFinancieros"))
-    .filter((movement) => movement.obraId === obraId)
+  return (await getCollectionByWork<FinancialMovement>("movimientosFinancieros", obraId))
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
@@ -439,8 +506,7 @@ export async function deleteMovement(obraId: string, movementId: string): Promis
 
 export async function getProgressRubricsByWork(obraId: string): Promise<WorkProgressRubric[]> {
   try {
-    const rubrics = (await getCollection<WorkProgressRubric>("rubrosAvanceConfigurados"))
-      .filter((rubro) => rubro.obraId === obraId)
+    const rubrics = (await getCollectionByWork<WorkProgressRubric>("rubrosAvanceConfigurados", obraId))
       .sort((a, b) => a.orden - b.orden);
 
     if (rubrics.length) {
@@ -528,8 +594,7 @@ export async function deleteProgressRubric(id: string): Promise<void> {
 
 export async function getProgressReportsByWork(obraId: string): Promise<ProgressReport[]> {
   try {
-    return (await getCollection<ProgressReport>("reportesAvance"))
-      .filter((report) => report.obraId === obraId)
+    return (await getCollectionByWork<ProgressReport>("reportesAvance", obraId))
       .sort((a, b) => `${b.fecha}T${b.hora}`.localeCompare(`${a.fecha}T${a.hora}`));
   } catch (error) {
     throw withError(error, "No se pudieron cargar los reportes de avance.");
@@ -611,8 +676,7 @@ export async function deleteProgressReport(id: string): Promise<void> {
 
 export async function getPendingMaterialsByWork(obraId: string): Promise<ProgressMaterialReport[]> {
   try {
-    return (await getCollection<ProgressMaterialReport>("materialesPendientes"))
-      .filter((material) => material.obraId === obraId)
+    return (await getCollectionByWork<ProgressMaterialReport>("materialesPendientes", obraId))
       .sort((a, b) => b.fechaReporte.localeCompare(a.fechaReporte));
   } catch (error) {
     throw withError(error, "No se pudieron cargar los materiales pendientes.");
@@ -689,8 +753,7 @@ export async function updatePendingMaterial(
 
 export async function getProgressActivityByWork(obraId: string): Promise<ProgressActivityLog[]> {
   try {
-    return (await getCollection<ProgressActivityLog>("actividadesAvance"))
-      .filter((activity) => activity.obraId === obraId)
+    return (await getCollectionByWork<ProgressActivityLog>("actividadesAvance", obraId))
       .sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
   } catch (error) {
     throw withError(error, "No se pudo cargar la actividad de avance.");

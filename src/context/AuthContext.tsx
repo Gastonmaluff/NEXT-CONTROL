@@ -55,7 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setAuthUser(user);
-      const userProfile = await getCurrentUserProfile();
+      let userProfile: SystemUser | null = null;
+      try {
+        userProfile = await getCurrentUserProfile();
+      } catch (error) {
+        console.error("No se pudo cargar el perfil del usuario autenticado.", error);
+      }
+
       if (userProfile?.active === false) {
         await signOutUser();
         setAuthUser(null);

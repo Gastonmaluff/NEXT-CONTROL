@@ -74,7 +74,30 @@ cd ..
 
 Todavia no existe un admin en el sistema, por eso el primer admin se crea manualmente.
 
-Opcion recomendada:
+Opcion recomendada desde la consola:
+
+1. Crear usuario manualmente en Firebase Authentication.
+2. Copiar su UID.
+3. Ir a Firestore Database.
+4. Crear el documento `users/{uid}` usando el UID exacto del usuario.
+5. Cargar estos campos obligatorios:
+
+```json
+{
+  "uid": "UID_DEL_USUARIO",
+  "nombre": "Gaston",
+  "email": "gaston@admin.com",
+  "role": "admin",
+  "active": true,
+  "assignedWorkIds": [],
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "createdBy": "manual-bootstrap"
+}
+```
+
+Para probar acceso de administrador, `role` debe ser exactamente `"admin"` y `active` debe ser booleano `true`.
+
+Opcion con script local:
 
 1. Crear usuario manualmente en Firebase Authentication.
 2. Copiar su UID.
@@ -105,6 +128,17 @@ No subas el service account. `.gitignore` ya ignora `serviceAccount*.json` y `fi
 firebase deploy --only firestore:rules
 firebase deploy --only storage
 firebase deploy --only functions
+```
+
+Si el dashboard muestra `Missing or insufficient permissions`, verificar primero:
+
+1. Que `users/{uid}` exista.
+2. Que `role` sea `"admin"`.
+3. Que `active` sea `true`.
+4. Que las reglas actuales hayan sido desplegadas:
+
+```bash
+firebase deploy --only firestore:rules
 ```
 
 Si falta billing o permisos, Firebase puede bloquear Functions. En ese caso desplegar primero rules/storage y luego functions cuando el proyecto este habilitado.
