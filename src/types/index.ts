@@ -41,6 +41,20 @@ export type FinancialStatus =
   | "Margen bajo"
   | "Pendiente de cobro";
 
+export type SystemUser = {
+  uid: string;
+  nombre: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+  phone?: string;
+  assignedWorkIds: string[];
+  lastLoginAt?: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+};
+
 export type CostCategoryName =
   | "Vidrios"
   | "Aluminio"
@@ -284,6 +298,7 @@ export type StoredData = {
   reportesAvance: ProgressReport[];
   materialesPendientes: ProgressMaterialReport[];
   actividadesAvance: ProgressActivityLog[];
+  users: SystemUser[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

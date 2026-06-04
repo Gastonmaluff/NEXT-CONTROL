@@ -1,38 +1,52 @@
-import { LogIn } from "lucide-react";
+import { KeyRound, LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
 import BrandLogo from "../components/brand/BrandLogo";
-import { loginWithEmail } from "../lib/auth";
+import { useAuth } from "../context/AuthContext";
 import { isFirebaseConfigured } from "../lib/firebase";
 
-type LoginPageProps = {
-  onDemoLogin: () => void;
-  onFirebaseLogin: () => void;
-};
-
-export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPageProps) {
+export default function LoginPage() {
+  const { demoLogin, login, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const firebaseReady = isFirebaseConfigured();
+  const demoVisible = !import.meta.env.PROD || !firebaseReady;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setMessage("");
 
     if (!firebaseReady) {
-      setError("Firebase todavia no esta configurado. Usa el modo demo por ahora.");
+      setError("Firebase todavia no esta configurado. Usa el modo demo local en desarrollo.");
       return;
     }
 
     setLoading(true);
     try {
-      await loginWithEmail(email, password);
-      onFirebaseLogin();
+      await login(email, password);
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "No se pudo iniciar sesion.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    setError("");
+    setMessage("");
+    if (!email) {
+      setError("Escribi tu correo para enviar la recuperacion.");
+      return;
+    }
+
+    try {
+      await resetPassword(email);
+      setMessage("Te enviamos un correo para restablecer la contrasena.");
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "No se pudo enviar la recuperacion.");
     }
   }
 
@@ -53,12 +67,18 @@ export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPagePro
           <form className="space-y-5 p-8 sm:p-10" onSubmit={handleSubmit}>
             <div>
               <p className="text-sm font-black uppercase text-next-blue">Acceso</p>
-              <h2 className="mt-1 text-2xl font-black">Ingresar a la app</h2>
+              <h2 className="mt-1 text-2xl font-black">Iniciar sesion</h2>
             </div>
 
             {!firebaseReady ? (
               <div className="rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold leading-6 text-next-orange">
                 Firebase todavia no esta configurado. La app esta usando datos demo locales.
+              </div>
+            ) : null}
+
+            {message ? (
+              <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold leading-6 text-next-green">
+                {message}
               </div>
             ) : null}
 
@@ -69,7 +89,7 @@ export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPagePro
             ) : null}
 
             <label className="block">
-              <span className="text-sm font-bold text-next-muted">Email</span>
+              <span className="text-sm font-bold text-next-muted">Correo</span>
               <input
                 className="mt-2 h-12 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none transition focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
                 value={email}
@@ -81,14 +101,14 @@ export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPagePro
             </label>
 
             <label className="block">
-              <span className="text-sm font-bold text-next-muted">Contraseña</span>
+              <span className="text-sm font-bold text-next-muted">Contrasena</span>
               <input
                 className="mt-2 h-12 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none transition focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 type="password"
                 autoComplete="current-password"
-                placeholder="••••••••"
+                placeholder="********"
               />
             </label>
 
@@ -98,16 +118,27 @@ export default function LoginPage({ onDemoLogin, onFirebaseLogin }: LoginPagePro
               disabled={loading}
             >
               <LogIn className="h-5 w-5" aria-hidden="true" />
-              {loading ? "Ingresando..." : "Ingresar"}
+              {loading ? "Ingresando..." : "Iniciar sesion"}
             </button>
 
             <button
-              className="h-12 w-full rounded-md border border-next-blue bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
               type="button"
-              onClick={onDemoLogin}
+              onClick={handleResetPassword}
             >
-              Entrar en modo demo
+              <KeyRound className="h-4 w-4" aria-hidden="true" />
+              Recuperar contrasena
             </button>
+
+            {demoVisible ? (
+              <button
+                className="h-12 w-full rounded-md border border-next-blue bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
+                type="button"
+                onClick={demoLogin}
+              >
+                Entrar en modo demo
+              </button>
+            ) : null}
           </form>
         </div>
       </section>

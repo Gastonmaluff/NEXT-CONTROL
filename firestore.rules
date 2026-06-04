@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function role() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? profile().role
+        : null;
+    }
+
+    function active() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && profile().active == true;
+    }
+
+    function admin() {
+      return active() && role() == "admin";
+    }
+
+    function gerencia() {
+      return active() && (role() == "admin" || role() == "gerencia");
+    }
+
+    function administracion() {
+      return active() && (role() in ["admin", "gerencia", "administracion"]);
+    }
+
+    function operativo() {
+      return active() && (role() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado"]);
+    }
+
+    function assignedToWork(workId) {
+      return active()
+        && (
+          role() in ["admin", "gerencia", "administracion"]
+          || workId in profile().assignedWorkIds
+        );
+    }
+
+    match /users/{uid} {
+      allow read: if active() && (request.auth.uid == uid || gerencia());
+      allow create, update, delete: if admin();
+    }
+
+    match /obras/{obraId} {
+      allow read: if assignedToWork(obraId);
+      allow create: if administracion();
+      allow update: if assignedToWork(obraId) && active();
+      allow delete: if gerencia();
+    }
+
+    match /rubrosAvance/{id} {
+      allow read: if active() && assignedToWork(resource.data.obraId);
+      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
+      allow update, delete: if operativo() && assignedToWork(resource.data.obraId);
+    }
+
+    match /reportesAvance/{id} {
+      allow read: if active() && assignedToWork(resource.data.obraId);
+      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
+      allow update, delete: if gerencia();
+    }
+
+    match /actividadesAvance/{id} {
+      allow read: if active() && assignedToWork(resource.data.obraId);
+      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
+      allow update, delete: if gerencia();
+    }
+
+    match /materialesPendientes/{id} {
+      allow read: if active() && assignedToWork(resource.data.obraId);
+      allow create: if operativo() && assignedToWork(request.resource.data.obraId);
+      allow update: if active() && assignedToWork(resource.data.obraId);
+      allow delete: if gerencia();
+    }
+
+    match /movimientosFinancieros/{id} {
+      allow read, write: if administracion();
+    }
+
+    match /cobros/{id} {
+      allow read, write: if administracion();
+    }
+
+    match /oportunidades/{id} {
+      allow read, write: if administracion();
+    }
+
+    match /cuadrillas/{id} {
+      allow read: if active();
+      allow write: if active() && (role() in ["admin", "gerencia", "supervisor", "encargado", "instalador"]);
+    }
+
+    match /tareasInstalacion/{id} {
+      allow read: if active();
+      allow write: if active() && (role() in ["admin", "gerencia", "supervisor", "encargado", "instalador"]);
+    }
+
+    match /actividades/{id} {
+      allow read: if active() && assignedToWork(resource.data.obraId);
+      allow create: if active() && assignedToWork(request.resource.data.obraId);
+      allow update, delete: if gerencia();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

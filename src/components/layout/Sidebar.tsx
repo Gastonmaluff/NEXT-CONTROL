@@ -2,6 +2,8 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import BrandLogo from "../brand/BrandLogo";
 import { navigationItems } from "../../data/navigation";
+import { useAuth } from "../../context/AuthContext";
+import { canManageUsers } from "../../lib/roles";
 
 type SidebarProps = {
   collapsed: boolean;
@@ -9,6 +11,9 @@ type SidebarProps = {
 };
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { profile } = useAuth();
+  const items = navigationItems.filter((item) => !("adminOnly" in item) || !item.adminOnly || canManageUsers(profile));
+
   return (
     <aside
       className={`fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-[linear-gradient(180deg,#061a2f_0%,#0b2b49_48%,#06182a_100%)] px-4 py-3 text-white shadow-[inset_-1px_0_0_rgba(255,255,255,0.08)] transition-[width,padding] duration-300 lg:inset-y-0 lg:left-0 lg:right-auto lg:border-b-0 lg:py-5 ${
@@ -45,7 +50,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           collapsed ? "justify-start" : ""
         }`}
       >
-        {navigationItems.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink

@@ -17,6 +17,7 @@ import ProgressReportModal from "../components/progress/ProgressReportModal";
 import DataCard from "../components/ui/DataCard";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import {
   createProgressReport,
   createProgressRubric,
@@ -32,7 +33,7 @@ import {
   updatePendingMaterial,
   updateProgressRubric
 } from "../lib/firestore";
-import { canConfigureProgress, canRegisterProgress, currentUserRole } from "../lib/roles";
+import { canConfigureProgressForUser, canCreateWork, canRegisterProgressForUser } from "../lib/roles";
 import type {
   Actividad,
   Cuadrilla,
@@ -77,6 +78,7 @@ type RubricFormRow = {
 export default function ProjectControlPage() {
   const { obraId } = useParams();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [obras, setObras] = useState<Obra[]>([]);
   const [rubrics, setRubrics] = useState<WorkProgressRubric[]>([]);
   const [reports, setReports] = useState<ProgressReport[]>([]);
@@ -222,8 +224,8 @@ export default function ProjectControlPage() {
       <>
         <ProgressDetail
           actividades={progressActivity}
-          canConfigure={canConfigureProgress(currentUserRole)}
-          canRegister={canRegisterProgress(currentUserRole)}
+        canConfigure={canConfigureProgressForUser(profile)}
+        canRegister={canRegisterProgressForUser(profile)}
           cuadrillas={cuadrillas}
           error={error}
           legacyActivity={legacyActivity}
@@ -244,6 +246,7 @@ export default function ProjectControlPage() {
             rubrics={obraRubrics}
             reports={obraReports}
             cuadrillas={cuadrillas}
+            user={profile ?? undefined}
             onClose={() => setReportModalOpen(false)}
             onSubmit={handleCreateReport}
           />
@@ -269,6 +272,11 @@ export default function ProjectControlPage() {
             Seguimiento operativo, fiscalizacion, produccion e instalacion de cada obra.
           </p>
         </div>
+        {canCreateWork(profile) ? (
+          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => navigate("/finanzas-obras")}>
+            Nueva obra
+          </button>
+        ) : null}
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}

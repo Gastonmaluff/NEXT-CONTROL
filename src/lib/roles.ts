@@ -1,4 +1,4 @@
-import type { UserRole } from "../types";
+import type { SystemUser, UserRole } from "../types";
 
 export const currentUserRole: UserRole = "admin";
 export const currentUser = {
@@ -41,4 +41,36 @@ export function canCorrectProgress(role: UserRole): boolean {
 
 export function canAssignCrew(role: UserRole): boolean {
   return role === "admin" || role === "gerencia" || role === "supervisor";
+}
+
+export function isAdmin(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active) && user?.role === "admin";
+}
+
+export function canManageUsers(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active) && (user?.role === "admin" || user?.role === "gerencia");
+}
+
+export function canCreateWork(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "administracion"].includes(user.role));
+}
+
+export function canViewAllWorksForUser(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && canViewAllWorks(user.role));
+}
+
+export function canManageFinancesForUser(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && canManageFinances(user.role));
+}
+
+export function canConfigureProgressForUser(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && canConfigureProgress(user.role));
+}
+
+export function canRegisterProgressForUser(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && canRegisterProgress(user.role));
+}
+
+export function canManageInstallation(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "supervisor", "encargado", "instalador"].includes(user.role));
 }

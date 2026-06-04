@@ -58,6 +58,7 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     rubrosAvanceConfigurados: data.rubrosAvanceConfigurados ?? seedData.rubrosAvanceConfigurados,
     reportesAvance: data.reportesAvance ?? seedData.reportesAvance,
     materialesPendientes: data.materialesPendientes ?? seedData.materialesPendientes,
-    actividadesAvance: data.actividadesAvance ?? seedData.actividadesAvance
+    actividadesAvance: data.actividadesAvance ?? seedData.actividadesAvance,
+    users: data.users ?? seedData.users
   };
 }

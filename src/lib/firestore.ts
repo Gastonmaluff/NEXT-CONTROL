@@ -42,10 +42,11 @@ const collections = {
   cuadrillas: "cuadrillas",
   tareasInstalacion: "tareasInstalacion",
   movimientosFinancieros: "movimientosFinancieros",
-  rubrosAvanceConfigurados: "rubrosAvanceConfigurados",
+  rubrosAvanceConfigurados: "rubrosAvance",
   reportesAvance: "reportesAvance",
   materialesPendientes: "materialesPendientes",
-  actividadesAvance: "actividadesAvance"
+  actividadesAvance: "actividadesAvance",
+  users: "users"
 } as const;
 
 function shouldUseFirebase() {
@@ -767,7 +768,8 @@ export async function loadSeedDataToFirebase(replace = false): Promise<string> {
 
     Object.entries(seedData).forEach(([collectionName, records]) => {
       records.forEach((record) => {
-        const ref = doc(db, collectionName, record.id);
+        const targetCollection = collections[collectionName as keyof typeof collections] ?? collectionName;
+        const ref = doc(db, targetCollection, getSeedRecordId(record));
         batch.set(ref, record);
       });
     });
@@ -787,7 +789,15 @@ export async function setFirebaseSeedData(): Promise<void> {
   const db = firestoreDb;
   for (const [collectionName, records] of Object.entries(seedData)) {
     for (const record of records) {
-      await setDoc(doc(db, collectionName, record.id), record);
+      const targetCollection = collections[collectionName as keyof typeof collections] ?? collectionName;
+      await setDoc(doc(db, targetCollection, getSeedRecordId(record)), record);
     }
   }
+}
+
+function getSeedRecordId(record: unknown): string {
+  const item = record as { id?: string; uid?: string };
+  if (item.id) return item.id;
+  if (item.uid) return item.uid;
+  return generateId("seed");
 }

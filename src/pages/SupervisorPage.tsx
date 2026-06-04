@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import ProgressReportModal from "../components/progress/ProgressReportModal";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge from "../components/ui/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import {
   createProgressReport,
   getCuadrillas,
@@ -12,7 +13,7 @@ import {
   getProgressReportsByWork,
   getProgressRubricsByWork
 } from "../lib/firestore";
-import { canViewAllWorks, currentUser } from "../lib/roles";
+import { canViewAllWorksForUser } from "../lib/roles";
 import type {
   Cuadrilla,
   Obra,
@@ -24,6 +25,7 @@ import { formatDateShort } from "../utils/formatters";
 import { calculateWeightedProgressFromReports } from "../utils/progress";
 
 export default function SupervisorPage() {
+  const { profile } = useAuth();
   const [obras, setObras] = useState<Obra[]>([]);
   const [rubrics, setRubrics] = useState<WorkProgressRubric[]>([]);
   const [reports, setReports] = useState<ProgressReport[]>([]);
@@ -43,12 +45,12 @@ export default function SupervisorPage() {
     setError("");
     try {
       const loadedObras = await getObras();
-      const visibleObras = canViewAllWorks(currentUser.role)
+      const visibleObras = canViewAllWorksForUser(profile)
         ? loadedObras
         : loadedObras.filter((obra) =>
-            obra.assignedUserIds?.includes(currentUser.id) ||
-            obra.supervisor?.toLowerCase().includes(currentUser.name.toLowerCase()) ||
-            obra.responsable.toLowerCase().includes(currentUser.name.toLowerCase())
+            obra.assignedUserIds?.includes(profile?.uid ?? "") ||
+            obra.supervisor?.toLowerCase().includes((profile?.nombre ?? "").toLowerCase()) ||
+            obra.responsable.toLowerCase().includes((profile?.nombre ?? "").toLowerCase())
           );
       const [allRubrics, allReports, allMaterials, crews] = await Promise.all([
         Promise.all(visibleObras.map((obra) => getProgressRubricsByWork(obra.id))).then((items) => items.flat()),
@@ -86,11 +88,11 @@ export default function SupervisorPage() {
       <div className="mx-auto max-w-3xl space-y-4">
         <header className="rounded-lg bg-next-navy px-5 py-5 text-white shadow-soft">
           <p className="text-xs font-black uppercase text-white/65">NEXT CONTROL CAMPO</p>
-          <h1 className="mt-2 text-2xl font-black">Hola, {currentUser.name}</h1>
+          <h1 className="mt-2 text-2xl font-black">Hola, {profile?.nombre ?? "Usuario"}</h1>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-md bg-white/10 px-3 py-3">
               <p className="text-xs font-bold uppercase text-white/60">Rol</p>
-              <p className="mt-1 font-black capitalize">{currentUser.role}</p>
+              <p className="mt-1 font-black capitalize">{profile?.role ?? "sin rol"}</p>
             </div>
             <div className="rounded-md bg-white/10 px-3 py-3">
               <p className="text-xs font-bold uppercase text-white/60">Obras</p>
@@ -150,6 +152,7 @@ export default function SupervisorPage() {
           rubrics={rubrics.filter((rubro) => rubro.obraId === selectedObra.id)}
           reports={reports.filter((report) => report.obraId === selectedObra.id)}
           cuadrillas={cuadrillas}
+          user={profile ?? undefined}
           onClose={() => setSelectedObra(null)}
           onSubmit={handleCreateReport}
         />

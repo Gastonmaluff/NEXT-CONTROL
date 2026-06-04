@@ -6,3 +6,5 @@ dev-server*.log
 !.env.example
 .DS_Store
 Thumbs.db
+serviceAccount*.json
+firebase-service-account*.json

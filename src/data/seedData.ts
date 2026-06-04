@@ -779,5 +779,40 @@ export const seedData: StoredData = {
       fechaHora: "2026-06-01T17:05:00.000Z",
       reportId: "rep-aur-1"
     }
+  ],
+  users: [
+    {
+      uid: "demo-admin",
+      nombre: "Richard",
+      email: "demo@nextglass.com",
+      role: "admin",
+      active: true,
+      phone: "",
+      assignedWorkIds: [],
+      createdAt: now,
+      createdBy: "bootstrap"
+    },
+    {
+      uid: "sup-hugo",
+      nombre: "Hugo Franco",
+      email: "hugo@nextglass.com",
+      role: "supervisor",
+      active: true,
+      phone: "",
+      assignedWorkIds: ["obra-palmanova"],
+      createdAt: now,
+      createdBy: "demo-admin"
+    },
+    {
+      uid: "sup-andrea",
+      nombre: "Andrea Ruiz",
+      email: "andrea@nextglass.com",
+      role: "fiscalizador",
+      active: true,
+      phone: "",
+      assignedWorkIds: ["obra-aurora"],
+      createdAt: now,
+      createdBy: "demo-admin"
+    }
   ]
 };

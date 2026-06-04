@@ -1,5 +1,6 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import { getFunctions } from "firebase/functions";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -22,6 +23,7 @@ export const firebaseApp: FirebaseApp | null = isFirebaseConfigured()
 
 export const firestoreDb = firebaseApp ? getFirestore(firebaseApp) : null;
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;
+export const firebaseFunctions = firebaseApp ? getFunctions(firebaseApp) : null;
 export const firebaseStorage = firebaseApp ? getStorage(firebaseApp) : null;
 
 export const firebaseProjectId = firebaseConfig.projectId || "";

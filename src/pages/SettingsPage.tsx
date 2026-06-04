@@ -2,14 +2,18 @@ import { Cloud, Database, RefreshCcw, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import { loadSeedDataToFirebase } from "../lib/firestore";
-import { firebaseProjectId, isFirebaseConfigured } from "../lib/firebase";
+import { firebaseAuth, firebaseFunctions, firebaseProjectId, firebaseStorage, firestoreDb, isFirebaseConfigured } from "../lib/firebase";
+import { canManageUsers } from "../lib/roles";
 import { getDataSourceLabel, resetDemoData } from "../lib/storage";
 
 export default function SettingsPage() {
+  const { authUser, isDemo, profile, role } = useAuth();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const firebaseReady = isFirebaseConfigured();
   const sourceLabel = getDataSourceLabel();
   const usingFirebase = sourceLabel === "Usando Firebase";
@@ -135,6 +139,36 @@ export default function SettingsPage() {
         </div>
       </DataCard>
 
+      <DataCard title="Diagnostico Firebase">
+        <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <p className="text-sm font-semibold leading-6 text-next-muted">
+            Estado tecnico visible sin exponer secretos.
+          </p>
+          {canManageUsers(profile) ? (
+            <button
+              className="h-10 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue"
+              type="button"
+              onClick={() => setShowDiagnostics((current) => !current)}
+            >
+              Ver diagnostico Firebase
+            </button>
+          ) : null}
+        </div>
+        {showDiagnostics || isDemo ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Diagnostic label="Firebase" value={firebaseReady ? "Configurado" : "Sin variables"} ok={firebaseReady} />
+            <Diagnostic label="Authentication" value={firebaseAuth ? "Disponible" : "No disponible"} ok={Boolean(firebaseAuth)} />
+            <Diagnostic label="Firestore" value={firestoreDb ? "Disponible" : "No disponible"} ok={Boolean(firestoreDb)} />
+            <Diagnostic label="Storage" value={firebaseStorage ? "Disponible" : "No disponible"} ok={Boolean(firebaseStorage)} />
+            <Diagnostic label="Functions" value={firebaseFunctions ? "Disponible" : "No disponible"} ok={Boolean(firebaseFunctions)} />
+            <Diagnostic label="Modo" value={isDemo ? "Demo local" : "Firebase"} ok={!isDemo} />
+            <Diagnostic label="Usuario" value={profile?.nombre ?? authUser?.email ?? "Sin perfil"} ok={Boolean(profile)} />
+            <Diagnostic label="UID" value={profile?.uid ?? authUser?.uid ?? "Sin UID"} ok={Boolean(authUser || profile)} />
+            <Diagnostic label="Rol" value={role ?? "Sin rol"} ok={Boolean(role)} />
+          </div>
+        ) : null}
+      </DataCard>
+
       <DataCard title="Storage preparado">
         <div className="flex items-start gap-3 rounded-lg bg-next-bg p-4">
           <RefreshCcw className="mt-0.5 h-5 w-5 shrink-0 text-next-blue" aria-hidden="true" />
@@ -144,6 +178,17 @@ export default function SettingsPage() {
           </p>
         </div>
       </DataCard>
+    </div>
+  );
+}
+
+function Diagnostic({ label, ok, value }: { label: string; ok: boolean; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-100 bg-next-bg px-4 py-3">
+      <p className="text-xs font-bold uppercase text-next-muted">{label}</p>
+      <p className={`mt-1 truncate text-sm font-black ${ok ? "text-next-green" : "text-next-orange"}`} title={value}>
+        {value}
+      </p>
     </div>
   );
 }

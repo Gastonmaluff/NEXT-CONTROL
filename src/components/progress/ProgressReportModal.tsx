@@ -7,6 +7,7 @@ import type {
   ProgressMaterialReport,
   ProgressReport,
   ProgressReportEntry,
+  SystemUser,
   WorkProgressRubric
 } from "../../types";
 import {
@@ -22,6 +23,7 @@ type ProgressReportModalProps = {
   rubrics: WorkProgressRubric[];
   reports: ProgressReport[];
   cuadrillas: Cuadrilla[];
+  user?: Pick<SystemUser, "uid" | "nombre" | "role">;
   onClose: () => void;
   onSubmit: (report: ReportDraft) => Promise<void>;
 };
@@ -31,9 +33,11 @@ export default function ProgressReportModal({
   rubrics,
   reports,
   cuadrillas,
+  user,
   onClose,
   onSubmit
 }: ProgressReportModalProps) {
+  const actor = user ?? { uid: currentUser.id, nombre: currentUser.name, role: currentUser.role };
   const now = new Date();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -142,7 +146,7 @@ export default function ProgressReportModal({
             unidad: material.unidad,
             observacion: material.observacion || undefined,
             estado: "Pendiente",
-            reportadoPor: currentUser.name,
+            reportadoPor: actor.nombre,
             fechaReporte: general.fecha,
             urgencia: material.urgencia
           }
@@ -160,9 +164,9 @@ export default function ProgressReportModal({
         obraId: obra.id,
         fecha: general.fecha,
         hora: general.hora,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userRole: currentUser.role,
+        userId: actor.uid,
+        userName: actor.nombre,
+        userRole: actor.role,
         cuadrillaId: selectedCrew?.id,
         cuadrillaNombre: selectedCrew?.nombre,
         seTrabajoHoy: general.seTrabajoHoy,
@@ -174,7 +178,7 @@ export default function ProgressReportModal({
           .map((item) => item.trim())
           .filter(Boolean),
         entries: reportEntries,
-        materialsReported
+        materialsReported: materialsReported.map((item) => ({ ...item, reportadoPor: actor.nombre }))
       });
       onClose();
     } catch (submitError) {

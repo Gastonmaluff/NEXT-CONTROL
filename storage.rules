@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function active() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && userDoc().active == true;
+    }
+
+    function canUseWork(obraId) {
+      return active()
+        && (
+          userDoc().role in ["admin", "gerencia", "administracion"]
+          || obraId in userDoc().assignedWorkIds
+        );
+    }
+
+    match /obras/{obraId}/{allPaths=**} {
+      allow read: if canUseWork(obraId);
+      allow write: if canUseWork(obraId)
+        && userDoc().role in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "administracion"];
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

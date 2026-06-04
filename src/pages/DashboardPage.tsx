@@ -7,17 +7,22 @@ import {
   Truck
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import { getCobrosByObra, getCuadrillas, getObras } from "../lib/firestore";
+import { canCreateWork } from "../lib/roles";
 import type { Cobro, Cuadrilla, Obra } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
   const [obras, setObras] = useState<Obra[]>([]);
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [cuadrillas, setCuadrillas] = useState<Cuadrilla[]>([]);
@@ -105,6 +110,11 @@ export default function DashboardPage() {
         <p className="max-w-xl text-sm font-medium leading-6 text-next-muted">
           Centro de control gerencial para obras, finanzas, produccion e instalaciones.
         </p>
+        {canCreateWork(profile) ? (
+          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => navigate("/finanzas-obras")}>
+            Nueva obra
+          </button>
+        ) : null}
       </div>
 
       {error ? (

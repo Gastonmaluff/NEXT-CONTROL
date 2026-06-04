@@ -10,6 +10,7 @@ import {
   Receipt,
   Settings,
   Truck,
+  UserCog,
   Users
 } from "lucide-react";
 
@@ -25,5 +26,6 @@ export const navigationItems = [
   { label: "Proveedores", path: "/proveedores", icon: BriefcaseBusiness },
   { label: "Inventario", path: "/inventario", icon: Boxes },
   { label: "Reportes", path: "/reportes", icon: BarChart3 },
-  { label: "Configuracion", path: "/configuracion", icon: Settings }
+  { label: "Configuracion", path: "/configuracion", icon: Settings },
+  { label: "Usuarios", path: "/usuarios", icon: UserCog, adminOnly: true }
 ];
