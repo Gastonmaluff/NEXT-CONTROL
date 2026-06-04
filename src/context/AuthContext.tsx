@@ -77,9 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: Boolean(authUser || profile),
     isDemo: profile?.uid === "demo-admin",
     login: async (email, password) => {
+      localStorage.removeItem("next-control-demo-session");
       await signInWithEmail(email, password);
     },
-    logout: signOutUser,
+    logout: async () => {
+      localStorage.removeItem("next-control-demo-session");
+      setProfile(null);
+      await signOutUser();
+    },
     demoLogin: () => {
       if (!demoAllowed) return;
       localStorage.setItem("next-control-demo-session", "true");

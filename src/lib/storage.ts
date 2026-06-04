@@ -9,6 +9,10 @@ export function isFirebaseConfigured(): boolean {
 }
 
 export function isDemoSession(): boolean {
+  if (hasFirebaseConfig() && import.meta.env.PROD) {
+    return false;
+  }
+
   return localStorage.getItem("next-control-demo-session") === "true";
 }
 

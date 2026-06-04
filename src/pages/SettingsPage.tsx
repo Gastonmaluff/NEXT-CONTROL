@@ -4,7 +4,15 @@ import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { loadSeedDataToFirebase } from "../lib/firestore";
-import { firebaseAuth, firebaseFunctions, firebaseProjectId, firebaseStorage, firestoreDb, isFirebaseConfigured } from "../lib/firebase";
+import {
+  firebaseAuth,
+  firebaseFunctions,
+  firebaseProjectId,
+  firebaseStorage,
+  firestoreDb,
+  getMissingFirebaseEnvVars,
+  isFirebaseConfigured
+} from "../lib/firebase";
 import { canManageUsers } from "../lib/roles";
 import { getDataSourceLabel, resetDemoData } from "../lib/storage";
 
@@ -15,6 +23,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const firebaseReady = isFirebaseConfigured();
+  const missingFirebaseVars = getMissingFirebaseEnvVars();
   const sourceLabel = getDataSourceLabel();
   const usingFirebase = sourceLabel === "Usando Firebase";
 
@@ -62,6 +71,11 @@ export default function SettingsPage() {
       {!firebaseReady ? (
         <div className="rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold leading-6 text-next-orange">
           Firebase todavia no esta configurado. La app esta usando datos demo locales.
+          {missingFirebaseVars.length > 0 ? (
+            <span className="mt-1 block text-xs">
+              Faltan: {missingFirebaseVars.join(", ")}.
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -161,6 +175,11 @@ export default function SettingsPage() {
             <Diagnostic label="Firestore" value={firestoreDb ? "Disponible" : "No disponible"} ok={Boolean(firestoreDb)} />
             <Diagnostic label="Storage" value={firebaseStorage ? "Disponible" : "No disponible"} ok={Boolean(firebaseStorage)} />
             <Diagnostic label="Functions" value={firebaseFunctions ? "Disponible" : "No disponible"} ok={Boolean(firebaseFunctions)} />
+            <Diagnostic
+              label="Variables faltantes"
+              value={missingFirebaseVars.length > 0 ? missingFirebaseVars.join(", ") : "Ninguna"}
+              ok={missingFirebaseVars.length === 0}
+            />
             <Diagnostic label="Modo" value={isDemo ? "Demo local" : "Firebase"} ok={!isDemo} />
             <Diagnostic label="Usuario" value={profile?.nombre ?? authUser?.email ?? "Sin perfil"} ok={Boolean(profile)} />
             <Diagnostic label="UID" value={profile?.uid ?? authUser?.uid ?? "Sin UID"} ok={Boolean(authUser || profile)} />

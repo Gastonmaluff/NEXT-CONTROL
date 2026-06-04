@@ -18,9 +18,32 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MEASUREMENT_ID=
 ```
 
+`VITE_FIREBASE_MEASUREMENT_ID` es opcional. Las otras seis variables son obligatorias para que `isFirebaseConfigured()` devuelva `true`.
+
 El archivo `.env.example` queda sin secretos. `.env.local` esta ignorado por git.
+
+## 1.1. Variables para GitHub Pages
+
+GitHub Pages compila la aplicacion en GitHub Actions. Por eso tambien hay que cargar las mismas variables en GitHub:
+
+1. Entrar al repositorio en GitHub.
+2. Ir a `Settings > Secrets and variables > Actions > Variables`.
+3. Crear estas variables:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+   - `VITE_FIREBASE_MEASUREMENT_ID` opcional
+4. Volver a ejecutar el workflow `Deploy to GitHub Pages` o hacer push a `main`.
+
+Para la configuracion web de Firebase conviene usar GitHub Actions Variables. No son contrasenas ni service accounts. Si preferis tratarlas como sensibles, el workflow tambien acepta los mismos nombres en `Secrets`.
+
+No cargues service accounts, claves privadas ni credenciales Admin SDK como variables `VITE_*`.
 
 ## 2. Habilitar productos
 
