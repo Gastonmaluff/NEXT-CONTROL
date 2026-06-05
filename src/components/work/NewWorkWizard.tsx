@@ -14,6 +14,7 @@ import { uploadFile } from "../../lib/storageUpload";
 import type { Obra, ProgressCalculationMode, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
 import { toTitleCase } from "../../utils/text";
+import { formatUnitLabel, normalizeUnit, type OperationalUnit } from "../../utils/units";
 
 type WizardDestination = "avance" | "finanzas" | "control";
 
@@ -26,13 +27,11 @@ type NewWorkWizardProps = {
 type RubricDraft = {
   nombre: string;
   cantidadTotalPrevista: string;
-  unidad: RubricUnit | "";
+  unidad: OperationalUnit | "";
   equivalenciaM2PorUnidad: string;
   modoCalculo: ProgressCalculationMode;
   avanceManualPermitido: boolean;
 };
-
-type RubricUnit = "m2" | "unidades";
 
 type CalculatedRubricDraft = RubricDraft & {
   cantidad: number;
@@ -161,8 +160,8 @@ export default function NewWorkWizard({
       if (rubrics.some((rubro) => rubro.cantidadTotalPrevista === "" || Number(rubro.cantidadTotalPrevista) <= 0)) {
         return "Todos los rubros necesitan una cantidad total prevista mayor a cero.";
       }
-      if (rubrics.some((rubro) => rubro.unidad === "unidades" && Number(rubro.equivalenciaM2PorUnidad || 0) <= 0)) {
-        return "Para rubros en unidades, carga una equivalencia de m² por unidad mayor a cero.";
+      if (rubrics.some((rubro) => rubro.unidad === "unidad" && Number(rubro.equivalenciaM2PorUnidad || 0) <= 0)) {
+        return "Para rubros medidos en unidad, carga una equivalencia de m² por unidad mayor a cero.";
       }
       if (rubrics.some((rubro) => Number(rubro.cantidadTotalPrevista || 0) < 0 || Number(getRubricEquivalence(rubro)) < 0)) {
         return "Revisa cantidades y equivalencias. No pueden ser negativas.";
@@ -218,7 +217,7 @@ export default function NewWorkWizard({
     const normalizedRubrics = calculatedRubrics.map((rubro) => ({
       ...rubro,
       nombre: toTitleCase(rubro.nombre),
-      unidad: rubro.unidad.trim()
+      unidad: normalizeUnit(rubro.unidad) || rubro.unidad.trim()
     }));
 
     try {
@@ -524,26 +523,26 @@ export default function NewWorkWizard({
                   <div className="space-y-3">
                     {calculatedRubrics.map((rubro, index) => (
                       <div key={index} className="rounded-lg border border-slate-200 p-3">
-                        <div className="grid gap-2 lg:grid-cols-[minmax(150px,28%)_minmax(96px,12%)_minmax(130px,16%)_minmax(150px,18%)_minmax(130px,16%)_minmax(70px,10%)]">
-                        <Field label="Rubro">
-                          <input className="field" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
-                        </Field>
-                        <Field label="Unidad">
-                          <select className="field" value={rubro.unidad} onChange={(event) => updateRubricUnit(index, event.target.value as RubricUnit | "")}>
-                            <option value="">Unidad</option>
+                        <div className="grid items-start gap-2 lg:grid-cols-[minmax(130px,26%)_minmax(92px,12%)_minmax(132px,17%)_minmax(140px,18%)_minmax(120px,17%)_minmax(44px,7%)]">
+                        <RubricField label="Rubro">
+                          <input className="field h-9 px-2 text-xs" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
+                        </RubricField>
+                        <RubricField label="Unidad">
+                          <select className="field h-9 px-2 text-xs" value={rubro.unidad} onChange={(event) => updateRubricUnit(index, normalizeUnit(event.target.value))}>
+                            <option value="" disabled>Seleccionar unidad</option>
                             <option value="m2">m²</option>
-                            <option value="unidades">unidades</option>
+                            <option value="unidad">unidad</option>
                           </select>
-                        </Field>
-                        <Field label="Cantidad total prevista">
-                          <input className="field" min={0} type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
-                        </Field>
-                        <Field label="Equiv. m² por unidad">
+                        </RubricField>
+                        <RubricField label="Cantidad total prevista">
+                          <input className="field h-9 px-2 text-xs" min={0} type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
+                        </RubricField>
+                        <RubricField label="Equiv. m² por unidad" help={rubro.unidad === "unidad" ? "Indica cuantos m² equivalentes representa cada unidad." : undefined}>
                           {rubro.unidad === "m2" ? (
-                            <input className="field bg-slate-50 text-next-muted" disabled value="1" />
+                            <input className="field h-9 bg-slate-50 px-2 text-xs text-next-muted" disabled value="1" />
                           ) : (
                             <input
-                              className="field"
+                              className="field h-9 px-2 text-xs"
                               min={0}
                               placeholder="Ej. 4"
                               type="number"
@@ -551,23 +550,23 @@ export default function NewWorkWizard({
                               onChange={(event) => updateRubric(index, { equivalenciaM2PorUnidad: event.target.value })}
                             />
                           )}
-                          {rubro.unidad === "unidades" ? (
-                            <p className="mt-1 text-[10px] font-semibold normal-case leading-4 text-next-muted">
-                              Indica cuantos m² equivalentes representa cada unidad.
-                            </p>
-                          ) : null}
-                        </Field>
-                        <Field label="Peso automatico">
-                          <div className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-black text-next-blue">
-                            {formatWeight(rubro.pesoOperativo)}%
+                        </RubricField>
+                        <RubricField label="Peso automatico">
+                          <div className="flex h-9 items-center justify-between gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black text-next-blue">
+                            <span>{formatWeight(rubro.pesoOperativo)}%</span>
+                            <span className="truncate text-[10px] font-bold text-next-muted" title={`${formatNumber(rubro.totalEquivalenteM2)} ${formatUnitLabel("m2", rubro.totalEquivalenteM2)} equiv.`}>
+                              {formatNumber(rubro.totalEquivalenteM2)} m²
+                            </span>
                           </div>
-                          <p className="mt-1 text-[10px] font-semibold normal-case leading-4 text-next-muted">
-                            {formatNumber(rubro.totalEquivalenteM2)} m² equiv.
-                          </p>
-                        </Field>
-                        <button className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-red-100 px-3 text-xs font-black text-next-red" type="button" onClick={() => removeRubric(index)} title="Eliminar rubro">
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                        </button>
+                        </RubricField>
+                        <div className="min-w-0">
+                          <div className="flex h-8 items-end text-[10px] font-black uppercase leading-tight text-next-muted">
+                            <span>Eliminar</span>
+                          </div>
+                          <button className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-next-red transition hover:border-next-red hover:bg-red-50" type="button" onClick={() => removeRubric(index)} title="Eliminar rubro" aria-label="Eliminar rubro">
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
                         </div>
                         <label className="mt-3 inline-flex items-center gap-2 text-xs font-black text-next-muted">
                           <input
@@ -645,7 +644,7 @@ export default function NewWorkWizard({
     setRubrics((current) => current.map((rubro, rowIndex) => rowIndex === index ? { ...rubro, ...data } : rubro));
   }
 
-  function updateRubricUnit(index: number, unidad: RubricUnit | "") {
+  function updateRubricUnit(index: number, unidad: OperationalUnit | "") {
     updateRubric(index, {
       unidad,
       equivalenciaM2PorUnidad: unidad === "m2" ? "1" : ""
@@ -786,6 +785,24 @@ function Field({
   );
 }
 
+function RubricField({
+  children,
+  help,
+  label
+}: {
+  children: ReactNode;
+  help?: string;
+  label: string;
+}) {
+  return (
+    <label className="block min-w-0 text-xs font-black uppercase text-next-muted">
+      <span className="flex h-8 items-end leading-tight">{label}</span>
+      <div className="mt-1">{children}</div>
+      {help ? <span className="mt-1 block text-[10px] font-semibold normal-case leading-3 text-next-muted">{help}</span> : null}
+    </label>
+  );
+}
+
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md bg-next-bg px-3 py-3">
@@ -897,7 +914,7 @@ function calculateRubricWeights(rubrics: RubricDraft[]): CalculatedRubricDraft[]
 }
 
 function getRubricEquivalence(rubro: Pick<RubricDraft, "unidad" | "equivalenciaM2PorUnidad">) {
-  if (rubro.unidad === "m2") {
+  if (normalizeUnit(rubro.unidad) === "m2") {
     return 1;
   }
 

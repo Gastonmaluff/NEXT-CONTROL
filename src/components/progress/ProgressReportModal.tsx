@@ -15,6 +15,7 @@ import {
   calculateTotalExecuted,
   clampProgress
 } from "../../utils/progress";
+import { formatUnitLabel } from "../../utils/units";
 
 type ReportDraft = Omit<ProgressReport, "id" | "createdAt" | "updatedAt">;
 
@@ -232,7 +233,7 @@ export default function ProgressReportModal({
                   <div>
                     <p className="text-sm font-black text-next-text">{item.rubro.nombre}</p>
                     <p className="mt-1 text-xs font-semibold text-next-muted">
-                      Actual {item.current}% · Ejecutado {item.executed} / {item.rubro.cantidadTotalPrevista} {item.rubro.unidad}
+                      Actual {item.current}% · Ejecutado {item.executed} {formatUnitLabel(item.rubro.unidad, item.executed)} / {item.rubro.cantidadTotalPrevista} {formatUnitLabel(item.rubro.unidad, item.rubro.cantidadTotalPrevista)}
                     </p>
                   </div>
                   <p className="text-lg font-black text-next-blue">{Math.round(item.nextPercent)}%</p>
@@ -242,7 +243,7 @@ export default function ProgressReportModal({
                     <input
                       className="field"
                       min={0}
-                      placeholder={`Ejecutado hoy (${item.rubro.unidad})`}
+                      placeholder={`Ejecutado hoy (${formatUnitLabel(item.rubro.unidad, 2)})`}
                       type="number"
                       value={entries[item.rubro.id]?.cantidad ?? ""}
                       onChange={(event) => setEntries({

@@ -54,6 +54,7 @@ import {
   getLatestRubricEntry,
   validateRubricWeights
 } from "../utils/progress";
+import { formatUnitLabel } from "../utils/units";
 
 const workStatuses: WorkStatus[] = [
   "Produccion",
@@ -551,7 +552,7 @@ function ProgressDetail({
                     <div>
                       <p className="text-sm font-black text-next-text">{rubro.nombre}</p>
                       <p className="mt-1 text-xs font-semibold text-next-muted">
-                        {executed} / {rubro.cantidadTotalPrevista} {rubro.unidad} · Peso {rubro.pesoOperativo}% · {rubro.modoCalculo}
+                        {executed} {formatUnitLabel(rubro.unidad, executed)} / {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} · Peso {rubro.pesoOperativo}% · {rubro.modoCalculo}
                       </p>
                     </div>
                     <span className="text-xl font-black text-next-blue">{progress}%</span>

@@ -30,6 +30,7 @@ import { getDefaultCostBudget } from "../utils/finances";
 import {
   calculateRubricProgress
 } from "../utils/progress";
+import { normalizeUnit } from "../utils/units";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { getCurrentUserProfile } from "./auth";
 import { canManageFinances, canViewAllWorks } from "./roles";
@@ -511,6 +512,10 @@ export async function deleteMovement(obraId: string, movementId: string): Promis
 export async function getProgressRubricsByWork(obraId: string): Promise<WorkProgressRubric[]> {
   try {
     const rubrics = (await getCollectionByWork<WorkProgressRubric>("rubrosAvanceConfigurados", obraId))
+      .map((rubro) => ({
+        ...rubro,
+        unidad: normalizeUnit(rubro.unidad) || rubro.unidad
+      }))
       .sort((a, b) => a.orden - b.orden);
 
     if (rubrics.length) {
@@ -547,6 +552,7 @@ export async function createProgressRubric(
   try {
     const created = await createDocument<WorkProgressRubric>("rubrosAvanceConfigurados", {
       ...data,
+      unidad: normalizeUnit(data.unidad) || data.unidad,
       pesoOperativo: Math.max(0, Math.min(100, data.pesoOperativo)),
       cantidadTotalPrevista: Math.max(0, data.cantidadTotalPrevista),
       equivalenciaM2PorUnidad: data.equivalenciaM2PorUnidad === undefined ? undefined : Math.max(0, data.equivalenciaM2PorUnidad),
@@ -575,6 +581,7 @@ export async function updateProgressRubric(
   try {
     const updated = await updateDocument<WorkProgressRubric>("rubrosAvanceConfigurados", id, {
       ...data,
+      unidad: data.unidad === undefined ? undefined : normalizeUnit(data.unidad) || data.unidad,
       pesoOperativo: data.pesoOperativo === undefined ? undefined : Math.max(0, Math.min(100, data.pesoOperativo)),
       cantidadTotalPrevista: data.cantidadTotalPrevista === undefined ? undefined : Math.max(0, data.cantidadTotalPrevista),
       equivalenciaM2PorUnidad: data.equivalenciaM2PorUnidad === undefined ? undefined : Math.max(0, data.equivalenciaM2PorUnidad),
@@ -810,8 +817,7 @@ async function syncWorkProgressCache(obraId: string): Promise<void> {
 function inferProgressUnit(name: string) {
   const normalized = name.toLowerCase();
   if (normalized.includes("vidrio") || normalized.includes("sellado")) return "m2";
-  if (normalized.includes("perfil")) return "metros";
-  return "unidades";
+  return "unidad";
 }
 
 type WorkStatusLike = Obra["estado"];
