@@ -112,6 +112,8 @@ export type WorkProgressRubric = {
   nombre: string;
   unidad: string;
   cantidadTotalPrevista: number;
+  equivalenciaM2PorUnidad?: number;
+  totalEquivalenteM2?: number;
   pesoOperativo: number;
   modoCalculo: ProgressCalculationMode;
   avanceManualPermitido: boolean;

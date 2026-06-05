@@ -549,6 +549,8 @@ export async function createProgressRubric(
       ...data,
       pesoOperativo: Math.max(0, Math.min(100, data.pesoOperativo)),
       cantidadTotalPrevista: Math.max(0, data.cantidadTotalPrevista),
+      equivalenciaM2PorUnidad: data.equivalenciaM2PorUnidad === undefined ? undefined : Math.max(0, data.equivalenciaM2PorUnidad),
+      totalEquivalenteM2: data.totalEquivalenteM2 === undefined ? undefined : Math.max(0, data.totalEquivalenteM2),
       createdAt: now()
     });
     await createProgressActivity({
@@ -575,6 +577,8 @@ export async function updateProgressRubric(
       ...data,
       pesoOperativo: data.pesoOperativo === undefined ? undefined : Math.max(0, Math.min(100, data.pesoOperativo)),
       cantidadTotalPrevista: data.cantidadTotalPrevista === undefined ? undefined : Math.max(0, data.cantidadTotalPrevista),
+      equivalenciaM2PorUnidad: data.equivalenciaM2PorUnidad === undefined ? undefined : Math.max(0, data.equivalenciaM2PorUnidad),
+      totalEquivalenteM2: data.totalEquivalenteM2 === undefined ? undefined : Math.max(0, data.totalEquivalenteM2),
       updatedAt: now()
     });
     await syncWorkProgressCache(updated.obraId);

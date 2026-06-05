@@ -26,9 +26,19 @@ type NewWorkWizardProps = {
 type RubricDraft = {
   nombre: string;
   cantidadTotalPrevista: string;
-  unidad: string;
-  pesoOperativo: string;
+  unidad: RubricUnit | "";
+  equivalenciaM2PorUnidad: string;
   modoCalculo: ProgressCalculationMode;
+  avanceManualPermitido: boolean;
+};
+
+type RubricUnit = "m2" | "unidades";
+
+type CalculatedRubricDraft = RubricDraft & {
+  cantidad: number;
+  equivalencia: number;
+  totalEquivalenteM2: number;
+  pesoOperativo: number;
 };
 
 const statuses: WorkStatus[] = [
@@ -99,7 +109,9 @@ export default function NewWorkWizard({
       - financial.descuentos,
     [financial]
   );
-  const totalWeight = rubrics.reduce((sum, rubro) => sum + Number(rubro.pesoOperativo || 0), 0);
+  const calculatedRubrics = useMemo(() => calculateRubricWeights(rubrics), [rubrics]);
+  const totalWeight = calculatedRubrics.reduce((sum, rubro) => sum + rubro.pesoOperativo, 0);
+  const totalEquivalentM2 = calculatedRubrics.reduce((sum, rubro) => sum + rubro.totalEquivalenteM2, 0);
 
   function closeSafely() {
     if (dirty && !window.confirm("Cerrar sin guardar la nueva obra?")) {
@@ -146,11 +158,17 @@ export default function NewWorkWizard({
       if (rubrics.some((rubro) => !rubro.nombre.trim() || !rubro.unidad.trim())) {
         return "Todos los rubros necesitan nombre y unidad.";
       }
-      if (rubrics.some((rubro) => rubro.cantidadTotalPrevista === "" || rubro.pesoOperativo === "")) {
-        return "Todos los rubros necesitan cantidad total prevista y peso operativo.";
+      if (rubrics.some((rubro) => rubro.cantidadTotalPrevista === "" || Number(rubro.cantidadTotalPrevista) <= 0)) {
+        return "Todos los rubros necesitan una cantidad total prevista mayor a cero.";
       }
-      if (rubrics.some((rubro) => Number(rubro.cantidadTotalPrevista || 0) < 0 || Number(rubro.pesoOperativo || 0) < 0 || Number(rubro.pesoOperativo || 0) > 100)) {
-        return "Revisa cantidades y pesos. Los pesos deben estar entre 0 y 100.";
+      if (rubrics.some((rubro) => rubro.unidad === "unidades" && Number(rubro.equivalenciaM2PorUnidad || 0) <= 0)) {
+        return "Para rubros en unidades, carga una equivalencia de m² por unidad mayor a cero.";
+      }
+      if (rubrics.some((rubro) => Number(rubro.cantidadTotalPrevista || 0) < 0 || Number(getRubricEquivalence(rubro)) < 0)) {
+        return "Revisa cantidades y equivalencias. No pueden ser negativas.";
+      }
+      if (calculatedRubrics.every((rubro) => rubro.totalEquivalenteM2 <= 0)) {
+        return "Carga cantidades y equivalencias validas para calcular el peso operativo.";
       }
     }
 
@@ -178,10 +196,6 @@ export default function NewWorkWizard({
       return;
     }
 
-    if (configureProgressNow && totalWeight !== 100 && !window.confirm(`La suma de pesos es ${totalWeight}%. Crear obra igualmente?`)) {
-      return;
-    }
-
     setSaving(true);
     setError("");
     setWarning("");
@@ -201,7 +215,7 @@ export default function NewWorkWizard({
       fiscalizador: responsibles.fiscalizador ? toTitleCase(responsibles.fiscalizador) : "",
       cuadrillaAsignadaId: responsibles.cuadrillaAsignadaId ? toTitleCase(responsibles.cuadrillaAsignadaId) : ""
     };
-    const normalizedRubrics = rubrics.map((rubro) => ({
+    const normalizedRubrics = calculatedRubrics.map((rubro) => ({
       ...rubro,
       nombre: toTitleCase(rubro.nombre),
       unidad: rubro.unidad.trim()
@@ -277,10 +291,12 @@ export default function NewWorkWizard({
                 obraId: created.id,
                 nombre: rubro.nombre,
                 unidad: rubro.unidad,
-                cantidadTotalPrevista: Number(rubro.cantidadTotalPrevista || 0),
-                pesoOperativo: Number(rubro.pesoOperativo || 0),
+                cantidadTotalPrevista: rubro.cantidad,
+                equivalenciaM2PorUnidad: rubro.equivalencia,
+                totalEquivalenteM2: rubro.totalEquivalenteM2,
+                pesoOperativo: rubro.pesoOperativo,
                 modoCalculo: rubro.modoCalculo,
-                avanceManualPermitido: rubro.modoCalculo === "manual",
+                avanceManualPermitido: rubro.avanceManualPermitido,
                 orden: index + 1
               })
             )
@@ -475,6 +491,9 @@ export default function NewWorkWizard({
 
           {step === 3 ? (
             <Section title="Desglose operativo" description="Rubros que van a generar el avance fisico real. Tambien podes configurarlo despues.">
+              <div className="rounded-lg border border-next-blue/10 bg-next-light px-4 py-3 text-sm font-semibold leading-6 text-next-text">
+                El peso de cada rubro se calcula automaticamente segun sus m² equivalentes dentro de la obra.
+              </div>
               <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-next-bg p-3">
                 <input
                   className="mt-1"
@@ -500,32 +519,67 @@ export default function NewWorkWizard({
               {configureProgressNow ? (
                 <>
                   <div className={`rounded-md px-3 py-2 text-xs font-black ${totalWeight === 100 ? "bg-green-50 text-next-green" : "bg-orange-50 text-next-orange"}`}>
-                    Suma de pesos: {totalWeight}%. {totalWeight === 100 ? "Correcto." : "Lo recomendado es 100%."}
+                    Suma equivalente: {formatNumber(totalEquivalentM2)} m². Peso total: {formatWeight(totalWeight)}%.
                   </div>
                   <div className="space-y-3">
-                    {rubrics.map((rubro, index) => (
-                      <div key={index} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-[1.25fr_140px_100px_100px_130px_auto]">
+                    {calculatedRubrics.map((rubro, index) => (
+                      <div key={index} className="rounded-lg border border-slate-200 p-3">
+                        <div className="grid gap-2 lg:grid-cols-[minmax(150px,28%)_minmax(96px,12%)_minmax(130px,16%)_minmax(150px,18%)_minmax(130px,16%)_minmax(70px,10%)]">
                         <Field label="Rubro">
                           <input className="field" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
+                        </Field>
+                        <Field label="Unidad">
+                          <select className="field" value={rubro.unidad} onChange={(event) => updateRubricUnit(index, event.target.value as RubricUnit | "")}>
+                            <option value="">Unidad</option>
+                            <option value="m2">m²</option>
+                            <option value="unidades">unidades</option>
+                          </select>
                         </Field>
                         <Field label="Cantidad total prevista">
                           <input className="field" min={0} type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
                         </Field>
-                        <Field label="Unidad">
-                          <input className="field" value={rubro.unidad} onChange={(event) => updateRubric(index, { unidad: event.target.value })} />
+                        <Field label="Equiv. m² por unidad">
+                          {rubro.unidad === "m2" ? (
+                            <input className="field bg-slate-50 text-next-muted" disabled value="1" />
+                          ) : (
+                            <input
+                              className="field"
+                              min={0}
+                              placeholder="Ej. 4"
+                              type="number"
+                              value={rubro.equivalenciaM2PorUnidad}
+                              onChange={(event) => updateRubric(index, { equivalenciaM2PorUnidad: event.target.value })}
+                            />
+                          )}
+                          {rubro.unidad === "unidades" ? (
+                            <p className="mt-1 text-[10px] font-semibold normal-case leading-4 text-next-muted">
+                              Indica cuantos m² equivalentes representa cada unidad.
+                            </p>
+                          ) : null}
                         </Field>
-                        <Field label="Peso operativo">
-                          <input className="field" max={100} min={0} type="number" value={rubro.pesoOperativo} onChange={(event) => updateRubric(index, { pesoOperativo: event.target.value })} />
+                        <Field label="Peso automatico">
+                          <div className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-black text-next-blue">
+                            {formatWeight(rubro.pesoOperativo)}%
+                          </div>
+                          <p className="mt-1 text-[10px] font-semibold normal-case leading-4 text-next-muted">
+                            {formatNumber(rubro.totalEquivalenteM2)} m² equiv.
+                          </p>
                         </Field>
-                        <Field label="Modo de calculo">
-                          <select className="field" value={rubro.modoCalculo} onChange={(event) => updateRubric(index, { modoCalculo: event.target.value as ProgressCalculationMode })}>
-                            <option value="cantidad">cantidad</option>
-                            <option value="manual">manual</option>
-                          </select>
-                        </Field>
-                        <button className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-red-100 px-3 text-xs font-black text-next-red" type="button" onClick={() => removeRubric(index)}>
+                        <button className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-red-100 px-3 text-xs font-black text-next-red" type="button" onClick={() => removeRubric(index)} title="Eliminar rubro">
                           <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
+                        </div>
+                        <label className="mt-3 inline-flex items-center gap-2 text-xs font-black text-next-muted">
+                          <input
+                            type="checkbox"
+                            checked={rubro.avanceManualPermitido}
+                            onChange={(event) => updateRubric(index, {
+                              avanceManualPermitido: event.target.checked,
+                              modoCalculo: event.target.checked ? "manual" : "cantidad"
+                            })}
+                          />
+                          Usar avance manual
+                        </label>
                       </div>
                     ))}
                   </div>
@@ -591,6 +645,13 @@ export default function NewWorkWizard({
     setRubrics((current) => current.map((rubro, rowIndex) => rowIndex === index ? { ...rubro, ...data } : rubro));
   }
 
+  function updateRubricUnit(index: number, unidad: RubricUnit | "") {
+    updateRubric(index, {
+      unidad,
+      equivalenciaM2PorUnidad: unidad === "m2" ? "1" : ""
+    });
+  }
+
   function removeRubric(index: number) {
     markDirty();
     setRubrics((current) => current.filter((_, rowIndex) => rowIndex !== index));
@@ -605,8 +666,9 @@ export default function NewWorkWizard({
         nombre: "",
         cantidadTotalPrevista: "",
         unidad: "",
-        pesoOperativo: "",
-        modoCalculo: "cantidad"
+        equivalenciaM2PorUnidad: "",
+        modoCalculo: "cantidad",
+        avanceManualPermitido: false
       }
     ]);
   }
@@ -792,4 +854,74 @@ function formatFileSize(bytes: number) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function calculateRubricWeights(rubrics: RubricDraft[]): CalculatedRubricDraft[] {
+  const withEquivalent = rubrics.map((rubro) => {
+    const cantidad = parsePositiveNumber(rubro.cantidadTotalPrevista);
+    const equivalencia = getRubricEquivalence(rubro);
+    return {
+      ...rubro,
+      cantidad,
+      equivalencia,
+      totalEquivalenteM2: cantidad * equivalencia,
+      pesoOperativo: 0
+    };
+  });
+  const totalEquivalent = withEquivalent.reduce((sum, rubro) => sum + rubro.totalEquivalenteM2, 0);
+
+  if (totalEquivalent <= 0) {
+    return withEquivalent;
+  }
+
+  const validIndexes = withEquivalent
+    .map((rubro, index) => (rubro.totalEquivalenteM2 > 0 ? index : -1))
+    .filter((index) => index >= 0);
+  let accumulatedWeight = 0;
+
+  return withEquivalent.map((rubro, index) => {
+    if (rubro.totalEquivalenteM2 <= 0) {
+      return rubro;
+    }
+
+    const isLastValid = index === validIndexes[validIndexes.length - 1];
+    const nextWeight = isLastValid
+      ? roundWeight(100 - accumulatedWeight)
+      : roundWeight((rubro.totalEquivalenteM2 / totalEquivalent) * 100);
+    accumulatedWeight += nextWeight;
+    return {
+      ...rubro,
+      pesoOperativo: nextWeight
+    };
+  });
+}
+
+function getRubricEquivalence(rubro: Pick<RubricDraft, "unidad" | "equivalenciaM2PorUnidad">) {
+  if (rubro.unidad === "m2") {
+    return 1;
+  }
+
+  return parsePositiveNumber(rubro.equivalenciaM2PorUnidad);
+}
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function roundWeight(value: number) {
+  return Math.max(0, Math.round(value * 100) / 100);
+}
+
+function formatWeight(value: number) {
+  return new Intl.NumberFormat("es-PY", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 1
+  }).format(value);
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-PY", {
+    maximumFractionDigits: 2
+  }).format(value || 0);
 }
