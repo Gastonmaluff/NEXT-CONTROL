@@ -29,7 +29,7 @@ export function calculateWeightedProgress(items: WeightedProgressItem[]): number
     0
   );
 
-  return Math.round(weightedProgress / totalWeight);
+  return clampProgress(Math.round(weightedProgress / 100));
 }
 
 export function calculateRubricProgress(rubro: WorkProgressRubric, reports: ProgressReport[]): number {
