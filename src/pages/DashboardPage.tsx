@@ -11,6 +11,7 @@ import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import NewWorkWizard from "../components/work/NewWorkWizard";
 import { useAuth } from "../context/AuthContext";
 import {
   getCobrosByObra,
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [progressRubrics, setProgressRubrics] = useState<WorkProgressRubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [newWorkOpen, setNewWorkOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -124,7 +126,7 @@ export default function DashboardPage() {
           Centro de control gerencial para obras, finanzas, produccion e instalaciones.
         </p>
         {canCreateWork(profile) ? (
-          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => navigate("/finanzas-obras")}>
+          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => setNewWorkOpen(true)}>
             Nueva obra
           </button>
         ) : null}
@@ -262,6 +264,19 @@ export default function DashboardPage() {
           </div>
         </DataCard>
       </section>
+
+      {newWorkOpen ? (
+        <NewWorkWizard
+          defaultDestination="control"
+          onClose={() => setNewWorkOpen(false)}
+          onCreated={(obra, destination) => {
+            setNewWorkOpen(false);
+            if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
+            if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
+            if (destination === "control") setObras((current) => [obra, ...current]);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

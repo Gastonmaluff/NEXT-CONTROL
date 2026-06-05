@@ -152,7 +152,7 @@ async function createDocument<T extends { id: string }>(
   }
 
   try {
-    const ref = await addDoc(collection(firestoreDb, collections[name]), data);
+    const ref = await addDoc(collection(firestoreDb, collections[name]), stripUndefined(data) as Omit<T, "id">);
     return { id: ref.id, ...data } as T;
   } catch (error) {
     throw withError(error, `No se pudo crear ${collections[name]}.`);
@@ -249,7 +249,11 @@ export async function createObra(data: ObraInput): Promise<Obra> {
       ? data.costosEstimados
       : getDefaultCostBudget(valorFinalContratado),
     movimientosFinancieros: data.movimientosFinancieros ?? [],
-    rubrosAvance: data.rubrosAvance?.length ? data.rubrosAvance : initialRubros,
+    rubrosAvance: data.progressConfigured === undefined
+      ? data.rubrosAvance?.length
+        ? data.rubrosAvance
+        : initialRubros
+      : data.rubrosAvance ?? [],
     etapasProduccion: data.etapasProduccion?.length ? data.etapasProduccion : initialProductionStages,
     materialesFaltantes: data.materialesFaltantes ?? [],
     createdAt,

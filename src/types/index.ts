@@ -211,7 +211,10 @@ export type Obra = {
   imageUrl?: string;
   renderUrl?: string;
   responsable: string;
+  encargado?: string;
   supervisor?: string;
+  fiscalizador?: string;
+  cuadrillaAsignadaId?: string;
   estado: WorkStatus;
   saldoPendienteCobro: number;
   rubrosAvance: ProgressItem[];
@@ -227,6 +230,7 @@ export type Obra = {
   movimientosFinancieros?: FinancialMovement[];
   assignedUserIds?: string[];
   progressConfigured?: boolean;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 };

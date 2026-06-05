@@ -17,6 +17,7 @@ import ProgressReportModal from "../components/progress/ProgressReportModal";
 import DataCard from "../components/ui/DataCard";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import NewWorkWizard from "../components/work/NewWorkWizard";
 import { useAuth } from "../context/AuthContext";
 import {
   createProgressReport,
@@ -93,6 +94,7 @@ export default function ProjectControlPage() {
   const [error, setError] = useState("");
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [newWorkOpen, setNewWorkOpen] = useState(false);
 
   const selectedObra = obraId ? obras.find((obra) => obra.id === obraId) ?? null : null;
 
@@ -273,7 +275,7 @@ export default function ProjectControlPage() {
           </p>
         </div>
         {canCreateWork(profile) ? (
-          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => navigate("/finanzas-obras")}>
+          <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => setNewWorkOpen(true)}>
             Nueva obra
           </button>
         ) : null}
@@ -321,6 +323,19 @@ export default function ProjectControlPage() {
         )}
       </section>
 
+      {newWorkOpen ? (
+        <NewWorkWizard
+          defaultDestination="avance"
+          onClose={() => setNewWorkOpen(false)}
+          onCreated={(obra, destination) => {
+            setNewWorkOpen(false);
+            setObras((current) => [obra, ...current]);
+            if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
+            if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
+            if (destination === "control") navigate("/control");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -368,6 +383,9 @@ function ProgressWorkCard({
               <p className="text-2xl font-black text-next-blue">{progress}%</p>
             </div>
             <ProgressBar value={progress} />
+            {!obra.progressConfigured || !rubrics.length ? (
+              <p className="mt-2 text-xs font-black text-next-orange">Avance sin configurar</p>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -491,6 +509,11 @@ function ProgressDetail({
               <p className="text-3xl font-black text-next-blue">{overallProgress}%</p>
             </div>
             <ProgressBar value={overallProgress} />
+            {!obra.progressConfigured || !rubrics.length ? (
+              <p className="mt-3 text-xs font-black text-next-orange">
+                Avance sin configurar. Usa Configurar avance para definir rubros, cantidades y pesos.
+              </p>
+            ) : null}
             {!weightState.isValid ? (
               <p className="mt-3 text-xs font-black text-next-orange">
                 La suma de pesos es {weightState.totalWeight}%. Lo recomendado es 100%.
@@ -517,7 +540,7 @@ function ProgressDetail({
             El avance se calcula por ejecucion fisica real, no por consumo de presupuesto.
           </div>
           <div className="space-y-4">
-            {rubrics.map((rubro) => {
+            {rubrics.length ? rubrics.map((rubro) => {
               const progress = calculateRubricProgress(rubro, reports);
               const executed = calculateTotalExecuted(rubro.id, reports);
               const latest = getLatestRubricEntry(rubro.id, reports);
@@ -542,7 +565,7 @@ function ProgressDetail({
                   </div>
                 </div>
               );
-            })}
+            }) : <EmptyState text="Avance sin configurar. Defini rubros, cantidades y pesos para comenzar." />}
           </div>
         </DataCard>
 

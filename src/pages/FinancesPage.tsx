@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
+import NewWorkWizard from "../components/work/NewWorkWizard";
 import {
-  createFinancialWork,
   createMovement,
   deleteMovement,
   getFinancialWorks,
@@ -94,7 +94,8 @@ export default function FinancesPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [workModal, setWorkModal] = useState<"create" | "edit" | null>(null);
+  const [workModal, setWorkModal] = useState<"edit" | null>(null);
+  const [newWorkOpen, setNewWorkOpen] = useState(false);
   const [workForm, setWorkForm] = useState(emptyWorkForm);
   const [movementModal, setMovementModal] = useState<FinancialMovementKind | null>(null);
   const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
@@ -158,8 +159,7 @@ export default function FinancesPage() {
   }
 
   function openCreateWork() {
-    setWorkForm(emptyWorkForm);
-    setWorkModal("create");
+    setNewWorkOpen(true);
   }
 
   function openEditWork() {
@@ -206,22 +206,6 @@ export default function FinancesPage() {
         });
         setWorks((current) => current.map((work) => (work.id === updated.id ? updated : work)));
         setMessage("Datos de obra actualizados.");
-      } else {
-        const created = await createFinancialWork({
-          nombre: workForm.nombre,
-          cliente: workForm.cliente,
-          arquitecto: workForm.arquitecto,
-          direccion: workForm.direccion,
-          fechaInicio: workForm.fechaInicio,
-          fechaComprometida: workForm.fechaComprometida,
-          presupuestoAprobado,
-          adicionalesAprobados,
-          descuentos,
-          observacionInicial: workForm.observacionInicial
-        });
-        setWorks((current) => [created, ...current]);
-        setMessage("Obra financiera creada.");
-        navigate(`/finanzas-obras/${created.id}`);
       }
       setWorkModal(null);
     } catch (saveError) {
@@ -365,6 +349,20 @@ export default function FinancesPage() {
           onClose={() => setWorkModal(null)}
         />
       ) : null}
+      {newWorkOpen ? (
+        <NewWorkWizard
+          defaultDestination="finanzas"
+          onClose={() => setNewWorkOpen(false)}
+          onCreated={(obra, destination) => {
+            setNewWorkOpen(false);
+            setWorks((current) => [obra, ...current]);
+            setMessage("Obra creada.");
+            if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
+            if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
+            if (destination === "control") navigate("/control");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -397,7 +395,7 @@ function FinancialDetail({
   onDeleteMovement: (movementId: string) => void;
   message: string;
   error: string;
-  workModal: "create" | "edit" | null;
+  workModal: "edit" | null;
   workForm: typeof emptyWorkForm;
   setWorkForm: (values: typeof emptyWorkForm) => void;
   onSaveWork: (event: FormEvent<HTMLFormElement>) => void;
@@ -817,7 +815,7 @@ function WorkModal({
   onSubmit,
   onClose
 }: {
-  mode: "create" | "edit";
+  mode: "edit";
   values: typeof emptyWorkForm;
   setValues: (values: typeof emptyWorkForm) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -827,19 +825,39 @@ function WorkModal({
     Number(values.presupuestoAprobado) + Number(values.adicionalesAprobados) - Number(values.descuentos);
 
   return (
-    <Modal title={mode === "create" ? "Nueva obra" : "Editar datos de obra"} onClose={onClose}>
+    <Modal title="Editar datos de obra" onClose={onClose}>
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <input className="field" required placeholder="Nombre de obra" value={values.nombre} onChange={(event) => setValues({ ...values, nombre: event.target.value })} />
-          <input className="field" required placeholder="Cliente" value={values.cliente} onChange={(event) => setValues({ ...values, cliente: event.target.value })} />
-          <input className="field" placeholder="Arquitecto opcional" value={values.arquitecto} onChange={(event) => setValues({ ...values, arquitecto: event.target.value })} />
-          <input className="field" placeholder="Direccion opcional" value={values.direccion} onChange={(event) => setValues({ ...values, direccion: event.target.value })} />
-          <input className="field" type="date" value={values.fechaInicio} onChange={(event) => setValues({ ...values, fechaInicio: event.target.value })} />
-          <input className="field" type="date" value={values.fechaComprometida} onChange={(event) => setValues({ ...values, fechaComprometida: event.target.value })} />
-          <input className="field" required type="number" placeholder="Presupuesto aprobado" value={values.presupuestoAprobado} onChange={(event) => setValues({ ...values, presupuestoAprobado: event.target.value })} />
-          <input className="field" type="number" placeholder="Adicionales aprobados" value={values.adicionalesAprobados} onChange={(event) => setValues({ ...values, adicionalesAprobados: event.target.value })} />
-          <input className="field" type="number" placeholder="Descuentos" value={values.descuentos} onChange={(event) => setValues({ ...values, descuentos: event.target.value })} />
-          <input className="field" placeholder="Observacion inicial opcional" value={values.observacionInicial} onChange={(event) => setValues({ ...values, observacionInicial: event.target.value })} />
+          <FormField label="Nombre de obra">
+            <input className="field" required value={values.nombre} onChange={(event) => setValues({ ...values, nombre: event.target.value })} />
+          </FormField>
+          <FormField label="Cliente">
+            <input className="field" required value={values.cliente} onChange={(event) => setValues({ ...values, cliente: event.target.value })} />
+          </FormField>
+          <FormField label="Arquitecto opcional">
+            <input className="field" value={values.arquitecto} onChange={(event) => setValues({ ...values, arquitecto: event.target.value })} />
+          </FormField>
+          <FormField label="Direccion opcional">
+            <input className="field" value={values.direccion} onChange={(event) => setValues({ ...values, direccion: event.target.value })} />
+          </FormField>
+          <FormField label="Fecha de inicio">
+            <input className="field" type="date" value={values.fechaInicio} onChange={(event) => setValues({ ...values, fechaInicio: event.target.value })} />
+          </FormField>
+          <FormField label="Fecha comprometida de entrega">
+            <input className="field" type="date" value={values.fechaComprometida} onChange={(event) => setValues({ ...values, fechaComprometida: event.target.value })} />
+          </FormField>
+          <FormField label="Presupuesto aprobado">
+            <input className="field" required type="number" value={values.presupuestoAprobado} onChange={(event) => setValues({ ...values, presupuestoAprobado: event.target.value })} />
+          </FormField>
+          <FormField label="Adicionales aprobados">
+            <input className="field" type="number" value={values.adicionalesAprobados} onChange={(event) => setValues({ ...values, adicionalesAprobados: event.target.value })} />
+          </FormField>
+          <FormField label="Descuentos">
+            <input className="field" type="number" value={values.descuentos} onChange={(event) => setValues({ ...values, descuentos: event.target.value })} />
+          </FormField>
+          <FormField label="Observacion inicial">
+            <input className="field" value={values.observacionInicial} onChange={(event) => setValues({ ...values, observacionInicial: event.target.value })} />
+          </FormField>
         </div>
         <div className="rounded-lg bg-next-bg p-4">
           <p className="text-xs font-bold uppercase text-next-muted">Total contratado</p>
@@ -850,6 +868,15 @@ function WorkModal({
         </button>
       </form>
     </Modal>
+  );
+}
+
+function FormField({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="block text-xs font-black uppercase text-next-muted">
+      {label}
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }
 
