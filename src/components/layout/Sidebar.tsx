@@ -59,18 +59,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
               title={item.label}
               className={({ isActive }) =>
                 [
-                  "group relative flex min-w-max items-center rounded-lg text-sm font-semibold outline-none transition-all duration-200",
-                  collapsed ? "justify-center px-3 py-2.5 lg:h-10 lg:w-10 lg:min-w-0 lg:px-0" : "gap-3 px-3 py-2.5",
+                  "sidebar-nav-item group relative flex min-w-max items-center rounded-lg text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+                  collapsed
+                    ? "sidebar-nav-item-collapsed justify-center px-3 py-2.5 lg:h-10 lg:w-10 lg:min-w-0 lg:px-0"
+                    : "gap-3 px-3 py-2.5",
                   isActive
-                    ? "bg-white/95 text-next-navy shadow-[0_10px_24px_rgba(0,0,0,0.16)] ring-1 ring-white/40"
-                    : "text-white/72 hover:bg-white/[0.08] hover:text-white"
+                    ? "sidebar-nav-active bg-white/95 text-next-navy shadow-[0_10px_24px_rgba(0,0,0,0.16)] ring-1 ring-white/40"
+                    : "text-white/70 hover:bg-white/[0.08] hover:text-white"
                 ].join(" ")
               }
             >
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <Icon className="sidebar-nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
               <span className={collapsed ? "sr-only lg:hidden" : ""}>{item.label}</span>
               {collapsed ? (
-                <span className="pointer-events-none absolute left-full top-1/2 z-40 ml-3 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-white px-3 py-2 text-xs font-black text-next-navy shadow-xl ring-1 ring-slate-200 lg:group-hover:block">
+                <span
+                  className="sidebar-tooltip pointer-events-none absolute left-full top-1/2 z-40 ml-3 hidden whitespace-nowrap rounded-lg border border-white/20 bg-[#061a2f]/95 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm lg:block"
+                  aria-hidden="true"
+                >
                   {item.label}
                 </span>
               ) : null}
