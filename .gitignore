@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-server*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+serviceAccount*.json
+firebase-service-account*.json

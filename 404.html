@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NEXT CONTROL</title>
+    <script>
+      (function () {
+        var base = "/NEXT-CONTROL";
+        var path = window.location.pathname.indexOf(base) === 0
+          ? window.location.pathname.slice(base.length)
+          : window.location.pathname;
+        window.location.replace(
+          base + "/?redirect=" + encodeURIComponent(path + window.location.search + window.location.hash)
+        );
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/NEXT-CONTROL/favicon.svg" />
+    <title>NEXT CONTROL</title>
+    <script>
+      (function () {
+        var redirect = new URLSearchParams(window.location.search).get("redirect");
+        if (!redirect) return;
+
+        var normalizedRedirect = redirect.charAt(0) === "/" ? redirect : "/" + redirect;
+        window.history.replaceState(null, "", "/NEXT-CONTROL" + normalizedRedirect);
+      })();
+    </script>
+    <script type="module" crossorigin src="/NEXT-CONTROL/assets/index-_UCuDESu.js"></script>
+    <link rel="stylesheet" crossorigin href="/NEXT-CONTROL/assets/index-D-x019g2.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
