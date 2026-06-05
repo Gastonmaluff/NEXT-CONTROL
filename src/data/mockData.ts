@@ -45,7 +45,7 @@ export const dashboardKpis = [
   { label: "Flujo proyectado 30 días", value: "₲ 1.672.500.000", icon: BarChart3, tone: "blue" },
   { label: "Obras atrasadas", value: "3", icon: ClipboardList, tone: "red" },
   { label: "Producción pendiente", value: "₲ 487.600.000", icon: Factory, tone: "orange" },
-  { label: "M² instalados esta semana", value: "1.256 m²", icon: Truck, tone: "green" },
+  { label: "M² instalados esta semana", value: "0 m²", icon: Truck, tone: "green" },
   { label: "Utilidad estimada", value: "₲ 373.850.000", icon: PackageSearch, tone: "green" }
 ];
 
@@ -243,3 +243,4 @@ export const mobileTimeline = [
   { time: "14:40", event: "Se cargaron 6 fotos" },
   { time: "17:14", event: "Jornada finalizada" }
 ];
+

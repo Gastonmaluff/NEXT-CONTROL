@@ -1,7 +1,6 @@
 import {
   BarChart3,
   CalendarClock,
-  ClipboardList,
   Factory,
   Receipt,
   Truck
@@ -13,9 +12,15 @@ import KpiCard from "../components/ui/KpiCard";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { getCobrosByObra, getCuadrillas, getObras } from "../lib/firestore";
+import {
+  getCobrosByObra,
+  getCuadrillas,
+  getObras,
+  getProgressReportsByWork,
+  getProgressRubricsByWork
+} from "../lib/firestore";
 import { canCreateWork } from "../lib/roles";
-import type { Cobro, Cuadrilla, Obra } from "../types";
+import type { Cobro, Cuadrilla, Obra, ProgressReport, WorkProgressRubric } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
@@ -26,6 +31,8 @@ export default function DashboardPage() {
   const [obras, setObras] = useState<Obra[]>([]);
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [cuadrillas, setCuadrillas] = useState<Cuadrilla[]>([]);
+  const [progressReports, setProgressReports] = useState<ProgressReport[]>([]);
+  const [progressRubrics, setProgressRubrics] = useState<WorkProgressRubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -37,8 +44,14 @@ export default function DashboardPage() {
         const loadedCobros = (await Promise.all(
           loadedObras.map((obra) => getCobrosByObra(obra.id))
         )).flat();
+        const [loadedReports, loadedRubrics] = await Promise.all([
+          Promise.all(loadedObras.map((obra) => getProgressReportsByWork(obra.id))).then((items) => items.flat()),
+          Promise.all(loadedObras.map((obra) => getProgressRubricsByWork(obra.id))).then((items) => items.flat())
+        ]);
         setObras(loadedObras);
         setCobros(loadedCobros);
+        setProgressReports(loadedReports);
+        setProgressRubrics(loadedRubrics);
         setCuadrillas(await getCuadrillas());
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el dashboard.");
@@ -67,12 +80,12 @@ export default function DashboardPage() {
       saldoPendiente,
       atrasadas,
       pendienteProduccion,
-      utilidadEstimada: Math.round(totalMonto * 0.18),
+      utilidadEstimada: 0,
       margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo").length,
-      m2InstaladosSemana: 1256,
-      flujoProyectado: saldoPendiente + Math.round(totalCobrado * 0.18)
+      m2InstaladosSemana: calculateInstalledM2ThisWeek(progressReports, progressRubrics),
+      flujoProyectado: saldoPendiente
     };
-  }, [cobros, obras]);
+  }, [cobros, obras, progressReports, progressRubrics]);
 
   const statusRows = useMemo(() => {
     const total = Math.max(obras.length, 1);
@@ -251,6 +264,75 @@ export default function DashboardPage() {
       </section>
     </div>
   );
+}
+
+function calculateInstalledM2ThisWeek(
+  reports: ProgressReport[],
+  rubrics: WorkProgressRubric[]
+): number {
+  const { start, end } = getCurrentWeekRange();
+  const rubricsById = new Map(rubrics.map((rubro) => [rubro.id, rubro]));
+
+  return Math.round(
+    reports
+      .filter((report) => isDateInRange(report.fecha, start, end) && !isCancelledReport(report))
+      .flatMap((report) => report.entries)
+      .reduce((total, entry) => {
+        const executedToday = entry.cantidadEjecutadaHoy ?? 0;
+        const rubric = rubricsById.get(entry.rubroId);
+
+        if (executedToday <= 0 || !isInstalledSquareMeterRubric(rubric, entry.rubroNombre)) {
+          return total;
+        }
+
+        return total + executedToday;
+      }, 0)
+  );
+}
+
+function getCurrentWeekRange() {
+  const today = new Date();
+  const start = new Date(today);
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diffToMonday);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+}
+
+function isDateInRange(value: string, start: Date, end: Date) {
+  if (!value) return false;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= start && date <= end;
+}
+
+function isCancelledReport(report: ProgressReport) {
+  const status = `${report.observacionGeneral ?? ""} ${report.incidentes ?? ""}`.toLowerCase();
+  return status.includes("cancelado") || status.includes("eliminado");
+}
+
+function isInstalledSquareMeterRubric(rubric: WorkProgressRubric | undefined, fallbackName: string) {
+  const unit = normalizeText(rubric?.unidad ?? "");
+  const name = normalizeText(rubric?.nombre ?? fallbackName);
+  const isSquareMeter = unit === "m2" || unit === "m²" || unit.includes("metro cuadrado");
+  const looksInstalled = name.includes("instalad") || name.includes("vidrio");
+  const excluded = name.includes("sellado");
+
+  return isSquareMeter && looksInstalled && !excluded;
+}
+
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 function getBadgeForStatus(status: string): BadgeStatus {

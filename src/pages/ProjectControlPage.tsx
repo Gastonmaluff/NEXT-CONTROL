@@ -433,7 +433,7 @@ function ProgressDetail({
   const activeCrew = getActiveCrew(obra.id, cuadrillas);
   const latestReport = reports[0];
   const completedStages = obra.etapasProduccion.filter((stage) => stage.estado === "Completado").length;
-  const installedMeters = Math.round(overallProgress * 14.8);
+  const installedMeters = calculateInstalledM2(rubrics, reports);
 
   return (
     <div className="min-w-0 space-y-6">
@@ -506,7 +506,7 @@ function ProgressDetail({
             <Metric label="Estado operativo" value={obra.estado} />
             <Metric label="Avance fisico" value={`${overallProgress}%`} />
             <Metric label="Produccion completada" value={`${completedStages}/${obra.etapasProduccion.length} etapas`} />
-            <Metric label="M2 instalados" value={`Demo ${installedMeters} m2`} />
+            <Metric label="M2 instalados" value={`${installedMeters} m2`} />
             <Metric label="Ultima actualizacion" value={latestReport ? `${formatDateShort(latestReport.fecha)} ${latestReport.hora}` : formatDateTime(obra.updatedAt)} />
             <Metric label="Cuadrilla activa hoy" value={activeCrew ? `${activeCrew.nombre} desde ${activeCrew.horaInicio || "--:--"}` : "Sin cuadrilla activa actualmente"} />
           </div>
@@ -868,6 +868,39 @@ function getMaterialsForWork(obraId: string, materials: ProgressMaterialReport[]
 
 function getActiveCrew(obraId: string, cuadrillas: Cuadrilla[]) {
   return cuadrillas.find((crew) => crew.obraId === obraId && crew.estado === "En obra" && !crew.horaFin);
+}
+
+function calculateInstalledM2(rubrics: WorkProgressRubric[], reports: ProgressReport[]) {
+  return Math.round(
+    rubrics
+      .filter((rubro) => isInstalledSquareMeterRubric(rubro))
+      .reduce((total, rubro) => {
+        const accumulated = reports
+          .flatMap((report) => report.entries)
+          .filter((entry) => entry.rubroId === rubro.id)
+          .reduce((max, entry) => Math.max(max, entry.cantidadAcumuladaNueva ?? 0), 0);
+
+        return total + accumulated;
+      }, 0)
+  );
+}
+
+function isInstalledSquareMeterRubric(rubro: WorkProgressRubric) {
+  const unit = normalizeOperationalText(rubro.unidad);
+  const name = normalizeOperationalText(rubro.nombre);
+  const isSquareMeter = unit === "m2" || unit === "m²" || unit.includes("metro cuadrado");
+  const looksInstalled = name.includes("instalad") || name.includes("vidrio");
+  const excluded = name.includes("sellado");
+
+  return isSquareMeter && looksInstalled && !excluded;
+}
+
+function normalizeOperationalText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 function operationalSummary(obra: Obra, progress: number, pendingMaterials: number) {
