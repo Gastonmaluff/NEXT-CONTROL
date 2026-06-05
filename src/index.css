@@ -56,27 +56,34 @@ textarea {
 
 /* ── Sidebar premium microinteractions ─────────────────────────── */
 
+/* Item-level transition */
 .sidebar-nav-item {
   transition:
     background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow       180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform        180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color            180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Expanded: shift right on hover/focus */
+/* Expanded: shift right + inset accent bar */
 .sidebar-nav-item:hover,
 .sidebar-nav-item:focus-visible {
   transform: translateX(3px);
 }
 
-/* Collapsed: lift slightly instead of shifting right */
-.sidebar-nav-item-collapsed:hover,
-.sidebar-nav-item-collapsed:focus-visible {
-  transform: translateY(-1px) !important;
+.sidebar-nav-item:hover:not(.sidebar-nav-active),
+.sidebar-nav-item:focus-visible:not(.sidebar-nav-active) {
+  box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.7), 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
-/* Active item hover: add elevation without altering active look */
+/* Collapsed: lift instead of shift */
+.sidebar-nav-item-collapsed:hover,
+.sidebar-nav-item-collapsed:focus-visible {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Active item hover: richer elevation */
 .sidebar-nav-active:hover,
 .sidebar-nav-active:focus-visible {
   box-shadow:
@@ -84,24 +91,201 @@ textarea {
     0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
-/* Icon microinteraction */
+/* ── Icon base (smooth exit) ────────────────────────────────────── */
 .sidebar-nav-icon {
   transition:
-    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter    260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity   260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.sidebar-nav-item:hover .sidebar-nav-icon,
-.sidebar-nav-item:focus-visible .sidebar-nav-icon {
-  transform: translateY(-1px) scale(1.1);
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.28));
+/* Active icon: persistent subtle inner glow */
+.sidebar-nav-active .sidebar-nav-icon {
+  filter: drop-shadow(0 0 2px rgba(11, 53, 88, 0.3));
 }
 
-/* Active item hover: softer icon scale (item is already prominent) */
-.sidebar-nav-active:hover .sidebar-nav-icon,
-.sidebar-nav-active:focus-visible .sidebar-nav-icon {
-  transform: translateY(-1px) scale(1.06);
-  filter: drop-shadow(0 1px 3px rgba(11, 53, 88, 0.35));
+/* ── Per-icon keyframes ─────────────────────────────────────────── */
+
+/* Control — dashboard pulse + blue glow */
+@keyframes sb-control {
+  0%   { transform: scale(1);    filter: none; }
+  40%  { transform: scale(1.28); filter: drop-shadow(0 0 8px rgba(96,165,250,.95)); }
+  70%  { transform: scale(1.18); filter: drop-shadow(0 0 5px rgba(96,165,250,.65)); }
+  100% { transform: scale(1.22); filter: drop-shadow(0 0 5px rgba(96,165,250,.55)); }
+}
+
+/* Avance de obras — lift + check redraw */
+@keyframes sb-avance {
+  0%   { transform: scale(1) translateY(0);    filter: none; }
+  30%  { transform: scale(1.26) translateY(-4px); filter: drop-shadow(0 0 8px rgba(96,165,250,.9)); }
+  100% { transform: scale(1.2)  translateY(-2px); filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+@keyframes sb-draw {
+  from { stroke-dashoffset: 100; opacity: 0.15; }
+  to   { stroke-dashoffset: 0;   opacity: 1; }
+}
+
+/* Finanzas — calculator wobble */
+@keyframes sb-finanzas {
+  0%   { transform: scale(1) rotate(0);        filter: none; }
+  20%  { transform: scale(1.24) rotate(-7deg); filter: drop-shadow(0 0 9px rgba(96,165,250,.9)); }
+  50%  { transform: scale(1.2)  rotate(5deg);  filter: drop-shadow(0 0 6px rgba(96,165,250,.65)); }
+  75%  { transform: scale(1.22) rotate(-2deg); }
+  100% { transform: scale(1.21) rotate(0);     filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Clientes — people bounce together */
+@keyframes sb-clientes {
+  0%   { transform: scale(1) translateY(0);       filter: none; }
+  25%  { transform: scale(1.28) translateY(-5px); filter: drop-shadow(0 0 9px rgba(96,165,250,.9)); }
+  55%  { transform: scale(1.18) translateY(2px);  }
+  80%  { transform: scale(1.23) translateY(-2px); filter: drop-shadow(0 0 6px rgba(96,165,250,.6)); }
+  100% { transform: scale(1.21) translateY(0);    filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Presupuestos — document flip + lift */
+@keyframes sb-presupuestos {
+  0%   { transform: scale(1) translateY(0) rotate(0);         filter: none; }
+  35%  { transform: scale(1.26) translateY(-4px) rotate(-8deg); filter: drop-shadow(0 0 9px rgba(96,165,250,.9)); }
+  65%  { transform: scale(1.19) translateY(-2px) rotate(3deg); }
+  100% { transform: scale(1.2)  translateY(-2px) rotate(0);   filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Producción — factory double-pulse */
+@keyframes sb-produccion {
+  0%   { transform: scale(1);    filter: none; }
+  25%  { transform: scale(1.28); filter: drop-shadow(0 0 10px rgba(96,165,250,.95)); }
+  50%  { transform: scale(1.18); filter: drop-shadow(0 0 5px rgba(96,165,250,.55)); }
+  75%  { transform: scale(1.26); filter: drop-shadow(0 0 9px rgba(96,165,250,.8)); }
+  100% { transform: scale(1.22); filter: drop-shadow(0 0 6px rgba(96,165,250,.55)); }
+}
+
+/* Instalaciones — truck drive forward */
+@keyframes sb-instalaciones {
+  0%   { transform: scale(1) translateX(0);     filter: none; }
+  20%  { transform: scale(1.1) translateX(-6px); }
+  55%  { transform: scale(1.26) translateX(7px); filter: drop-shadow(4px 0 9px rgba(96,165,250,.9)); }
+  80%  { transform: scale(1.2) translateX(1px);  }
+  100% { transform: scale(1.21) translateX(3px); filter: drop-shadow(1px 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Cobros — float up with green glow */
+@keyframes sb-cobros {
+  0%   { transform: scale(1) translateY(0);       filter: none; }
+  35%  { transform: scale(1.28) translateY(-6px); filter: drop-shadow(0 0 10px rgba(52,211,153,.95)); }
+  65%  { transform: scale(1.19) translateY(-3px); filter: drop-shadow(0 0 6px rgba(52,211,153,.65)); }
+  100% { transform: scale(1.21) translateY(-2px); filter: drop-shadow(0 0 5px rgba(52,211,153,.55)); }
+}
+
+/* Proveedores — corporate briefcase lift + tilt */
+@keyframes sb-proveedores {
+  0%   { transform: scale(1) translateY(0) rotate(0);          filter: none; }
+  35%  { transform: scale(1.26) translateY(-4px) rotate(-4deg); filter: drop-shadow(0 0 8px rgba(96,165,250,.9)); }
+  65%  { transform: scale(1.19) translateY(-2px) rotate(2deg); }
+  100% { transform: scale(1.21) translateY(-2px) rotate(0);    filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Inventario — boxes drop-bounce */
+@keyframes sb-inventario {
+  0%   { transform: scale(1) translateY(0);       filter: none; }
+  25%  { transform: scale(1.06) translateY(-7px); }
+  55%  { transform: scale(1.28) translateY(3px);  filter: drop-shadow(0 5px 10px rgba(96,165,250,.9)); }
+  80%  { transform: scale(1.2)  translateY(-2px); }
+  100% { transform: scale(1.21) translateY(0);    filter: drop-shadow(0 2px 5px rgba(96,165,250,.5)); }
+}
+
+/* Reportes — bars grow */
+@keyframes sb-reportes {
+  0%   { transform: scale(1);                     filter: none; }
+  40%  { transform: scale(1.26) scaleY(1.18);     filter: drop-shadow(0 0 9px rgba(96,165,250,.95)); }
+  70%  { transform: scale(1.19) scaleY(1.05);     filter: drop-shadow(0 0 5px rgba(96,165,250,.55)); }
+  100% { transform: scale(1.21);                  filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* Configuración — gear rotate */
+@keyframes sb-settings {
+  0%   { transform: scale(1) rotate(0);       filter: none; }
+  100% { transform: scale(1.24) rotate(65deg); filter: drop-shadow(0 0 7px rgba(96,165,250,.65)); }
+}
+
+/* Usuarios — user pop + gear hint */
+@keyframes sb-usuarios {
+  0%   { transform: scale(1) translateY(0) rotate(0);    filter: none; }
+  35%  { transform: scale(1.28) translateY(-4px);        filter: drop-shadow(0 0 10px rgba(96,165,250,.95)); }
+  65%  { transform: scale(1.18) rotate(12deg);           }
+  100% { transform: scale(1.21) rotate(0);               filter: drop-shadow(0 0 5px rgba(96,165,250,.5)); }
+}
+
+/* ── Apply per-icon animations on hover / focus ─────────────────── */
+
+.sidebar-nav-item:hover .icon-control,
+.sidebar-nav-item:focus-visible .icon-control {
+  animation: sb-control 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-avance,
+.sidebar-nav-item:focus-visible .icon-avance {
+  animation: sb-avance 430ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.sidebar-nav-item:hover .icon-avance > path:last-of-type,
+.sidebar-nav-item:focus-visible .icon-avance > path:last-of-type {
+  stroke-dasharray: 100;
+  animation: sb-draw 380ms cubic-bezier(0.22, 1, 0.36, 1) 70ms both;
+}
+
+.sidebar-nav-item:hover .icon-finanzas,
+.sidebar-nav-item:focus-visible .icon-finanzas {
+  animation: sb-finanzas 510ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-clientes,
+.sidebar-nav-item:focus-visible .icon-clientes {
+  animation: sb-clientes 530ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-presupuestos,
+.sidebar-nav-item:focus-visible .icon-presupuestos {
+  animation: sb-presupuestos 470ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-produccion,
+.sidebar-nav-item:focus-visible .icon-produccion {
+  animation: sb-produccion 550ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-instalaciones,
+.sidebar-nav-item:focus-visible .icon-instalaciones {
+  animation: sb-instalaciones 530ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-cobros,
+.sidebar-nav-item:focus-visible .icon-cobros {
+  animation: sb-cobros 470ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-proveedores,
+.sidebar-nav-item:focus-visible .icon-proveedores {
+  animation: sb-proveedores 470ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-inventario,
+.sidebar-nav-item:focus-visible .icon-inventario {
+  animation: sb-inventario 550ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-reportes,
+.sidebar-nav-item:focus-visible .icon-reportes {
+  animation: sb-reportes 430ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-settings,
+.sidebar-nav-item:focus-visible .icon-settings {
+  animation: sb-settings 550ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sidebar-nav-item:hover .icon-usuarios,
+.sidebar-nav-item:focus-visible .icon-usuarios {
+  animation: sb-usuarios 510ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 /* Premium tooltip — delayed enter, instant exit */
@@ -109,7 +293,7 @@ textarea {
   opacity: 0;
   transform: translateX(-4px) translateY(-50%);
   transition:
-    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
+    opacity   140ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
     transform 140ms cubic-bezier(0.22, 1, 0.36, 1) 0ms;
 }
 
@@ -118,7 +302,7 @@ textarea {
   opacity: 1;
   transform: translateX(0) translateY(-50%);
   transition:
-    opacity 140ms cubic-bezier(0.22, 1, 0.36, 1) 280ms,
+    opacity   140ms cubic-bezier(0.22, 1, 0.36, 1) 280ms,
     transform 140ms cubic-bezier(0.22, 1, 0.36, 1) 280ms;
 }
 
@@ -135,18 +319,23 @@ textarea {
   .sidebar-nav-item-collapsed:hover,
   .sidebar-nav-item-collapsed:focus-visible {
     transform: none !important;
+    box-shadow: none !important;
   }
 
-  .sidebar-nav-icon {
+  .sidebar-nav-icon,
+  .sidebar-nav-item .sidebar-nav-icon {
+    animation: none !important;
     transition: none !important;
-  }
-
-  .sidebar-nav-item:hover .sidebar-nav-icon,
-  .sidebar-nav-item:focus-visible .sidebar-nav-icon,
-  .sidebar-nav-active:hover .sidebar-nav-icon,
-  .sidebar-nav-active:focus-visible .sidebar-nav-icon {
     transform: none !important;
     filter: none !important;
+  }
+
+  .sidebar-nav-item svg path,
+  .sidebar-nav-item svg polyline,
+  .sidebar-nav-item svg line {
+    animation: none !important;
+    stroke-dasharray: unset !important;
+    stroke-dashoffset: unset !important;
   }
 
   .sidebar-tooltip {

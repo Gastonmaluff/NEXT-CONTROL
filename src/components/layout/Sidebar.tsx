@@ -65,11 +65,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     : "gap-3 px-3 py-2.5",
                   isActive
                     ? "sidebar-nav-active bg-white/95 text-next-navy shadow-[0_10px_24px_rgba(0,0,0,0.16)] ring-1 ring-white/40"
-                    : "text-white/70 hover:bg-white/[0.08] hover:text-white"
+                    : "text-white/70 hover:bg-white/[0.12] hover:text-white"
                 ].join(" ")
               }
             >
-              <Icon className="sidebar-nav-icon h-4 w-4 shrink-0" aria-hidden="true" />
+              <Icon className={`sidebar-nav-icon ${item.animClass} h-4 w-4 shrink-0`} aria-hidden="true" />
               <span className={collapsed ? "sr-only lg:hidden" : ""}>{item.label}</span>
               {collapsed ? (
                 <span
