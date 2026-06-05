@@ -1,13 +1,15 @@
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2, X } from "lucide-react";
-import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, Check, Image as ImageIcon, Plus, Trash2, Upload, X } from "lucide-react";
+import type { MutableRefObject, ReactNode } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { firebaseStorage, isFirebaseConfigured } from "../../lib/firebase";
 import {
   createActividad,
   createObra,
   createProgressRubric,
   updateObra
 } from "../../lib/firestore";
+import { uploadFile } from "../../lib/storageUpload";
 import type { Obra, ProgressCalculationMode, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
 
@@ -52,6 +54,7 @@ export default function NewWorkWizard({
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [uploadStatus, setUploadStatus] = useState("");
   const [dirty, setDirty] = useState(false);
   const [destination, setDestination] = useState<WizardDestination>(defaultDestination);
   const [configureProgressNow, setConfigureProgressNow] = useState(true);
@@ -60,7 +63,6 @@ export default function NewWorkWizard({
     cliente: "",
     arquitecto: "",
     direccion: "",
-    renderUrl: "",
     fechaInicio: getTodayInputDate(),
     fechaComprometida: getTodayInputDate(),
     estado: "Aprobado" as WorkStatus
@@ -78,6 +80,21 @@ export default function NewWorkWizard({
     observacionInicial: ""
   });
   const [rubrics, setRubrics] = useState<RubricDraft[]>(defaultRubrics);
+  const [renderFile, setRenderFile] = useState<File | null>(null);
+  const [renderPreviewUrl, setRenderPreviewUrl] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const storageReady = isFirebaseConfigured() && Boolean(firebaseStorage);
+
+  useEffect(() => {
+    if (!renderFile) {
+      setRenderPreviewUrl("");
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(renderFile);
+    setRenderPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [renderFile]);
 
   const totalContratado = useMemo(
     () =>
@@ -157,6 +174,7 @@ export default function NewWorkWizard({
 
     setSaving(true);
     setError("");
+    setUploadStatus("");
     try {
       const created = await createObra({
         nombre: general.nombre.trim(),
@@ -164,8 +182,6 @@ export default function NewWorkWizard({
         arquitecto: general.arquitecto.trim(),
         ubicacion: general.direccion.trim(),
         direccion: general.direccion.trim(),
-        imageUrl: general.renderUrl.trim() || undefined,
-        renderUrl: general.renderUrl.trim() || undefined,
         montoAprobado: totalContratado,
         fechaInicio: general.fechaInicio,
         fechaEntrega: general.fechaComprometida,
@@ -190,6 +206,24 @@ export default function NewWorkWizard({
         createdBy: profile?.uid ?? "unknown"
       });
 
+      let createdWithImage = created;
+      if (renderFile && storageReady) {
+        try {
+          setUploadStatus("Subiendo imagen...");
+          const extension = getFileExtension(renderFile);
+          const url = await uploadFile(
+            `obras/${created.id}/render/${Date.now()}-${sanitizeFileName(renderFile.name || `render.${extension}`)}`,
+            renderFile
+          );
+          createdWithImage = await updateObra(created.id, { renderUrl: url });
+        } catch (uploadError) {
+          console.error("No se pudo subir la imagen principal de la obra.", uploadError);
+          window.alert("La obra fue creada, pero no se pudo subir la imagen. Podes volver a cargarla cuando Firebase Storage este disponible.");
+        } finally {
+          setUploadStatus("");
+        }
+      }
+
       if (configureProgressNow) {
         const createdRubrics = await Promise.all(
           rubrics.map((rubro, index) =>
@@ -205,7 +239,7 @@ export default function NewWorkWizard({
             })
           )
         );
-        await updateObra(created.id, {
+        createdWithImage = await updateObra(created.id, {
           rubrosAvance: createdRubrics.map((rubro) => ({
             id: rubro.id,
             nombre: rubro.nombre,
@@ -217,7 +251,7 @@ export default function NewWorkWizard({
       }
 
       await createActividad({
-        obraId: created.id,
+        obraId: createdWithImage.id,
         tipo: "obra",
         descripcion: configureProgressNow
           ? "Obra creada con desglose operativo inicial."
@@ -226,7 +260,7 @@ export default function NewWorkWizard({
         fecha: new Date().toISOString()
       });
 
-      onCreated(created, destination);
+      onCreated(createdWithImage, destination);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo crear la obra.");
     } finally {
@@ -293,9 +327,30 @@ export default function NewWorkWizard({
                 <Field label="Direccion" required>
                   <input className="field" required value={general.direccion} onChange={(event) => { markDirty(); setGeneral({ ...general, direccion: event.target.value }); }} />
                 </Field>
-                <Field label="Imagen/render opcional">
-                  <input className="field" placeholder="URL de imagen o render" value={general.renderUrl} onChange={(event) => { markDirty(); setGeneral({ ...general, renderUrl: event.target.value }); }} />
-                </Field>
+                <ImageUploadField
+                  file={renderFile}
+                  inputRef={fileInputRef}
+                  previewUrl={renderPreviewUrl}
+                  storageReady={storageReady}
+                  uploadStatus={uploadStatus}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (!file) return;
+                    if (!isAllowedImage(file)) {
+                      setError("Formato no valido. Usa JPG, PNG o WebP.");
+                      event.target.value = "";
+                      return;
+                    }
+                    markDirty();
+                    setError("");
+                    setRenderFile(file);
+                  }}
+                  onClear={() => {
+                    markDirty();
+                    setRenderFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                />
                 <Field label="Estado inicial">
                   <select className="field" value={general.estado} onChange={(event) => { markDirty(); setGeneral({ ...general, estado: event.target.value as WorkStatus }); }}>
                     {statuses.map((status) => <option key={status}>{status}</option>)}
@@ -480,6 +535,81 @@ export default function NewWorkWizard({
   }
 }
 
+function ImageUploadField({
+  file,
+  inputRef,
+  onChange,
+  onClear,
+  previewUrl,
+  storageReady,
+  uploadStatus
+}: {
+  file: File | null;
+  inputRef: MutableRefObject<HTMLInputElement | null>;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClear: () => void;
+  previewUrl: string;
+  storageReady: boolean;
+  uploadStatus: string;
+}) {
+  return (
+    <div className="sm:col-span-2">
+      <p className="text-xs font-black uppercase text-next-muted">Imagen/render opcional</p>
+      <div className="mt-1 rounded-lg border border-dashed border-slate-200 bg-next-bg p-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="flex min-h-36 flex-1 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-slate-100">
+            {previewUrl ? (
+              <img className="max-h-56 w-full object-contain" src={previewUrl} alt="Vista previa del render de obra" />
+            ) : (
+              <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+                <ImageIcon className="h-8 w-8 text-next-blue/60" aria-hidden="true" />
+                <p className="mt-2 text-sm font-black text-next-text">Subi un render o foto principal de la obra</p>
+                <p className="mt-1 text-xs font-semibold text-next-muted">JPG, PNG o WebP</p>
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 md:w-64">
+            <input
+              ref={inputRef}
+              className="sr-only"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={onChange}
+            />
+            <button
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy"
+              type="button"
+              onClick={() => inputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {file ? "Cambiar imagen" : "Subir imagen"}
+            </button>
+
+            {file ? (
+              <div className="mt-3 rounded-md bg-white px-3 py-2 ring-1 ring-slate-100">
+                <p className="truncate text-xs font-black text-next-text" title={file.name}>{file.name}</p>
+                <p className="mt-1 text-xs font-semibold text-next-muted">{formatFileSize(file.size)}</p>
+                <button className="mt-2 inline-flex h-8 items-center gap-2 rounded-md border border-red-100 px-2 text-xs font-black text-next-red" type="button" onClick={onClear}>
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Eliminar imagen
+                </button>
+              </div>
+            ) : null}
+
+            {uploadStatus ? <p className="mt-2 text-xs font-black text-next-blue">{uploadStatus}</p> : null}
+            {!storageReady ? (
+              <p className="mt-2 text-xs font-semibold leading-5 text-next-orange">
+                La imagen se guardara cuando Firebase Storage este disponible.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Section({
   children,
   description,
@@ -532,4 +662,33 @@ function Notice({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+function isAllowedImage(file: File) {
+  return ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+}
+
+function getFileExtension(file: File) {
+  const fromName = file.name.split(".").pop();
+  if (fromName) return fromName.toLowerCase();
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/webp") return "webp";
+  return "jpg";
+}
+
+function sanitizeFileName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
