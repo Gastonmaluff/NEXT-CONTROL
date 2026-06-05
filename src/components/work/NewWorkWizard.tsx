@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, Check, Image as ImageIcon, Plus, Trash2, Upload,
 import type { MutableRefObject, ReactNode } from "react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import CurrencyInput from "../ui/CurrencyInput";
 import { firebaseStorage, isFirebaseConfigured } from "../../lib/firebase";
 import {
   createActividad,
@@ -12,6 +13,7 @@ import {
 import { uploadFile } from "../../lib/storageUpload";
 import type { Obra, ProgressCalculationMode, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
+import { toTitleCase } from "../../utils/text";
 
 type WizardDestination = "avance" | "finanzas" | "control";
 
@@ -38,13 +40,6 @@ const statuses: WorkStatus[] = [
   "Finalizada"
 ];
 
-const defaultRubrics: RubricDraft[] = [
-  { nombre: "Carpinteria instalada", cantidadTotalPrevista: "500", unidad: "m2", pesoOperativo: "35", modoCalculo: "cantidad" },
-  { nombre: "Vidrios instalados", cantidadTotalPrevista: "650", unidad: "m2", pesoOperativo: "40", modoCalculo: "cantidad" },
-  { nombre: "Contramarcos", cantidadTotalPrevista: "180", unidad: "unidades", pesoOperativo: "15", modoCalculo: "cantidad" },
-  { nombre: "Sellado final", cantidadTotalPrevista: "650", unidad: "m2", pesoOperativo: "10", modoCalculo: "manual" }
-];
-
 export default function NewWorkWizard({
   defaultDestination,
   onClose,
@@ -54,10 +49,11 @@ export default function NewWorkWizard({
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
   const [dirty, setDirty] = useState(false);
   const [destination, setDestination] = useState<WizardDestination>(defaultDestination);
-  const [configureProgressNow, setConfigureProgressNow] = useState(true);
+  const [configureProgressNow, setConfigureProgressNow] = useState(false);
   const [general, setGeneral] = useState({
     nombre: "",
     cliente: "",
@@ -74,12 +70,12 @@ export default function NewWorkWizard({
     cuadrillaAsignadaId: ""
   });
   const [financial, setFinancial] = useState({
-    presupuestoAprobado: "",
-    adicionalesAprobados: "0",
-    descuentos: "0",
+    presupuestoAprobado: 0,
+    adicionalesAprobados: 0,
+    descuentos: 0,
     observacionInicial: ""
   });
-  const [rubrics, setRubrics] = useState<RubricDraft[]>(defaultRubrics);
+  const [rubrics, setRubrics] = useState<RubricDraft[]>([]);
   const [renderFile, setRenderFile] = useState<File | null>(null);
   const [renderPreviewUrl, setRenderPreviewUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -98,9 +94,9 @@ export default function NewWorkWizard({
 
   const totalContratado = useMemo(
     () =>
-      Number(financial.presupuestoAprobado || 0)
-      + Number(financial.adicionalesAprobados || 0)
-      - Number(financial.descuentos || 0),
+      financial.presupuestoAprobado
+      + financial.adicionalesAprobados
+      - financial.descuentos,
     [financial]
   );
   const totalWeight = rubrics.reduce((sum, rubro) => sum + Number(rubro.pesoOperativo || 0), 0);
@@ -122,6 +118,12 @@ export default function NewWorkWizard({
       if (!general.nombre.trim() || !general.cliente.trim() || !general.direccion.trim()) {
         return "Completa nombre de obra, cliente y direccion.";
       }
+      if (!general.fechaInicio || !general.fechaComprometida) {
+        return "Carga fecha de inicio y fecha comprometida de entrega.";
+      }
+      if (general.fechaComprometida < general.fechaInicio) {
+        return "La fecha comprometida no puede ser anterior a la fecha de inicio.";
+      }
     }
 
     if (currentStep === 1) {
@@ -131,8 +133,11 @@ export default function NewWorkWizard({
     }
 
     if (currentStep === 2) {
-      if (Number(financial.presupuestoAprobado || 0) <= 0) {
+      if (financial.presupuestoAprobado <= 0) {
         return "Carga un presupuesto aprobado mayor a cero.";
+      }
+      if (financial.presupuestoAprobado < 0 || financial.adicionalesAprobados < 0 || financial.descuentos < 0) {
+        return "Los montos no pueden ser negativos.";
       }
     }
 
@@ -140,6 +145,9 @@ export default function NewWorkWizard({
       if (!rubrics.length) return "Agrega al menos un rubro o elegi configurar despues.";
       if (rubrics.some((rubro) => !rubro.nombre.trim() || !rubro.unidad.trim())) {
         return "Todos los rubros necesitan nombre y unidad.";
+      }
+      if (rubrics.some((rubro) => rubro.cantidadTotalPrevista === "" || rubro.pesoOperativo === "")) {
+        return "Todos los rubros necesitan cantidad total prevista y peso operativo.";
       }
       if (rubrics.some((rubro) => Number(rubro.cantidadTotalPrevista || 0) < 0 || Number(rubro.pesoOperativo || 0) < 0 || Number(rubro.pesoOperativo || 0) > 100)) {
         return "Revisa cantidades y pesos. Los pesos deben estar entre 0 y 100.";
@@ -161,6 +169,8 @@ export default function NewWorkWizard({
   }
 
   async function handleCreate() {
+    if (saving) return;
+
     const validation = [0, 1, 2, 3].map((item) => validateStep(item)).find(Boolean);
     if (validation) {
       setError(validation);
@@ -174,95 +184,149 @@ export default function NewWorkWizard({
 
     setSaving(true);
     setError("");
+    setWarning("");
     setUploadStatus("");
+    logNewWorkStep("Validacion terminada");
+
+    const normalizedGeneral = {
+      ...general,
+      nombre: toTitleCase(general.nombre),
+      cliente: toTitleCase(general.cliente),
+      arquitecto: general.arquitecto ? toTitleCase(general.arquitecto) : "",
+      direccion: general.direccion.trim()
+    };
+    const normalizedResponsibles = {
+      encargado: toTitleCase(responsibles.encargado),
+      supervisor: responsibles.supervisor ? toTitleCase(responsibles.supervisor) : "",
+      fiscalizador: responsibles.fiscalizador ? toTitleCase(responsibles.fiscalizador) : "",
+      cuadrillaAsignadaId: responsibles.cuadrillaAsignadaId ? toTitleCase(responsibles.cuadrillaAsignadaId) : ""
+    };
+    const normalizedRubrics = rubrics.map((rubro) => ({
+      ...rubro,
+      nombre: toTitleCase(rubro.nombre),
+      unidad: rubro.unidad.trim()
+    }));
+
     try {
-      const created = await createObra({
-        nombre: general.nombre.trim(),
-        cliente: general.cliente.trim(),
-        arquitecto: general.arquitecto.trim(),
-        ubicacion: general.direccion.trim(),
-        direccion: general.direccion.trim(),
+      logNewWorkStep("Creando documento de obra");
+      const created = await withTimeout(createObra({
+        nombre: normalizedGeneral.nombre,
+        cliente: normalizedGeneral.cliente,
+        arquitecto: normalizedGeneral.arquitecto,
+        ubicacion: normalizedGeneral.direccion,
+        direccion: normalizedGeneral.direccion,
         montoAprobado: totalContratado,
-        fechaInicio: general.fechaInicio,
-        fechaEntrega: general.fechaComprometida,
-        fechaComprometida: general.fechaComprometida,
-        responsable: responsibles.encargado.trim(),
-        encargado: responsibles.encargado.trim(),
-        supervisor: responsibles.supervisor.trim() || undefined,
-        fiscalizador: responsibles.fiscalizador.trim() || undefined,
-        cuadrillaAsignadaId: responsibles.cuadrillaAsignadaId.trim() || undefined,
-        estado: general.estado,
+        fechaInicio: normalizedGeneral.fechaInicio,
+        fechaEntrega: normalizedGeneral.fechaComprometida,
+        fechaComprometida: normalizedGeneral.fechaComprometida,
+        responsable: normalizedResponsibles.encargado,
+        encargado: normalizedResponsibles.encargado,
+        supervisor: normalizedResponsibles.supervisor || undefined,
+        fiscalizador: normalizedResponsibles.fiscalizador || undefined,
+        cuadrillaAsignadaId: normalizedResponsibles.cuadrillaAsignadaId || undefined,
+        estado: normalizedGeneral.estado,
         saldoPendienteCobro: totalContratado,
-        presupuestoAprobado: Number(financial.presupuestoAprobado || 0),
-        adicionalesAprobados: Number(financial.adicionalesAprobados || 0),
-        descuentos: Number(financial.descuentos || 0),
+        presupuestoAprobado: financial.presupuestoAprobado,
+        adicionalesAprobados: financial.adicionalesAprobados,
+        descuentos: financial.descuentos,
         totalContratado,
         valorFinalContratado: totalContratado,
         observacionInicial: financial.observacionInicial.trim() || undefined,
-        progressConfigured: configureProgressNow,
+        progressConfigured: configureProgressNow && normalizedRubrics.length > 0,
         rubrosAvance: [],
         etapasProduccion: [],
         materialesFaltantes: [],
         createdBy: profile?.uid ?? "unknown"
-      });
+      }), 20000, "crear el documento principal de la obra");
+      logNewWorkStep("Documento creado", { obraId: created.id });
 
       let createdWithImage = created;
       if (renderFile && storageReady) {
         try {
           setUploadStatus("Subiendo imagen...");
+          logNewWorkStep("Subiendo imagen");
           const extension = getFileExtension(renderFile);
-          const url = await uploadFile(
-            `obras/${created.id}/render/${Date.now()}-${sanitizeFileName(renderFile.name || `render.${extension}`)}`,
-            renderFile
+          const url = await withTimeout(
+            uploadFile(
+              `obras/${created.id}/render/${Date.now()}-${sanitizeFileName(renderFile.name || `render.${extension}`)}`,
+              renderFile
+            ),
+            25000,
+            "subir la imagen de la obra"
           );
-          createdWithImage = await updateObra(created.id, { renderUrl: url });
+          createdWithImage = await withTimeout(updateObra(created.id, { renderUrl: url }), 15000, "guardar la URL del render");
+          logNewWorkStep("Imagen subida");
         } catch (uploadError) {
           console.error("No se pudo subir la imagen principal de la obra.", uploadError);
+          setWarning("La obra fue creada, pero no se pudo subir la imagen. Podes volver a cargarla cuando Firebase Storage este disponible.");
           window.alert("La obra fue creada, pero no se pudo subir la imagen. Podes volver a cargarla cuando Firebase Storage este disponible.");
         } finally {
           setUploadStatus("");
         }
+      } else if (renderFile && !storageReady) {
+        setWarning("La obra fue creada. La imagen se guardara cuando Firebase Storage este disponible.");
+        window.alert("La obra fue creada. La imagen se guardara cuando Firebase Storage este disponible.");
       }
 
-      if (configureProgressNow) {
-        const createdRubrics = await Promise.all(
-          rubrics.map((rubro, index) =>
-            createProgressRubric({
+      if (configureProgressNow && normalizedRubrics.length) {
+        try {
+          logNewWorkStep("Guardando rubros");
+          const createdRubrics = await withTimeout(Promise.all(
+            normalizedRubrics.map((rubro, index) =>
+              createProgressRubric({
+                obraId: created.id,
+                nombre: rubro.nombre,
+                unidad: rubro.unidad,
+                cantidadTotalPrevista: Number(rubro.cantidadTotalPrevista || 0),
+                pesoOperativo: Number(rubro.pesoOperativo || 0),
+                modoCalculo: rubro.modoCalculo,
+                avanceManualPermitido: rubro.modoCalculo === "manual",
+                orden: index + 1
+              })
+            )
+          ), 25000, "guardar los rubros operativos");
+          createdWithImage = await withTimeout(updateObra(created.id, {
+            rubrosAvance: createdRubrics.map((rubro) => ({
+              id: rubro.id,
+              nombre: rubro.nombre,
+              peso: rubro.pesoOperativo,
+              avance: 0
+            })),
+            progressConfigured: true
+          }), 15000, "actualizar el resumen de avance de la obra");
+          logNewWorkStep("Rubros guardados");
+        } catch (rubricError) {
+          console.error("No se pudieron guardar los rubros operativos.", rubricError);
+          setWarning("La obra fue creada, pero no se pudieron guardar los rubros. Configura el avance despues desde Avance de obras.");
+          window.alert("La obra fue creada, pero no se pudieron guardar los rubros. Configura el avance despues desde Avance de obras.");
+          try {
+            createdWithImage = await withTimeout(updateObra(created.id, { progressConfigured: false, rubrosAvance: [] }), 15000, "marcar avance sin configurar");
+          } catch (updateError) {
+            console.error("No se pudo marcar la obra como avance sin configurar.", updateError);
+          }
+        }
+      }
+
+      try {
+        logNewWorkStep("Registrando actividad");
+        await withTimeout(createActividad({
               obraId: created.id,
-              nombre: rubro.nombre.trim(),
-              unidad: rubro.unidad.trim(),
-              cantidadTotalPrevista: Number(rubro.cantidadTotalPrevista || 0),
-              pesoOperativo: Number(rubro.pesoOperativo || 0),
-              modoCalculo: rubro.modoCalculo,
-              avanceManualPermitido: rubro.modoCalculo === "manual",
-              orden: index + 1
-            })
-          )
-        );
-        createdWithImage = await updateObra(created.id, {
-          rubrosAvance: createdRubrics.map((rubro) => ({
-            id: rubro.id,
-            nombre: rubro.nombre,
-            peso: rubro.pesoOperativo,
-            avance: 0
-          })),
-          progressConfigured: true
-        });
+              tipo: "obra",
+              descripcion: configureProgressNow && normalizedRubrics.length
+                ? "Obra creada con desglose operativo inicial."
+                : "Obra creada. Avance pendiente de configurar.",
+              usuario: profile?.nombre ?? "Administrador",
+              fecha: new Date().toISOString()
+            }), 15000, "registrar la actividad de creacion");
+      } catch (activityError) {
+        console.error("No se pudo registrar la actividad de creacion.", activityError);
       }
 
-      await createActividad({
-        obraId: createdWithImage.id,
-        tipo: "obra",
-        descripcion: configureProgressNow
-          ? "Obra creada con desglose operativo inicial."
-          : "Obra creada. Avance pendiente de configurar.",
-        usuario: profile?.nombre ?? "Administrador",
-        fecha: new Date().toISOString()
-      });
-
+      logNewWorkStep("Creacion finalizada", { obraId: createdWithImage.id });
       onCreated(createdWithImage, destination);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo crear la obra.");
+      console.error("No se pudo crear la obra.", saveError);
     } finally {
       setSaving(false);
     }
@@ -311,18 +375,19 @@ export default function NewWorkWizard({
           </ol>
 
           {error ? <Notice text={error} /> : null}
+          {warning ? <Notice tone="warning" text={warning} /> : null}
 
           {step === 0 ? (
             <Section title="Datos generales" description="Identificacion principal de la obra y fechas de referencia.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Nombre de obra" required>
-                  <input className="field" required value={general.nombre} onChange={(event) => { markDirty(); setGeneral({ ...general, nombre: event.target.value }); }} />
+                  <input className="field" required value={general.nombre} onBlur={() => setGeneral((current) => ({ ...current, nombre: toTitleCase(current.nombre) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, nombre: event.target.value }); }} />
                 </Field>
                 <Field label="Cliente" required>
-                  <input className="field" required value={general.cliente} onChange={(event) => { markDirty(); setGeneral({ ...general, cliente: event.target.value }); }} />
+                  <input className="field" required value={general.cliente} onBlur={() => setGeneral((current) => ({ ...current, cliente: toTitleCase(current.cliente) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, cliente: event.target.value }); }} />
                 </Field>
                 <Field label="Arquitecto opcional">
-                  <input className="field" value={general.arquitecto} onChange={(event) => { markDirty(); setGeneral({ ...general, arquitecto: event.target.value }); }} />
+                  <input className="field" value={general.arquitecto} onBlur={() => setGeneral((current) => ({ ...current, arquitecto: toTitleCase(current.arquitecto) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, arquitecto: event.target.value }); }} />
                 </Field>
                 <Field label="Direccion" required>
                   <input className="field" required value={general.direccion} onChange={(event) => { markDirty(); setGeneral({ ...general, direccion: event.target.value }); }} />
@@ -351,16 +416,16 @@ export default function NewWorkWizard({
                     if (fileInputRef.current) fileInputRef.current.value = "";
                   }}
                 />
-                <Field label="Estado inicial">
-                  <select className="field" value={general.estado} onChange={(event) => { markDirty(); setGeneral({ ...general, estado: event.target.value as WorkStatus }); }}>
-                    {statuses.map((status) => <option key={status}>{status}</option>)}
-                  </select>
-                </Field>
                 <Field label="Fecha de inicio" required>
                   <input className="field" required type="date" value={general.fechaInicio} onChange={(event) => { markDirty(); setGeneral({ ...general, fechaInicio: event.target.value }); }} />
                 </Field>
                 <Field label="Fecha comprometida de entrega" required>
                   <input className="field" required type="date" value={general.fechaComprometida} onChange={(event) => { markDirty(); setGeneral({ ...general, fechaComprometida: event.target.value }); }} />
+                </Field>
+                <Field label="Estado inicial">
+                  <select className="field" value={general.estado} onChange={(event) => { markDirty(); setGeneral({ ...general, estado: event.target.value as WorkStatus }); }}>
+                    {statuses.map((status) => <option key={status}>{status}</option>)}
+                  </select>
                 </Field>
               </div>
             </Section>
@@ -370,16 +435,16 @@ export default function NewWorkWizard({
             <Section title="Responsables" description="Equipo responsable del seguimiento operativo.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Encargado de obra" required>
-                  <input className="field" required value={responsibles.encargado} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, encargado: event.target.value }); }} />
+                  <input className="field" required value={responsibles.encargado} onBlur={() => setResponsibles((current) => ({ ...current, encargado: toTitleCase(current.encargado) }))} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, encargado: event.target.value }); }} />
                 </Field>
                 <Field label="Supervisor">
-                  <input className="field" value={responsibles.supervisor} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, supervisor: event.target.value }); }} />
+                  <input className="field" value={responsibles.supervisor} onBlur={() => setResponsibles((current) => ({ ...current, supervisor: toTitleCase(current.supervisor) }))} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, supervisor: event.target.value }); }} />
                 </Field>
                 <Field label="Fiscalizador">
-                  <input className="field" value={responsibles.fiscalizador} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, fiscalizador: event.target.value }); }} />
+                  <input className="field" value={responsibles.fiscalizador} onBlur={() => setResponsibles((current) => ({ ...current, fiscalizador: toTitleCase(current.fiscalizador) }))} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, fiscalizador: event.target.value }); }} />
                 </Field>
                 <Field label="Cuadrilla asignada opcional">
-                  <input className="field" placeholder="Nombre o ID de cuadrilla" value={responsibles.cuadrillaAsignadaId} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, cuadrillaAsignadaId: event.target.value }); }} />
+                  <input className="field" placeholder="Nombre o ID de cuadrilla" value={responsibles.cuadrillaAsignadaId} onBlur={() => setResponsibles((current) => ({ ...current, cuadrillaAsignadaId: toTitleCase(current.cuadrillaAsignadaId) }))} onChange={(event) => { markDirty(); setResponsibles({ ...responsibles, cuadrillaAsignadaId: event.target.value }); }} />
                 </Field>
               </div>
             </Section>
@@ -389,13 +454,13 @@ export default function NewWorkWizard({
             <Section title="Datos financieros" description="Base contractual de la obra. El total se calcula automaticamente.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Presupuesto aprobado" required>
-                  <input className="field" min={0} required type="number" value={financial.presupuestoAprobado} onChange={(event) => { markDirty(); setFinancial({ ...financial, presupuestoAprobado: event.target.value }); }} />
+                  <CurrencyInput required value={financial.presupuestoAprobado} onValueChange={(value) => { markDirty(); setFinancial({ ...financial, presupuestoAprobado: value }); }} />
                 </Field>
                 <Field label="Adicionales aprobados">
-                  <input className="field" min={0} type="number" value={financial.adicionalesAprobados} onChange={(event) => { markDirty(); setFinancial({ ...financial, adicionalesAprobados: event.target.value }); }} />
+                  <CurrencyInput value={financial.adicionalesAprobados} onValueChange={(value) => { markDirty(); setFinancial({ ...financial, adicionalesAprobados: value }); }} />
                 </Field>
                 <Field label="Descuentos">
-                  <input className="field" min={0} type="number" value={financial.descuentos} onChange={(event) => { markDirty(); setFinancial({ ...financial, descuentos: event.target.value }); }} />
+                  <CurrencyInput value={financial.descuentos} onValueChange={(value) => { markDirty(); setFinancial({ ...financial, descuentos: value }); }} />
                 </Field>
                 <Field label="Observacion inicial">
                   <input className="field" value={financial.observacionInicial} onChange={(event) => { markDirty(); setFinancial({ ...financial, observacionInicial: event.target.value }); }} />
@@ -425,6 +490,13 @@ export default function NewWorkWizard({
                 </span>
               </label>
 
+              {!configureProgressNow ? (
+                <button className="inline-flex h-10 items-center gap-2 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={addRubric}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Agregar rubro
+                </button>
+              ) : null}
+
               {configureProgressNow ? (
                 <>
                   <div className={`rounded-md px-3 py-2 text-xs font-black ${totalWeight === 100 ? "bg-green-50 text-next-green" : "bg-orange-50 text-next-orange"}`}>
@@ -432,9 +504,9 @@ export default function NewWorkWizard({
                   </div>
                   <div className="space-y-3">
                     {rubrics.map((rubro, index) => (
-                      <div key={`${rubro.nombre}-${index}`} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-[1.25fr_140px_100px_100px_130px_auto]">
+                      <div key={index} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-[1.25fr_140px_100px_100px_130px_auto]">
                         <Field label="Rubro">
-                          <input className="field" value={rubro.nombre} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
+                          <input className="field" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
                         </Field>
                         <Field label="Cantidad total prevista">
                           <input className="field" min={0} type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
@@ -472,11 +544,15 @@ export default function NewWorkWizard({
                 <SummaryItem label="Obra" value={general.nombre || "-"} />
                 <SummaryItem label="Cliente" value={general.cliente || "-"} />
                 <SummaryItem label="Estado inicial" value={general.estado} />
+                <SummaryItem label="Fecha de inicio" value={general.fechaInicio || "-"} />
+                <SummaryItem label="Fecha comprometida" value={general.fechaComprometida || "-"} />
                 <SummaryItem label="Encargado" value={responsibles.encargado || "-"} />
                 <SummaryItem label="Supervisor" value={responsibles.supervisor || "-"} />
                 <SummaryItem label="Fiscalizador" value={responsibles.fiscalizador || "-"} />
                 <SummaryItem label="Total contratado" value={formatCurrencyPYG(totalContratado)} />
-                <SummaryItem label="Avance" value={configureProgressNow ? `${rubrics.length} rubro(s), ${totalWeight}% de peso` : "Se configurara despues"} />
+                <SummaryItem label="Imagen/render" value={renderFile ? `Tiene imagen: ${renderFile.name}` : "Sin imagen"} />
+                <SummaryItem label="Rubros" value={configureProgressNow ? `${rubrics.length} rubro(s)` : "Se configurara despues"} />
+                <SummaryItem label="Suma de pesos" value={configureProgressNow ? `${totalWeight}%` : "-"} />
               </div>
               <Field label="Despues de crear, abrir">
                 <select className="field max-w-sm" value={destination} onChange={(event) => setDestination(event.target.value as WizardDestination)}>
@@ -501,7 +577,7 @@ export default function NewWorkWizard({
             ) : (
               <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={handleCreate}>
                 <Check className="h-4 w-4" aria-hidden="true" />
-                {saving ? "Creando..." : "Crear obra"}
+                {saving ? "Creando obra..." : "Crear obra"}
               </button>
             )}
           </div>
@@ -522,13 +598,14 @@ export default function NewWorkWizard({
 
   function addRubric() {
     markDirty();
+    setConfigureProgressNow(true);
     setRubrics((current) => [
       ...current,
       {
-        nombre: "Nuevo rubro",
-        cantidadTotalPrevista: "0",
-        unidad: "unidades",
-        pesoOperativo: "0",
+        nombre: "",
+        cantidadTotalPrevista: "",
+        unidad: "",
+        pesoOperativo: "",
         modoCalculo: "cantidad"
       }
     ]);
@@ -556,20 +633,20 @@ function ImageUploadField({
     <div className="sm:col-span-2">
       <p className="text-xs font-black uppercase text-next-muted">Imagen/render opcional</p>
       <div className="mt-1 rounded-lg border border-dashed border-slate-200 bg-next-bg p-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="flex min-h-36 flex-1 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-slate-100">
+        <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+          <div className="flex h-36 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-slate-100 sm:h-40">
             {previewUrl ? (
-              <img className="max-h-56 w-full object-contain" src={previewUrl} alt="Vista previa del render de obra" />
+              <img className="h-full w-full object-cover" src={previewUrl} alt="Vista previa del render de obra" />
             ) : (
-              <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                <ImageIcon className="h-8 w-8 text-next-blue/60" aria-hidden="true" />
+              <div className="flex flex-col items-center justify-center px-3 py-5 text-center">
+                <ImageIcon className="h-7 w-7 text-next-blue/60" aria-hidden="true" />
                 <p className="mt-2 text-sm font-black text-next-text">Subi un render o foto principal de la obra</p>
                 <p className="mt-1 text-xs font-semibold text-next-muted">JPG, PNG o WebP</p>
               </div>
             )}
           </div>
 
-          <div className="min-w-0 md:w-64">
+          <div className="min-w-0">
             <input
               ref={inputRef}
               className="sr-only"
@@ -578,7 +655,7 @@ function ImageUploadField({
               onChange={onChange}
             />
             <button
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy sm:w-auto"
               type="button"
               onClick={() => inputRef.current?.click()}
             >
@@ -656,12 +733,36 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Notice({ text }: { text: string }) {
+function Notice({ text, tone = "error" }: { text: string; tone?: "error" | "warning" }) {
+  const classes = tone === "warning"
+    ? "border-orange-100 bg-orange-50 text-next-orange"
+    : "border-red-100 bg-red-50 text-next-red";
   return (
-    <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-next-red">
+    <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${classes}`}>
       {text}
     </div>
   );
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`La conexion tardo demasiado al ${label}. Intenta nuevamente.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function logNewWorkStep(message: string, data?: unknown) {
+  if (import.meta.env.DEV) {
+    console.info(`[Nueva obra] ${message}`, data ?? "");
+  }
 }
 
 function isAllowedImage(file: File) {

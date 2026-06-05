@@ -1,6 +1,7 @@
 import { BarChart3, FileSpreadsheet, Plus, Receipt, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import DataCard from "../components/ui/DataCard";
+import CurrencyInput from "../components/ui/CurrencyInput";
 import KpiCard from "../components/ui/KpiCard";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import {
@@ -11,6 +12,7 @@ import {
 } from "../lib/firestore";
 import type { OportunidadCRM, PipelineStatus } from "../types";
 import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
+import { toTitleCase } from "../utils/text";
 
 const pipelineStatuses: PipelineStatus[] = [
   "Prospecto",
@@ -70,6 +72,9 @@ export default function CrmPage() {
     try {
       await createOportunidad({
         ...leadForm,
+        proyecto: toTitleCase(leadForm.proyecto),
+        cliente: toTitleCase(leadForm.cliente),
+        arquitecto: leadForm.arquitecto ? toTitleCase(leadForm.arquitecto) : "",
         montoEstimado: Number(leadForm.montoEstimado)
       });
       setLeadForm(emptyLead);
@@ -138,10 +143,10 @@ export default function CrmPage() {
       {showForm ? (
         <DataCard title="Nuevo prospecto">
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleCreateLead}>
-            <input className="field" required placeholder="Proyecto" value={leadForm.proyecto} onChange={(event) => setLeadForm({ ...leadForm, proyecto: event.target.value })} />
-            <input className="field" required placeholder="Cliente" value={leadForm.cliente} onChange={(event) => setLeadForm({ ...leadForm, cliente: event.target.value })} />
-            <input className="field" placeholder="Arquitecto" value={leadForm.arquitecto} onChange={(event) => setLeadForm({ ...leadForm, arquitecto: event.target.value })} />
-            <input className="field" required type="number" placeholder="Monto estimado" value={leadForm.montoEstimado} onChange={(event) => setLeadForm({ ...leadForm, montoEstimado: event.target.value })} />
+            <input className="field" required placeholder="Proyecto" value={leadForm.proyecto} onBlur={() => setLeadForm({ ...leadForm, proyecto: toTitleCase(leadForm.proyecto) })} onChange={(event) => setLeadForm({ ...leadForm, proyecto: event.target.value })} />
+            <input className="field" required placeholder="Cliente" value={leadForm.cliente} onBlur={() => setLeadForm({ ...leadForm, cliente: toTitleCase(leadForm.cliente) })} onChange={(event) => setLeadForm({ ...leadForm, cliente: event.target.value })} />
+            <input className="field" placeholder="Arquitecto" value={leadForm.arquitecto} onBlur={() => setLeadForm({ ...leadForm, arquitecto: toTitleCase(leadForm.arquitecto) })} onChange={(event) => setLeadForm({ ...leadForm, arquitecto: event.target.value })} />
+            <CurrencyInput required placeholder="Monto estimado" value={Number(leadForm.montoEstimado || 0)} onValueChange={(value) => setLeadForm({ ...leadForm, montoEstimado: String(value) })} />
             <select className="field" value={leadForm.estado} onChange={(event) => setLeadForm({ ...leadForm, estado: event.target.value as PipelineStatus })}>
               {pipelineStatuses.map((status) => <option key={status}>{status}</option>)}
             </select>

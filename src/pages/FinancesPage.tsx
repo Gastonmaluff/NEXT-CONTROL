@@ -2,6 +2,7 @@ import { ArrowLeft, Building2, ChevronDown, ChevronRight, Edit3, Eye, Plus, Tras
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import CurrencyInput from "../components/ui/CurrencyInput";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import NewWorkWizard from "../components/work/NewWorkWizard";
 import {
@@ -36,6 +37,7 @@ import {
   groupEgresosByCategoria,
   groupIngresosByCategoria
 } from "../utils/finance";
+import { toTitleCase } from "../utils/text";
 
 const paymentMethods: FinancialPaymentMethod[] = [
   "Efectivo",
@@ -189,9 +191,9 @@ export default function FinancesPage() {
     try {
       if (workModal === "edit" && selectedWork) {
         const updated = await updateFinancialWork(selectedWork.id, {
-          nombre: workForm.nombre,
-          cliente: workForm.cliente,
-          arquitecto: workForm.arquitecto,
+          nombre: toTitleCase(workForm.nombre),
+          cliente: toTitleCase(workForm.cliente),
+          arquitecto: workForm.arquitecto ? toTitleCase(workForm.arquitecto) : "",
           ubicacion: workForm.direccion,
           direccion: workForm.direccion,
           fechaInicio: workForm.fechaInicio,
@@ -226,7 +228,7 @@ export default function FinancesPage() {
       await createMovement(selectedWork.id, {
         fecha: movementForm.fecha,
         tipo: movementModal,
-        concepto: movementForm.concepto,
+        concepto: movementForm.concepto.trim(),
         categoria: movementForm.categoria,
         detalle: movementForm.detalle || undefined,
         cantidad: movementForm.cantidad ? Number(movementForm.cantidad) : undefined,
@@ -237,7 +239,7 @@ export default function FinancesPage() {
         fechaCobroCheque: movementForm.metodoPago === "Cheque" ? movementForm.fechaCobroCheque || undefined : undefined,
         bancoCheque: movementForm.metodoPago === "Cheque" ? movementForm.bancoCheque || undefined : undefined,
         monto: Number(movementForm.monto),
-        tercero: movementForm.tercero || undefined,
+        tercero: movementForm.tercero ? toTitleCase(movementForm.tercero) : undefined,
         observacion: movementForm.observacion || undefined
       });
       await loadMovements(selectedWork.id);
@@ -829,13 +831,13 @@ function WorkModal({
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Nombre de obra">
-            <input className="field" required value={values.nombre} onChange={(event) => setValues({ ...values, nombre: event.target.value })} />
+            <input className="field" required value={values.nombre} onBlur={() => setValues({ ...values, nombre: toTitleCase(values.nombre) })} onChange={(event) => setValues({ ...values, nombre: event.target.value })} />
           </FormField>
           <FormField label="Cliente">
-            <input className="field" required value={values.cliente} onChange={(event) => setValues({ ...values, cliente: event.target.value })} />
+            <input className="field" required value={values.cliente} onBlur={() => setValues({ ...values, cliente: toTitleCase(values.cliente) })} onChange={(event) => setValues({ ...values, cliente: event.target.value })} />
           </FormField>
           <FormField label="Arquitecto opcional">
-            <input className="field" value={values.arquitecto} onChange={(event) => setValues({ ...values, arquitecto: event.target.value })} />
+            <input className="field" value={values.arquitecto} onBlur={() => setValues({ ...values, arquitecto: toTitleCase(values.arquitecto) })} onChange={(event) => setValues({ ...values, arquitecto: event.target.value })} />
           </FormField>
           <FormField label="Direccion opcional">
             <input className="field" value={values.direccion} onChange={(event) => setValues({ ...values, direccion: event.target.value })} />
@@ -847,13 +849,13 @@ function WorkModal({
             <input className="field" type="date" value={values.fechaComprometida} onChange={(event) => setValues({ ...values, fechaComprometida: event.target.value })} />
           </FormField>
           <FormField label="Presupuesto aprobado">
-            <input className="field" required type="number" value={values.presupuestoAprobado} onChange={(event) => setValues({ ...values, presupuestoAprobado: event.target.value })} />
+            <CurrencyInput required value={Number(values.presupuestoAprobado || 0)} onValueChange={(value) => setValues({ ...values, presupuestoAprobado: String(value) })} />
           </FormField>
           <FormField label="Adicionales aprobados">
-            <input className="field" type="number" value={values.adicionalesAprobados} onChange={(event) => setValues({ ...values, adicionalesAprobados: event.target.value })} />
+            <CurrencyInput value={Number(values.adicionalesAprobados || 0)} onValueChange={(value) => setValues({ ...values, adicionalesAprobados: String(value) })} />
           </FormField>
           <FormField label="Descuentos">
-            <input className="field" type="number" value={values.descuentos} onChange={(event) => setValues({ ...values, descuentos: event.target.value })} />
+            <CurrencyInput value={Number(values.descuentos || 0)} onValueChange={(value) => setValues({ ...values, descuentos: String(value) })} />
           </FormField>
           <FormField label="Observacion inicial">
             <input className="field" value={values.observacionInicial} onChange={(event) => setValues({ ...values, observacionInicial: event.target.value })} />
@@ -903,7 +905,7 @@ function MovementModal({
         <select className="field" value={values.categoria} onChange={(event) => setValues({ ...values, categoria: event.target.value })}>
           {categoriesByType[type].map((category) => <option key={category}>{category}</option>)}
         </select>
-        <input className="field" required type="number" placeholder="Monto" value={values.monto} onChange={(event) => setValues({ ...values, monto: event.target.value })} />
+        <CurrencyInput required placeholder="Monto" value={Number(values.monto || 0)} onValueChange={(value) => setValues({ ...values, monto: String(value) })} />
         {type !== "ingreso" ? (
           <>
             <input className="field" placeholder="Detalle" value={values.detalle} onChange={(event) => setValues({ ...values, detalle: event.target.value })} />
@@ -914,7 +916,7 @@ function MovementModal({
         <select className="field" value={values.metodoPago} onChange={(event) => setValues({ ...values, metodoPago: event.target.value as FinancialPaymentMethod })}>
           {paymentMethods.map((method) => <option key={method}>{method}</option>)}
         </select>
-        <input className="field" placeholder={type === "ingreso" ? "Cliente / pagador" : "Proveedor / persona"} value={values.tercero} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+        <input className="field" placeholder={type === "ingreso" ? "Cliente / pagador" : "Proveedor / persona"} value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
         {isCheque ? (
           <>
             <input className="field" required placeholder="Numero de cheque" value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />

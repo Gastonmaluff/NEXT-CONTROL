@@ -69,3 +69,24 @@ export function formatDateTime(value: string): string {
 export function getTodayInputDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+export function formatGuaraniInput(value: number | string): string {
+  const numericValue = typeof value === "number" ? value : parseGuaraniInput(value);
+  if (!numericValue) {
+    return "";
+  }
+
+  return new Intl.NumberFormat("es-PY", {
+    maximumFractionDigits: 0
+  }).format(numericValue);
+}
+
+export function parseGuaraniInput(value: string): number {
+  const normalized = value.replace(/[^\d]/g, "");
+  if (!normalized) {
+    return 0;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
