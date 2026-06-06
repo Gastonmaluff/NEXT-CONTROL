@@ -2,7 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import MobileInstallationsView from "./components/mobile/MobileInstallationsView";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { canManageUsers } from "./lib/roles";
+import { canManageFinancesForUser, canManageUsers } from "./lib/roles";
+import ChequesPage from "./pages/ChequesPage";
 import CrmPage from "./pages/CrmPage";
 import DashboardPage from "./pages/DashboardPage";
 import FinancesPage from "./pages/FinancesPage";
@@ -64,7 +65,11 @@ function AppRoutes() {
             <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
             <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
             <Route path="/produccion" element={<ProjectControlPage />} />
-            <Route path="/cobros" element={<FinancesPage />} />
+            <Route
+              path="/cheques"
+              element={canManageFinancesForUser(profile) ? <ChequesPage /> : <Navigate to="/control" replace />}
+            />
+            <Route path="/cobros" element={<Navigate to="/cheques" replace />} />
             <Route path="/proveedores" element={<SuppliersPage />} />
             <Route path="/inventario" element={<PlaceholderPage title="Inventario" />} />
             <Route path="/reportes" element={<PlaceholderPage title="Reportes" />} />

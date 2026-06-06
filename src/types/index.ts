@@ -132,11 +132,60 @@ export type FinancialMovement = {
   tercero?: string;
   proveedorId?: string;
   proveedorNombre?: string;
+  pagadorId?: string;
+  pagadorNombre?: string;
   clienteId?: string;
   clienteNombre?: string;
   observacion?: string;
   createdAt: string;
   updatedAt?: string;
+};
+
+export type ChequeKind = "recibido" | "emitido";
+export type ChequeOrigin = "ingreso" | "compra" | "egreso";
+export type ChequeThirdPartyType = "cliente" | "proveedor" | "persona";
+export type ReceivedChequeStatus = "recibido" | "depositado" | "cobrado" | "rechazado" | "anulado";
+export type IssuedChequeStatus = "emitido" | "entregado" | "debitado" | "rechazado" | "anulado";
+export type ChequeStatus = ReceivedChequeStatus | IssuedChequeStatus;
+
+export type ChequeStatusChange = {
+  estado: ChequeStatus;
+  fecha: string;
+  usuario?: string;
+  observacion?: string;
+};
+
+export type Cheque = {
+  id: string;
+  tipo: ChequeKind;
+  estado: ChequeStatus;
+  obraId: string;
+  obraNombre: string;
+  movimientoId: string;
+  origen: ChequeOrigin;
+  terceroId?: string;
+  terceroNombre: string;
+  terceroTipo: ChequeThirdPartyType;
+  clienteId?: string;
+  clienteNombre?: string;
+  pagadorId?: string;
+  pagadorNombre?: string;
+  proveedorId?: string;
+  proveedorNombre?: string;
+  beneficiarioId?: string;
+  beneficiarioNombre?: string;
+  monto: number;
+  numeroCheque: string;
+  bancoCheque?: string;
+  fechaEmisionCheque: string;
+  fechaCobroCheque: string;
+  fechaVencimientoCheque?: string;
+  observacion?: string;
+  historial?: ChequeStatusChange[];
+  createdAt: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type ProgressItem = {
@@ -355,6 +404,7 @@ export type StoredData = {
   users: SystemUser[];
   clientes: Cliente[];
   proveedores: Proveedor[];
+  cheques: Cheque[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

@@ -8,10 +8,12 @@ import NewWorkWizard from "../components/work/NewWorkWizard";
 import { useAuth } from "../context/AuthContext";
 import { firebaseStorage, isFirebaseConfigured } from "../lib/firebase";
 import {
+  createCliente,
   createMovement,
   createProveedor,
   deleteMovement,
   getFinancialWorks,
+  getClientes,
   getMovementsByWork,
   getProveedores,
   updateFinancialWork
@@ -22,6 +24,7 @@ import type {
   FinancialMovementKind,
   FinancialPaymentMethod,
   FinancialStatus,
+  Cliente,
   Obra,
   Proveedor,
   SupplierCategory
@@ -94,6 +97,10 @@ function emptyMovementForm(tipo: FinancialMovementKind) {
     tercero: "",
     proveedorId: "",
     proveedorNombre: "",
+    pagadorId: "",
+    pagadorNombre: "",
+    clienteId: "",
+    clienteNombre: "",
     observacion: ""
   };
 }
@@ -116,6 +123,7 @@ export default function FinancesPage() {
   const [workRenderStatus, setWorkRenderStatus] = useState("");
   const [movementModal, setMovementModal] = useState<FinancialMovementKind | null>(null);
   const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
 
   const selectedWork = works.find((work) => work.id === obraId) ?? null;
@@ -160,8 +168,10 @@ export default function FinancesPage() {
         loadedWorks.map((work) => getMovementsByWork(work.id))
       )).flat();
       const loadedProveedores = await getProveedores();
+      const loadedClientes = await getClientes();
       setWorks(loadedWorks);
       setAllMovements(loadedMovements);
+      setClientes(loadedClientes);
       setProveedores(loadedProveedores);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las finanzas.");
@@ -268,7 +278,15 @@ export default function FinancesPage() {
   function openMovement(type: FinancialMovementKind) {
     setError("");
     setMessage("");
-    setMovementForm(emptyMovementForm(type));
+    const nextForm = emptyMovementForm(type);
+    if (type === "ingreso" && selectedWork) {
+      nextForm.pagadorId = selectedWork.clienteId ?? "";
+      nextForm.pagadorNombre = selectedWork.clienteNombre ?? selectedWork.cliente;
+      nextForm.clienteId = selectedWork.clienteId ?? "";
+      nextForm.clienteNombre = selectedWork.clienteNombre ?? selectedWork.cliente;
+      nextForm.tercero = selectedWork.clienteNombre ?? selectedWork.cliente;
+    }
+    setMovementForm(nextForm);
     setMovementModal(type);
   }
 
@@ -317,6 +335,10 @@ export default function FinancesPage() {
         bancoCheque: movementForm.metodoPago === "Cheque" ? movementForm.bancoCheque || undefined : undefined,
         monto: Number(movementForm.monto),
         tercero: getMovementThirdParty(movementForm),
+        pagadorId: movementModal === "ingreso" ? movementForm.pagadorId || movementForm.clienteId || undefined : undefined,
+        pagadorNombre: movementModal === "ingreso" ? movementForm.pagadorNombre || movementForm.clienteNombre || getMovementThirdParty(movementForm) : undefined,
+        clienteId: movementModal === "ingreso" ? movementForm.clienteId || movementForm.pagadorId || undefined : undefined,
+        clienteNombre: movementModal === "ingreso" ? movementForm.clienteNombre || movementForm.pagadorNombre || getMovementThirdParty(movementForm) : undefined,
         proveedorId: movementModal === "compra" ? movementForm.proveedorId || undefined : undefined,
         proveedorNombre: movementModal === "compra" ? movementForm.proveedorNombre || getMovementThirdParty(movementForm) : undefined,
         observacion: movementForm.observacion || undefined
@@ -344,6 +366,15 @@ export default function FinancesPage() {
       createdBy: profile?.uid ?? "unknown"
     });
     setProveedores((current) => [created, ...current]);
+    return created;
+  }
+
+  async function handleCreateCliente(data: Omit<Cliente, "id" | "createdAt" | "updatedAt">) {
+    const created = await createCliente({
+      ...data,
+      createdBy: profile?.uid ?? "unknown"
+    });
+    setClientes((current) => [created, ...current]);
     return created;
   }
 
@@ -393,6 +424,8 @@ export default function FinancesPage() {
         movementModal={movementModal}
         movementForm={movementForm}
         proveedores={proveedores}
+        clientes={clientes}
+        onCreateCliente={handleCreateCliente}
         onCreateProveedor={handleCreateProveedor}
         setMovementForm={setMovementForm}
         onSaveMovement={handleSaveMovement}
@@ -526,6 +559,8 @@ function FinancialDetail({
   movementModal,
   movementForm,
   proveedores,
+  clientes,
+  onCreateCliente,
   onCreateProveedor,
   setMovementForm,
   onSaveMovement,
@@ -551,6 +586,8 @@ function FinancialDetail({
   movementModal: FinancialMovementKind | null;
   movementForm: ReturnType<typeof emptyMovementForm>;
   proveedores: Proveedor[];
+  clientes: Cliente[];
+  onCreateCliente: (data: Omit<Cliente, "id" | "createdAt" | "updatedAt">) => Promise<Cliente>;
   onCreateProveedor: (data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) => Promise<Proveedor>;
   setMovementForm: (values: ReturnType<typeof emptyMovementForm>) => void;
   onSaveMovement: (event: FormEvent<HTMLFormElement>) => void;
@@ -722,6 +759,8 @@ function FinancialDetail({
           type={movementModal}
           values={movementForm}
           proveedores={proveedores}
+          clientes={clientes}
+          onCreateCliente={onCreateCliente}
           onCreateProveedor={onCreateProveedor}
           setValues={setMovementForm}
           onSubmit={onSaveMovement}
@@ -1069,6 +1108,8 @@ function FormField({ children, label }: { children: ReactNode; label: string }) 
 }
 
 function MovementModal({
+  clientes,
+  onCreateCliente,
   onCreateProveedor,
   type,
   proveedores,
@@ -1077,6 +1118,8 @@ function MovementModal({
   onSubmit,
   onClose
 }: {
+  clientes: Cliente[];
+  onCreateCliente: (data: Omit<Cliente, "id" | "createdAt" | "updatedAt">) => Promise<Cliente>;
   onCreateProveedor: (data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) => Promise<Proveedor>;
   type: FinancialMovementKind;
   proveedores: Proveedor[];
@@ -1087,6 +1130,7 @@ function MovementModal({
 }) {
   const title = type === "ingreso" ? "Agregar ingreso" : type === "compra" ? "Agregar compra" : "Agregar egreso";
   const isCheque = values.metodoPago === "Cheque";
+  const [payerSelectorOpen, setPayerSelectorOpen] = useState(false);
   const [providerSelectorOpen, setProviderSelectorOpen] = useState(false);
   function updatePaymentMethod(method: FinancialPaymentMethod) {
     setValues({
@@ -1124,7 +1168,14 @@ function MovementModal({
               <PaymentMethodSelect value={values.metodoPago} onChange={updatePaymentMethod} />
             </MovementFormField>
             <MovementFormField label="Cliente / pagador">
-              <input className="field" value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+              <div className="rounded-md border border-slate-200 bg-next-bg px-3 py-2">
+                <p className="truncate text-sm font-black text-next-text">
+                  {values.pagadorNombre || values.clienteNombre || values.tercero || "Sin pagador seleccionado"}
+                </p>
+                <button className="mt-1 text-xs font-black text-next-blue" type="button" onClick={() => setPayerSelectorOpen(true)}>
+                  Cambiar pagador
+                </button>
+              </div>
             </MovementFormField>
             {isCheque ? <ChequeFields values={values} setValues={setValues} /> : null}
             <MovementFormField className="sm:col-span-2" label="Observacion">
@@ -1238,6 +1289,24 @@ function MovementModal({
           proveedores={proveedores}
         />
       ) : null}
+      {payerSelectorOpen ? (
+        <ClienteSelectorModal
+          clientes={clientes}
+          onClose={() => setPayerSelectorOpen(false)}
+          onCreate={onCreateCliente}
+          onSelect={(cliente) => {
+            setValues({
+              ...values,
+              pagadorId: cliente.id,
+              pagadorNombre: cliente.nombre,
+              clienteId: cliente.id,
+              clienteNombre: cliente.nombre,
+              tercero: cliente.nombre
+            });
+            setPayerSelectorOpen(false);
+          }}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -1256,6 +1325,116 @@ function MovementFormField({
       {label}
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+function ClienteSelectorModal({
+  clientes,
+  onClose,
+  onCreate,
+  onSelect
+}: {
+  clientes: Cliente[];
+  onClose: () => void;
+  onCreate: (data: Omit<Cliente, "id" | "createdAt" | "updatedAt">) => Promise<Cliente>;
+  onSelect: (cliente: Cliente) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    nombre: "",
+    ruc: "",
+    telefono: "",
+    whatsapp: "",
+    email: "",
+    direccion: "",
+    ciudad: "",
+    contactoPrincipal: "",
+    observaciones: ""
+  });
+  const filtered = clientes.filter((cliente) =>
+    `${cliente.nombre} ${cliente.ruc ?? ""} ${cliente.email ?? ""}`.toLowerCase().includes(query.toLowerCase())
+  );
+
+  async function create() {
+    if (!form.nombre.trim()) return;
+    const duplicated = clientes.find((cliente) =>
+      cliente.nombre.trim().toLowerCase() === form.nombre.trim().toLowerCase()
+      || (cliente.ruc && form.ruc && cliente.ruc.trim() === form.ruc.trim())
+    );
+
+    if (duplicated) {
+      onSelect(duplicated);
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const created = await onCreate({
+        nombre: toTitleCase(form.nombre),
+        ruc: form.ruc.trim() || undefined,
+        telefono: form.telefono.trim() || undefined,
+        whatsapp: form.whatsapp.trim() || undefined,
+        email: form.email.trim() || undefined,
+        direccion: form.direccion.trim() || undefined,
+        ciudad: form.ciudad ? toTitleCase(form.ciudad) : undefined,
+        contactoPrincipal: form.contactoPrincipal ? toTitleCase(form.contactoPrincipal) : undefined,
+        observaciones: form.observaciones.trim() || undefined
+      });
+      onSelect(created);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-4xl rounded-lg bg-white p-4 shadow-2xl sm:p-5">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-next-blue">Pagador del ingreso</p>
+            <h3 className="mt-1 text-xl font-black text-next-text">Seleccionar o crear cliente</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+          <div className="min-w-0">
+            <input className="field" placeholder="Buscar cliente por nombre, RUC o email" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+              {filtered.map((cliente) => (
+                <button key={cliente.id} className="w-full rounded-md border border-slate-100 bg-next-bg px-3 py-3 text-left transition hover:border-next-blue hover:bg-white" type="button" onClick={() => onSelect(cliente)}>
+                  <p className="text-sm font-black text-next-text">{cliente.nombre}</p>
+                  <p className="mt-1 text-xs font-semibold text-next-muted">
+                    {[cliente.ruc, cliente.telefono, cliente.email].filter(Boolean).join(" · ") || "Sin datos de contacto"}
+                  </p>
+                </button>
+              ))}
+              {!filtered.length ? <EmptyState text="No hay clientes con esa busqueda." /> : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-next-bg p-3">
+            <p className="text-sm font-black text-next-text">Crear nuevo cliente</p>
+            <div className="mt-3 grid gap-2">
+              <input className="field" placeholder="Nombre / razon social" value={form.nombre} onBlur={() => setForm({ ...form, nombre: toTitleCase(form.nombre) })} onChange={(event) => setForm({ ...form, nombre: event.target.value })} />
+              <input className="field" placeholder="RUC opcional" value={form.ruc} onChange={(event) => setForm({ ...form, ruc: event.target.value })} />
+              <input className="field" placeholder="Telefono" value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value })} />
+              <input className="field" placeholder="WhatsApp" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} />
+              <input className="field" placeholder="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <input className="field" placeholder="Direccion" value={form.direccion} onChange={(event) => setForm({ ...form, direccion: event.target.value })} />
+              <input className="field" placeholder="Ciudad" value={form.ciudad} onBlur={() => setForm({ ...form, ciudad: toTitleCase(form.ciudad) })} onChange={(event) => setForm({ ...form, ciudad: event.target.value })} />
+              <input className="field" placeholder="Contacto principal" value={form.contactoPrincipal} onBlur={() => setForm({ ...form, contactoPrincipal: toTitleCase(form.contactoPrincipal) })} onChange={(event) => setForm({ ...form, contactoPrincipal: event.target.value })} />
+              <input className="field" placeholder="Observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} />
+            </div>
+            <button className="mt-3 h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white disabled:opacity-60" type="button" disabled={creating} onClick={() => void create()}>
+              {creating ? "Creando..." : "Crear y seleccionar"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 

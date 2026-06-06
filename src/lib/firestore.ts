@@ -15,6 +15,8 @@ import { initialProductionStages, initialRubros, seedData } from "../data/seedDa
 import type {
   Actividad,
   Cobro,
+  Cheque,
+  ChequeStatus,
   Cliente,
   Cuadrilla,
   FinancialMovement,
@@ -55,7 +57,8 @@ const collections = {
   actividadesAvance: "actividadesAvance",
   users: "users",
   clientes: "clientes",
-  proveedores: "proveedores"
+  proveedores: "proveedores",
+  cheques: "cheques"
 } as const;
 
 function shouldUseFirebase() {
@@ -520,6 +523,69 @@ export async function getMovementsByWork(obraId: string): Promise<FinancialMovem
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
+export async function getCheques(): Promise<Cheque[]> {
+  return (await getCollection<Cheque>("cheques"))
+    .sort((a, b) => getChequeDueDate(b).localeCompare(getChequeDueDate(a)));
+}
+
+export async function updateCheque(id: string, data: Partial<Cheque>): Promise<Cheque> {
+  const profile = await getCurrentUserProfile();
+  const previous = (await getCheques()).find((cheque) => cheque.id === id);
+  const nextStatus = data.estado;
+  const history = nextStatus && previous?.estado !== nextStatus
+    ? [
+        ...(previous?.historial ?? []),
+        {
+          estado: nextStatus,
+          fecha: now(),
+          usuario: profile?.nombre ?? profile?.email ?? "Sistema",
+          observacion: data.observacion
+        }
+      ]
+    : previous?.historial;
+
+  const updated = await updateDocument<Cheque>("cheques", id, {
+    ...data,
+    historial: history,
+    updatedAt: now(),
+    updatedBy: profile?.uid ?? "unknown"
+  });
+
+  if (previous && data.estado && previous.estado !== data.estado) {
+    await createActividad({
+      obraId: updated.obraId,
+      tipo: "cheque",
+      descripcion: `Cheque ${updated.numeroCheque} cambio a ${data.estado}.`,
+      usuario: profile?.nombre ?? "Administracion",
+      fecha: now()
+    });
+  }
+
+  return updated;
+}
+
+export async function syncChequesFromMovements(): Promise<Cheque[]> {
+  const [obras, movements, existing] = await Promise.all([
+    getObras(),
+    getCollection<FinancialMovement>("movimientosFinancieros"),
+    getCheques()
+  ]);
+  const existingByMovement = new Map(existing.map((cheque) => [cheque.movimientoId, cheque]));
+
+  for (const movement of movements) {
+    const obra = obras.find((item) => item.id === movement.obraId);
+    if (!obra) continue;
+
+    if (movement.metodoPago === "Cheque") {
+      await syncChequeForMovement(obra, movement, existingByMovement.get(movement.id));
+    } else if (existingByMovement.has(movement.id)) {
+      await updateCheque(existingByMovement.get(movement.id)!.id, { estado: "anulado" });
+    }
+  }
+
+  return getCheques();
+}
+
 export async function createMovement(
   obraId: string,
   data: Omit<FinancialMovement, "id" | "obraId" | "createdAt" | "updatedAt">
@@ -530,6 +596,7 @@ export async function createMovement(
     createdAt: now()
   });
   await syncFinancialWorkSaldo(obraId);
+  await syncChequeForMovementId(obraId, movement);
   return movement;
 }
 
@@ -543,10 +610,12 @@ export async function updateMovement(
     updatedAt: now()
   });
   await syncFinancialWorkSaldo(obraId);
+  await syncChequeForMovementId(obraId, movement);
   return movement;
 }
 
 export async function deleteMovement(obraId: string, movementId: string): Promise<void> {
+  await annulChequeForMovement(movementId);
   await deleteDocument<FinancialMovement>("movimientosFinancieros", movementId);
   await syncFinancialWorkSaldo(obraId);
 }
@@ -833,6 +902,115 @@ async function syncFinancialWorkSaldo(obraId: string): Promise<void> {
   await updateObra(obraId, {
     saldoPendienteCobro: calculateSaldoPendiente(obra, movements)
   });
+}
+
+async function syncChequeForMovementId(obraId: string, movement: FinancialMovement): Promise<void> {
+  const obra = await getObraById(obraId);
+  if (!obra) return;
+  const existing = (await getCheques()).find((cheque) => cheque.movimientoId === movement.id);
+
+  if (movement.metodoPago !== "Cheque") {
+    if (existing && existing.estado !== "anulado") {
+      await updateCheque(existing.id, { estado: "anulado" });
+    }
+    return;
+  }
+
+  await syncChequeForMovement(obra, movement, existing);
+}
+
+async function syncChequeForMovement(obra: Obra, movement: FinancialMovement, existing?: Cheque): Promise<Cheque | null> {
+  if (movement.metodoPago !== "Cheque" || !movement.numeroCheque || !movement.fechaEmisionCheque || !movement.fechaCobroCheque) {
+    if (existing && existing.estado !== "anulado") {
+      return updateCheque(existing.id, { estado: "anulado" });
+    }
+    return null;
+  }
+
+  const isIngreso = movement.tipo === "ingreso";
+  const thirdParty = getMovementThirdPartyForCheque(obra, movement);
+  const payload: Omit<Cheque, "id" | "createdAt"> = {
+    tipo: isIngreso ? "recibido" : "emitido",
+    estado: existing?.estado && existing.estado !== "anulado"
+      ? existing.estado
+      : isIngreso ? "recibido" : "emitido",
+    obraId: obra.id,
+    obraNombre: obra.nombre,
+    movimientoId: movement.id,
+    origen: movement.tipo,
+    terceroId: thirdParty.id,
+    terceroNombre: thirdParty.nombre,
+    terceroTipo: thirdParty.tipo,
+    clienteId: isIngreso ? thirdParty.id : obra.clienteId,
+    clienteNombre: isIngreso ? thirdParty.nombre : obra.clienteNombre ?? obra.cliente,
+    pagadorId: isIngreso ? thirdParty.id : undefined,
+    pagadorNombre: isIngreso ? thirdParty.nombre : undefined,
+    proveedorId: !isIngreso && thirdParty.tipo === "proveedor" ? thirdParty.id : undefined,
+    proveedorNombre: !isIngreso && thirdParty.tipo === "proveedor" ? thirdParty.nombre : undefined,
+    beneficiarioId: !isIngreso ? thirdParty.id : undefined,
+    beneficiarioNombre: !isIngreso ? thirdParty.nombre : undefined,
+    monto: movement.monto,
+    numeroCheque: movement.numeroCheque,
+    bancoCheque: movement.bancoCheque,
+    fechaEmisionCheque: movement.fechaEmisionCheque,
+    fechaCobroCheque: movement.fechaCobroCheque,
+    fechaVencimientoCheque: movement.fechaCobroCheque,
+    observacion: movement.observacion,
+    historial: existing?.historial ?? [
+      {
+        estado: isIngreso ? "recibido" : "emitido",
+        fecha: now(),
+        usuario: "Sistema",
+        observacion: "Cheque sincronizado desde movimiento financiero."
+      }
+    ],
+    createdBy: existing?.createdBy,
+    updatedAt: now(),
+    updatedBy: "system"
+  };
+
+  if (existing) {
+    return updateDocument<Cheque>("cheques", existing.id, payload);
+  }
+
+  return createDocument<Cheque>("cheques", {
+    ...payload,
+    createdAt: now()
+  });
+}
+
+async function annulChequeForMovement(movementId: string): Promise<void> {
+  const existing = (await getCheques()).find((cheque) => cheque.movimientoId === movementId);
+  if (existing && existing.estado !== "anulado") {
+    await updateCheque(existing.id, { estado: "anulado" });
+  }
+}
+
+function getMovementThirdPartyForCheque(obra: Obra, movement: FinancialMovement): { id?: string; nombre: string; tipo: "cliente" | "proveedor" | "persona" } {
+  if (movement.tipo === "ingreso") {
+    return {
+      id: movement.pagadorId ?? movement.clienteId ?? obra.clienteId,
+      nombre: movement.pagadorNombre ?? movement.clienteNombre ?? obra.clienteNombre ?? obra.cliente ?? movement.tercero ?? "Cliente",
+      tipo: "cliente"
+    };
+  }
+
+  if (movement.proveedorId || movement.proveedorNombre) {
+    return {
+      id: movement.proveedorId,
+      nombre: movement.proveedorNombre ?? movement.tercero ?? "Proveedor",
+      tipo: "proveedor"
+    };
+  }
+
+  return {
+    nombre: movement.tercero ?? "Persona",
+    tipo: "persona"
+  };
+}
+
+function getChequeDueDate(cheque: Cheque): string {
+  return cheque.fechaCobroCheque || cheque.fechaVencimientoCheque || cheque.fechaEmisionCheque || "";
 }
 
 async function syncWorkProgressCache(obraId: string): Promise<void> {

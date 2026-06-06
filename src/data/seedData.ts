@@ -81,6 +81,7 @@ export const seedData: StoredData = {
       updatedAt: now
     }
   ],
+  cheques: [],
   obras: [
     {
       id: "obra-palmanova",

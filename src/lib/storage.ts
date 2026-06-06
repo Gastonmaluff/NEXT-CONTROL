@@ -65,6 +65,7 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     actividadesAvance: data.actividadesAvance ?? seedData.actividadesAvance,
     users: data.users ?? seedData.users,
     clientes: data.clientes ?? seedData.clientes ?? [],
-    proveedores: data.proveedores ?? seedData.proveedores ?? []
+    proveedores: data.proveedores ?? seedData.proveedores ?? [],
+    cheques: data.cheques ?? seedData.cheques ?? []
   };
 }

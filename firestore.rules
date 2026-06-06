@@ -112,6 +112,10 @@ service cloud.firestore {
       allow read, write: if canReadFinance();
     }
 
+    match /cheques/{id} {
+      allow read, write: if canReadFinance();
+    }
+
     match /cobros/{id} {
       allow read, write: if canReadFinance();
     }
