@@ -275,9 +275,10 @@ export default function NewWorkWizard({
           }), 15000, "guardar la URL del render");
           logNewWorkStep("Upload success", { obraId: created.id, uploadPath });
         } catch (uploadError) {
-          logNewWorkStep("Upload failed", getErrorDetails(uploadError));
+          const uploadDetails = getErrorDetails(uploadError);
+          logNewWorkStep("Upload failed", uploadDetails);
           console.error("No se pudo subir la imagen principal de la obra.", uploadError);
-          completionNotice = "Obra creada. La imagen no pudo subirse, pero podes cargarla despues desde Editar obra.";
+          completionNotice = `Obra creada. La imagen no pudo subirse${uploadDetails.code ? ` (${uploadDetails.code})` : ""}, pero podes cargarla despues desde Editar obra.`;
           setWarning(completionNotice);
         } finally {
           setUploadStatus("");

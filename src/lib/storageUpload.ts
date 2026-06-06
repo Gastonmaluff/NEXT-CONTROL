@@ -22,10 +22,7 @@ export async function uploadFile(path: string, file: File): Promise<string> {
   const storageRef = ref(firebaseStorage, path);
   try {
     await uploadBytes(storageRef, file, {
-      contentType: file.type || undefined,
-      customMetadata: {
-        originalName: file.name
-      }
+      contentType: file.type || undefined
     });
     const url = await getDownloadURL(storageRef);
     if (import.meta.env.DEV) {

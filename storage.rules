@@ -16,22 +16,27 @@ service firebase.storage {
         && userDoc().active == true;
     }
 
-    function canUseWork(obraId) {
+    function isManagement() {
       return active()
-        && (
-          userDoc().role in ["admin", "gerencia", "administracion"]
-          || obraId in userDoc().assignedWorkIds
-        );
+        && userDoc().role in ["admin", "gerencia", "administracion"];
+    }
+
+    function isAssignedToWork(obraId) {
+      return active()
+        && userDoc().assignedWorkIds is list
+        && obraId in userDoc().assignedWorkIds;
+    }
+
+    function canUseWork(obraId) {
+      return isManagement() || isAssignedToWork(obraId);
     }
 
     function canUploadWorkImage(obraId) {
-      return active()
-        && (
-          userDoc().role in ["admin", "gerencia", "administracion"]
-          || (
-            userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador"]
-            && obraId in userDoc().assignedWorkIds
-          )
+      return isManagement()
+        || (
+          active()
+          && userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador"]
+          && isAssignedToWork(obraId)
         );
     }
 
