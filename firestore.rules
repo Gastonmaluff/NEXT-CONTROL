@@ -39,7 +39,7 @@ service cloud.firestore {
 
     function canWriteOperational() {
       return isActiveUser()
-        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado"];
+        && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado"];
     }
 
     function isAssignedToWork(workId) {

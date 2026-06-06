@@ -49,7 +49,7 @@ export default function NewWorkWizard({
   onClose,
   onCreated
 }: NewWorkWizardProps) {
-  const { profile } = useAuth();
+  const { authUser, profile } = useAuth();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -245,7 +245,7 @@ export default function NewWorkWizard({
         rubrosAvance: [],
         etapasProduccion: [],
         materialesFaltantes: [],
-        createdBy: profile?.uid ?? "unknown"
+        createdBy: authUser?.uid ?? profile?.uid ?? "unknown"
       }), 20000, "crear el documento principal de la obra");
       logNewWorkStep("Documento creado", { obraId: created.id });
 
@@ -271,7 +271,7 @@ export default function NewWorkWizard({
             renderStoragePath: uploadPath,
             renderFileName: sanitizeStorageFileName(renderFile.name || `render.${extension}`),
             renderUploadedAt: new Date().toISOString(),
-            renderUploadedBy: profile?.uid ?? "unknown"
+            renderUploadedBy: authUser?.uid ?? profile?.uid ?? "unknown"
           }), 15000, "guardar la URL del render");
           logNewWorkStep("Upload success", { obraId: created.id, uploadPath });
         } catch (uploadError) {
