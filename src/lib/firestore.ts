@@ -34,6 +34,7 @@ import type {
 } from "../types";
 import { calculateSaldoPendiente } from "../utils/finance";
 import { getDefaultCostBudget } from "../utils/finances";
+import { sanitizeForFirestore } from "../utils/firestore";
 import {
   calculateRubricProgress
 } from "../utils/progress";
@@ -158,15 +159,16 @@ async function createDocument<T extends { id: string }>(
   if (!shouldUseFirebase() || !firestoreDb) {
     const stored = getStoredData();
     const id = generateId(name);
-    const record = { id, ...data } as T;
+    const record = sanitizeForFirestore({ id, ...data }) as T;
     (stored[name] as unknown as T[]).unshift(record);
     saveStoredData(stored);
     return record;
   }
 
   try {
-    const ref = await addDoc(collection(firestoreDb, collections[name]), stripUndefined(data) as Omit<T, "id">);
-    return { id: ref.id, ...data } as T;
+    const sanitized = sanitizeForFirestore(data) as Omit<T, "id">;
+    const ref = await addDoc(collection(firestoreDb, collections[name]), sanitized);
+    return { id: ref.id, ...sanitized } as T;
   } catch (error) {
     throw withError(error, `No se pudo crear ${collections[name]}.`);
   }
@@ -185,24 +187,18 @@ async function updateDocument<T extends { id: string }>(
       throw new Error("No se encontro el registro.");
     }
 
-    records[index] = { ...records[index], ...data };
+    records[index] = sanitizeForFirestore({ ...records[index], ...data }) as T;
     saveStoredData(stored);
     return records[index];
   }
 
   try {
-    await updateDoc(doc(firestoreDb, collections[name], id), stripUndefined(data) as Record<string, unknown>);
+    await updateDoc(doc(firestoreDb, collections[name], id), sanitizeForFirestore(data) as Record<string, unknown>);
     const updated = await getDoc(doc(firestoreDb, collections[name], id));
     return { id: updated.id, ...updated.data() } as T;
   } catch (error) {
     throw withError(error, `No se pudo actualizar ${collections[name]}.`);
   }
-}
-
-function stripUndefined<T extends Record<string, unknown> | object>(data: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined)
-  ) as Partial<T>;
 }
 
 async function deleteDocument<T extends { id: string }>(
@@ -1248,7 +1244,7 @@ export async function loadSeedDataToFirebase(replace = false): Promise<string> {
       records.forEach((record) => {
         const targetCollection = collections[collectionName as keyof typeof collections] ?? collectionName;
         const ref = doc(db, targetCollection, getSeedRecordId(record));
-        batch.set(ref, record);
+        batch.set(ref, sanitizeForFirestore(record));
       });
     });
 
@@ -1268,7 +1264,7 @@ export async function setFirebaseSeedData(): Promise<void> {
   for (const [collectionName, records] of Object.entries(seedData)) {
     for (const record of records) {
       const targetCollection = collections[collectionName as keyof typeof collections] ?? collectionName;
-      await setDoc(doc(db, targetCollection, getSeedRecordId(record)), record);
+      await setDoc(doc(db, targetCollection, getSeedRecordId(record)), sanitizeForFirestore(record));
     }
   }
 }

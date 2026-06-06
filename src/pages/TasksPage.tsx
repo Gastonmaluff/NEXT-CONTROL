@@ -334,7 +334,8 @@ function NewTaskModal({ onClose, onCreated, works }: { works: Obra[]; onClose: (
       });
       await onCreated();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo crear la tarea.");
+      console.error("No se pudo crear la tarea.", saveError);
+      setError("No se pudo crear la tarea. Revisa los datos e intenta nuevamente.");
     } finally {
       setSaving(false);
     }

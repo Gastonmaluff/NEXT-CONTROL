@@ -1,6 +1,7 @@
 import { httpsCallable } from "firebase/functions";
 import { collection, doc, getDocs, updateDoc } from "firebase/firestore";
 import type { Obra, SystemUser, UserRole } from "../types";
+import { sanitizeForFirestore } from "../utils/firestore";
 import { firebaseFunctions, firestoreDb, isFirebaseConfigured } from "./firebase";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
@@ -142,10 +143,10 @@ export async function linkExistingFirebaseUser(data: Omit<SystemUser, "createdAt
 
 export async function setUserLastLogin(uid: string): Promise<void> {
   if (!isFirebaseConfigured() || !firestoreDb || isDemoSession()) return;
-  await updateDoc(doc(firestoreDb, "users", uid), {
+  await updateDoc(doc(firestoreDb, "users", uid), sanitizeForFirestore({
     lastLoginAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
-  });
+  }));
 }
 
 export function countAssignedWorks(user: SystemUser, works: Obra[]) {
