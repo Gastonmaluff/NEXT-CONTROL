@@ -12,9 +12,13 @@ export type CreateSystemUserInput = {
   phone?: string;
   active: boolean;
   assignedWorkIds: string[];
+  assignedTeamIds?: string[];
+  teamName?: string;
+  teamType?: SystemUser["teamType"];
+  membersDescription?: string;
 };
 
-export type UpdateSystemUserInput = Partial<Pick<SystemUser, "nombre" | "role" | "phone" | "active" | "assignedWorkIds">>;
+export type UpdateSystemUserInput = Partial<Pick<SystemUser, "nombre" | "role" | "phone" | "active" | "assignedWorkIds" | "assignedTeamIds" | "teamName" | "teamType" | "membersDescription">>;
 
 function shouldUseFirebaseUsers() {
   return isFirebaseConfigured() && Boolean(firebaseFunctions) && Boolean(firestoreDb) && !isDemoSession();
@@ -46,6 +50,10 @@ export async function createSystemUser(data: CreateSystemUserInput): Promise<Sys
     active: data.active,
     phone: data.phone,
     assignedWorkIds: data.assignedWorkIds,
+    assignedTeamIds: data.assignedTeamIds ?? [],
+    teamName: data.teamName,
+    teamType: data.teamType,
+    membersDescription: data.membersDescription,
     createdAt: now,
     createdBy: "demo-admin",
     updatedAt: now
@@ -141,6 +149,6 @@ export async function setUserLastLogin(uid: string): Promise<void> {
 }
 
 export function countAssignedWorks(user: SystemUser, works: Obra[]) {
-  if (!user.assignedWorkIds.length) return "Todas";
+  if (!user.assignedWorkIds?.length) return "Todas";
   return `${works.filter((obra) => user.assignedWorkIds.includes(obra.id)).length}`;
 }

@@ -27,6 +27,7 @@ const roles: UserRole[] = [
   "supervisor",
   "fiscalizador",
   "encargado",
+  "equipo_campo",
   "produccion",
   "instalador"
 ];
@@ -39,7 +40,11 @@ const emptyForm = {
   role: "supervisor" as UserRole,
   phone: "",
   active: true,
-  assignedWorkIds: [] as string[]
+  assignedWorkIds: [] as string[],
+  assignedTeamIds: [] as string[],
+  teamName: "",
+  teamType: "equipo_campo" as SystemUser["teamType"],
+  membersDescription: ""
 };
 
 export default function UsersPage() {
@@ -89,7 +94,11 @@ export default function UsersPage() {
           role: form.role,
           phone: form.phone || undefined,
           active: form.active,
-          assignedWorkIds: form.assignedWorkIds
+          assignedWorkIds: form.assignedWorkIds,
+          assignedTeamIds: form.assignedTeamIds,
+          teamName: form.role === "equipo_campo" ? form.teamName || form.nombre : undefined,
+          teamType: form.role === "equipo_campo" ? form.teamType : undefined,
+          membersDescription: form.role === "equipo_campo" ? form.membersDescription || undefined : undefined
         });
         await assignWorksToUser(selectedUser.uid, form.assignedWorkIds);
         await setSystemUserRole(selectedUser.uid, form.role);
@@ -103,6 +112,10 @@ export default function UsersPage() {
           active: form.active,
           phone: form.phone || undefined,
           assignedWorkIds: form.assignedWorkIds,
+          assignedTeamIds: form.assignedTeamIds,
+          teamName: form.role === "equipo_campo" ? form.teamName || form.nombre : undefined,
+          teamType: form.role === "equipo_campo" ? form.teamType : undefined,
+          membersDescription: form.role === "equipo_campo" ? form.membersDescription || undefined : undefined,
           updatedAt: new Date().toISOString()
         });
         setMessage("Usuario existente vinculado.");
@@ -114,7 +127,11 @@ export default function UsersPage() {
           role: form.role,
           phone: form.phone || undefined,
           active: form.active,
-          assignedWorkIds: form.assignedWorkIds
+          assignedWorkIds: form.assignedWorkIds,
+          assignedTeamIds: form.assignedTeamIds,
+          teamName: form.role === "equipo_campo" ? form.teamName || form.nombre : undefined,
+          teamType: form.role === "equipo_campo" ? form.teamType : undefined,
+          membersDescription: form.role === "equipo_campo" ? form.membersDescription || undefined : undefined
         });
         setMessage("Usuario creado. La contrasena temporal no fue guardada.");
       }
@@ -139,7 +156,11 @@ export default function UsersPage() {
       role: user.role,
       phone: user.phone ?? "",
       active: user.active,
-      assignedWorkIds: user.assignedWorkIds
+      assignedWorkIds: user.assignedWorkIds ?? [],
+      assignedTeamIds: user.assignedTeamIds ?? [],
+      teamName: user.teamName ?? "",
+      teamType: user.teamType ?? "equipo_campo",
+      membersDescription: user.membersDescription ?? ""
     });
   }
 
@@ -197,6 +218,16 @@ export default function UsersPage() {
               {roles.map((role) => <option key={role}>{role}</option>)}
             </select>
             <input className="field" placeholder="Telefono opcional" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+            {form.role === "equipo_campo" ? (
+              <>
+                <input className="field" placeholder="Nombre del equipo o cuadrilla" value={form.teamName} onChange={(event) => setForm({ ...form, teamName: event.target.value })} />
+                <select className="field" value={form.teamType} onChange={(event) => setForm({ ...form, teamType: event.target.value as SystemUser["teamType"] })}>
+                  <option value="equipo_campo">Equipo de campo</option>
+                  <option value="cuadrilla">Cuadrilla</option>
+                </select>
+                <textarea className="field min-h-20 sm:col-span-2" placeholder="Descripcion de integrantes o uso compartido" value={form.membersDescription} onChange={(event) => setForm({ ...form, membersDescription: event.target.value })} />
+              </>
+            ) : null}
             <label className="flex h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-bold text-next-muted">
               <input checked={form.active} className="accent-next-blue" type="checkbox" onChange={(event) => setForm({ ...form, active: event.target.checked })} />
               Usuario activo

@@ -9,6 +9,19 @@ export function buildProgressPhotoPath(obraId: string, file: File): string {
   return `obras/${obraId}/progress/${Date.now()}-${sanitizeStorageFileName(file.name || "avance.jpg")}`;
 }
 
+export function buildTaskPhotoPath(obraId: string, taskId: string, file: File): string {
+  return `obras/${obraId}/tareas/${taskId}/${Date.now()}-${sanitizeStorageFileName(file.name || "tarea.jpg")}`;
+}
+
+export function buildWorkdayPhotoPath(
+  obraId: string,
+  jornadaId: string,
+  phase: "inicio" | "avance" | "fin",
+  file: File
+): string {
+  return `obras/${obraId}/jornadas/${jornadaId}/${phase}/${Date.now()}-${sanitizeStorageFileName(file.name || "jornada.jpg")}`;
+}
+
 export async function uploadFile(path: string, file: File): Promise<string> {
   if (!isFirebaseConfigured() || !firebaseStorage) {
     throw new Error("Firebase Storage todavia no esta configurado.");

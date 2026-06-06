@@ -64,7 +64,7 @@ export default function SupervisorPage() {
       setMaterials(allMaterials);
       setCuadrillas(crews);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la vista supervisor.");
+      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la vista de fiscalizadores.");
     } finally {
       setLoading(false);
     }
@@ -80,14 +80,14 @@ export default function SupervisorPage() {
   const assignedCount = useMemo(() => obras.length, [obras.length]);
 
   if (loading) {
-    return <main className="min-h-screen bg-next-bg px-4 py-6 text-sm font-bold text-next-muted">Cargando supervisor...</main>;
+    return <main className="min-h-screen bg-next-bg px-4 py-6 text-sm font-bold text-next-muted">Cargando fiscalizadores...</main>;
   }
 
   return (
     <main className="min-h-screen bg-next-bg px-4 py-5 text-next-text">
       <div className="mx-auto max-w-3xl space-y-4">
         <header className="rounded-lg bg-next-navy px-5 py-5 text-white shadow-soft">
-          <p className="text-xs font-black uppercase text-white/65">NEXT CONTROL CAMPO</p>
+          <p className="text-xs font-black uppercase text-white/65">NEXT CONTROL FISCALIZADORES</p>
           <h1 className="mt-2 text-2xl font-black">Hola, {profile?.nombre ?? "Usuario"}</h1>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-md bg-white/10 px-3 py-3">
@@ -133,7 +133,7 @@ export default function SupervisorPage() {
 
                 <div className="mt-4 grid gap-2 text-sm font-semibold text-next-muted">
                   <Line icon={Clock3} label="Ultima actualizacion" value={latest ? `${formatDateShort(latest.fecha)} ${latest.hora}` : "Sin reportes"} />
-                  <Line icon={UserRound} label="Cuadrilla activa" value={activeCrew ? `${activeCrew.nombre} desde ${activeCrew.horaInicio || "--:--"}` : "Sin cuadrilla activa"} />
+                  <Line icon={UserRound} label="Equipo activo" value={activeCrew ? `${activeCrew.nombre} desde ${activeCrew.horaInicio || "--:--"}` : "Sin equipo activo"} />
                   <Line icon={ClipboardCheck} label="Materiales pendientes" value={`${pending}`} />
                 </div>
 

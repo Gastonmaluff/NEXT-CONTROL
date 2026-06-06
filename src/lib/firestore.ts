@@ -19,6 +19,8 @@ import type {
   ChequeStatus,
   Cliente,
   Cuadrilla,
+  FieldTask,
+  FieldWorkday,
   FinancialMovement,
   Obra,
   OportunidadCRM,
@@ -26,6 +28,7 @@ import type {
   ProgressActivityLog,
   ProgressMaterialReport,
   ProgressReport,
+  TaskPhoto,
   TareaInstalacion,
   WorkProgressRubric
 } from "../types";
@@ -37,7 +40,7 @@ import {
 import { normalizeUnit } from "../utils/units";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { getCurrentUserProfile } from "./auth";
-import { canManageFinances, canViewAllWorks } from "./roles";
+import { canManageFinances, canViewAllTasks, canViewAllWorks } from "./roles";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
 type ObraInput = Omit<Obra, "id" | "createdAt" | "updatedAt"> &
@@ -58,7 +61,9 @@ const collections = {
   users: "users",
   clientes: "clientes",
   proveedores: "proveedores",
-  cheques: "cheques"
+  cheques: "cheques",
+  tareas: "tareas",
+  jornadasCampo: "jornadasCampo"
 } as const;
 
 function shouldUseFirebase() {
@@ -325,6 +330,8 @@ export async function deleteObra(id: string): Promise<void> {
     stored.reportesAvance = stored.reportesAvance.filter((report) => report.obraId !== id);
     stored.materialesPendientes = stored.materialesPendientes.filter((material) => material.obraId !== id);
     stored.actividadesAvance = stored.actividadesAvance.filter((activity) => activity.obraId !== id);
+    stored.tareas = stored.tareas.filter((tarea) => tarea.obraId !== id);
+    stored.jornadasCampo = stored.jornadasCampo.filter((jornada) => jornada.obraId !== id);
     saveStoredData(stored);
     return;
   }
@@ -460,6 +467,180 @@ export async function updateTareaInstalacion(
   data: Partial<TareaInstalacion>
 ): Promise<TareaInstalacion> {
   return updateDocument<TareaInstalacion>("tareasInstalacion", id, data);
+}
+
+export async function getFieldTasks(): Promise<FieldTask[]> {
+  if (!shouldUseFirebase() || !firestoreDb) {
+    return (getStoredData().tareas ?? [])
+      .sort((a, b) => (b.fechaAsignada ?? b.createdAt).localeCompare(a.fechaAsignada ?? a.createdAt));
+  }
+
+  try {
+    const profile = await getActiveProfile();
+    if (canViewAllTasks(profile)) {
+      return (await getCollection<FieldTask>("tareas"))
+        .sort((a, b) => (b.fechaAsignada ?? b.createdAt).localeCompare(a.fechaAsignada ?? a.createdAt));
+    }
+
+    const db = firestoreDb;
+    const tasksById = new Map<string, FieldTask>();
+    const assignedSnapshot = await getDocs(query(collection(db, collections.tareas), where("asignadoAId", "==", profile.uid)));
+    assignedSnapshot.docs.forEach((item) => tasksById.set(item.id, { id: item.id, ...item.data() } as FieldTask));
+
+    for (const obraId of profile.assignedWorkIds ?? []) {
+      const workSnapshot = await getDocs(query(collection(db, collections.tareas), where("obraId", "==", obraId)));
+      workSnapshot.docs.forEach((item) => tasksById.set(item.id, { id: item.id, ...item.data() } as FieldTask));
+    }
+
+    return Array.from(tasksById.values())
+      .sort((a, b) => (b.fechaAsignada ?? b.createdAt).localeCompare(a.fechaAsignada ?? a.createdAt));
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar las tareas de campo.");
+  }
+}
+
+export async function getFieldTasksByWork(obraId: string): Promise<FieldTask[]> {
+  return (await getCollectionByWork<FieldTask>("tareas", obraId))
+    .sort((a, b) => (b.fechaAsignada ?? b.createdAt).localeCompare(a.fechaAsignada ?? a.createdAt));
+}
+
+export async function createFieldTask(
+  data: Omit<FieldTask, "id" | "createdAt" | "updatedAt">
+): Promise<FieldTask> {
+  const profile = await getCurrentUserProfile();
+  const createdAt = now();
+  const task = await createDocument<FieldTask>("tareas", {
+    ...data,
+    createdAt,
+    createdBy: data.createdBy ?? profile?.uid ?? "system",
+    estado: data.asignadoAId || data.asignadoANombre ? data.estado || "asignada" : data.estado || "pendiente"
+  });
+
+  await createActividad({
+    obraId: task.obraId,
+    tipo: "tarea",
+    descripcion: `Tarea creada: ${task.titulo}.`,
+    usuario: profile?.nombre ?? "Sistema",
+    fecha: now()
+  });
+
+  await createProgressActivity({
+    obraId: task.obraId,
+    tipo: "tarea",
+    descripcion: `Tarea creada: ${task.titulo}.`,
+    userId: profile?.uid ?? "system",
+    userName: profile?.nombre ?? "Sistema",
+    fechaHora: now(),
+    newValue: task
+  });
+
+  return task;
+}
+
+export async function updateFieldTask(id: string, data: Partial<FieldTask>): Promise<FieldTask> {
+  const profile = await getCurrentUserProfile();
+  const updated = await updateDocument<FieldTask>("tareas", id, {
+    ...data,
+    updatedAt: now(),
+    updatedBy: profile?.uid ?? "system"
+  });
+
+  await createProgressActivity({
+    obraId: updated.obraId,
+    tipo: "tarea",
+    descripcion: `Tarea actualizada: ${updated.titulo} (${updated.estado}).`,
+    userId: profile?.uid ?? "system",
+    userName: profile?.nombre ?? "Sistema",
+    fechaHora: now(),
+    newValue: updated
+  });
+
+  return updated;
+}
+
+export async function getFieldWorkdays(): Promise<FieldWorkday[]> {
+  if (!shouldUseFirebase() || !firestoreDb) {
+    return (getStoredData().jornadasCampo ?? [])
+      .sort((a, b) => `${b.fecha}T${b.horaInicio}`.localeCompare(`${a.fecha}T${a.horaInicio}`));
+  }
+
+  try {
+    const profile = await getActiveProfile();
+    if (canViewAllTasks(profile)) {
+      return (await getCollection<FieldWorkday>("jornadasCampo"))
+        .sort((a, b) => `${b.fecha}T${b.horaInicio}`.localeCompare(`${a.fecha}T${a.horaInicio}`));
+    }
+
+    const db = firestoreDb;
+    const workdaysById = new Map<string, FieldWorkday>();
+    const ownSnapshot = await getDocs(query(collection(db, collections.jornadasCampo), where("userId", "==", profile.uid)));
+    ownSnapshot.docs.forEach((item) => workdaysById.set(item.id, { id: item.id, ...item.data() } as FieldWorkday));
+
+    for (const obraId of profile.assignedWorkIds ?? []) {
+      const workSnapshot = await getDocs(query(collection(db, collections.jornadasCampo), where("obraId", "==", obraId)));
+      workSnapshot.docs.forEach((item) => workdaysById.set(item.id, { id: item.id, ...item.data() } as FieldWorkday));
+    }
+
+    return Array.from(workdaysById.values())
+      .sort((a, b) => `${b.fecha}T${b.horaInicio}`.localeCompare(`${a.fecha}T${a.horaInicio}`));
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar las jornadas de campo.");
+  }
+}
+
+export async function getFieldWorkdaysByWork(obraId: string): Promise<FieldWorkday[]> {
+  return (await getCollectionByWork<FieldWorkday>("jornadasCampo", obraId))
+    .sort((a, b) => `${b.fecha}T${b.horaInicio}`.localeCompare(`${a.fecha}T${a.horaInicio}`));
+}
+
+export async function createFieldWorkday(
+  data: Omit<FieldWorkday, "id" | "createdAt" | "updatedAt">
+): Promise<FieldWorkday> {
+  const createdAt = now();
+  const jornada = await createDocument<FieldWorkday>("jornadasCampo", {
+    ...data,
+    createdAt
+  });
+
+  await createProgressActivity({
+    obraId: jornada.obraId,
+    tipo: "jornada",
+    descripcion: `Jornada iniciada por ${jornada.equipoNombre || jornada.userName}.`,
+    userId: jornada.userId,
+    userName: jornada.userName,
+    fechaHora: createdAt,
+    newValue: jornada
+  });
+
+  return jornada;
+}
+
+export async function updateFieldWorkday(
+  id: string,
+  data: Partial<FieldWorkday>
+): Promise<FieldWorkday> {
+  const updated = await updateDocument<FieldWorkday>("jornadasCampo", id, {
+    ...data,
+    updatedAt: now()
+  });
+
+  if (data.estado === "finalizada") {
+    await createProgressActivity({
+      obraId: updated.obraId,
+      tipo: "jornada",
+      descripcion: `Jornada finalizada por ${updated.equipoNombre || updated.userName}.`,
+      userId: updated.userId,
+      userName: updated.userName,
+      fechaHora: now(),
+      newValue: updated
+    });
+  }
+
+  return updated;
+}
+
+export function appendTaskPhotos(task: FieldTask, photos: TaskPhoto[]): TaskPhoto[] {
+  return [...(task.fotos ?? []), ...photos];
 }
 
 export async function getFinancialWorks(): Promise<Obra[]> {

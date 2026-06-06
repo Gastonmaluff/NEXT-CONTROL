@@ -39,7 +39,60 @@ service cloud.firestore {
 
     function canWriteOperational() {
       return isActiveUser()
-        && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado"];
+        && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado", "equipo_campo", "instalador"];
+    }
+
+    function canManageTasks() {
+      return isActiveUser()
+        && userRole() in ["admin", "gerencia"];
+    }
+
+    function isAssignedTeam(teamId) {
+      return isActiveUser()
+        && teamId != null
+        && userProfile().assignedTeamIds is list
+        && teamId in userProfile().assignedTeamIds;
+    }
+
+    function canReadTaskData(data) {
+      return isManagement()
+        || canManageTasks()
+        || isAssignedToWork(data.obraId)
+        || data.asignadoAId == request.auth.uid
+        || data.fiscalizadorId == request.auth.uid
+        || isAssignedTeam(data.asignadoAId);
+    }
+
+    function canWriteTaskData(data) {
+      return isManagement()
+        || canManageTasks()
+        || (
+          isActiveUser()
+          && userRole() in ["supervisor", "fiscalizador"]
+          && (isAssignedToWork(data.obraId) || data.fiscalizadorId == request.auth.uid)
+        )
+        || (
+          isActiveUser()
+          && userRole() in ["equipo_campo", "instalador"]
+          && (
+            data.asignadoAId == request.auth.uid
+            || isAssignedTeam(data.asignadoAId)
+            || isAssignedToWork(data.obraId)
+          )
+        );
+    }
+
+    function canReadWorkdayData(data) {
+      return isManagement()
+        || canManageTasks()
+        || (
+          isActiveUser()
+          && userRole() in ["supervisor", "fiscalizador"]
+          && isAssignedToWork(data.obraId)
+        )
+        || data.userId == request.auth.uid
+        || isAssignedToWork(data.obraId)
+        || isAssignedTeam(data.equipoId);
     }
 
     function isAssignedToWork(workId) {
@@ -135,7 +188,7 @@ service cloud.firestore {
     match /cuadrillas/{id} {
       allow read: if isActiveUser();
       allow write: if isActiveUser()
-        && userRole() in ["admin", "gerencia", "supervisor", "encargado", "instalador"];
+        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo"];
     }
 
     match /tareasInstalacion/{id} {
@@ -147,7 +200,29 @@ service cloud.firestore {
     match /jornadasInstalacion/{id} {
       allow read: if isActiveUser();
       allow write: if isActiveUser()
-        && userRole() in ["admin", "gerencia", "supervisor", "encargado", "instalador"];
+        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo"];
+    }
+
+    match /tareas/{id} {
+      allow read: if isActiveUser() && canReadTaskData(resource.data);
+      allow create: if isActiveUser() && canWriteTaskData(request.resource.data);
+      allow update: if isActiveUser() && canWriteTaskData(resource.data) && canWriteTaskData(request.resource.data);
+      allow delete: if isManagement();
+    }
+
+    match /jornadasCampo/{id} {
+      allow read: if isActiveUser() && canReadWorkdayData(resource.data);
+      allow create: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "equipo_campo", "instalador"]
+        && (request.resource.data.userId == request.auth.uid || isManagement());
+      allow update: if isActiveUser()
+        && (
+          isManagement()
+          || canManageTasks()
+          || resource.data.userId == request.auth.uid
+          || isAssignedTeam(resource.data.equipoId)
+        );
+      allow delete: if isManagement();
     }
 
     match /actividades/{id} {

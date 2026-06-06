@@ -6,7 +6,8 @@ export type UserRole =
   | "encargado"
   | "administracion"
   | "produccion"
-  | "instalador";
+  | "instalador"
+  | "equipo_campo";
 
 export type WorkStatus =
   | "Prospecto"
@@ -85,6 +86,10 @@ export type SystemUser = {
   active: boolean;
   phone?: string;
   assignedWorkIds: string[];
+  assignedTeamIds?: string[];
+  teamName?: string;
+  teamType?: "cuadrilla" | "equipo_campo";
+  membersDescription?: string;
   lastLoginAt?: string;
   createdAt: string;
   createdBy: string;
@@ -389,6 +394,94 @@ export type TareaInstalacion = {
   completedAt?: string;
 };
 
+export type FieldTaskStatus =
+  | "pendiente"
+  | "asignada"
+  | "en_proceso"
+  | "reportada"
+  | "completada"
+  | "observada"
+  | "cancelada";
+
+export type FieldTaskAssignmentType = "fiscalizador" | "equipo_campo" | "usuario";
+
+export type TaskPhoto = {
+  id: string;
+  url: string;
+  storagePath?: string;
+  fileName?: string;
+  uploadedBy?: string;
+  uploadedAt: string;
+  obraId: string;
+  taskId?: string;
+  jornadaId?: string;
+  phase?: "inicio" | "avance" | "fin";
+  observacion?: string;
+};
+
+export type FieldTask = {
+  id: string;
+  obraId: string;
+  obraNombre: string;
+  titulo: string;
+  descripcion?: string;
+  rubroId?: string;
+  rubroNombre?: string;
+  cantidadPrevista?: number;
+  unidad?: "m2" | "unidad";
+  fechaAsignada?: string;
+  fechaLimite?: string;
+  asignadoAType: FieldTaskAssignmentType;
+  asignadoAId?: string;
+  asignadoANombre?: string;
+  fiscalizadorId?: string;
+  fiscalizadorNombre?: string;
+  estado: FieldTaskStatus;
+  requiereFotos: boolean;
+  requiereValidacion: boolean;
+  cantidadReportada?: number;
+  observacionCampo?: string;
+  observacionFiscalizador?: string;
+  fotos?: TaskPhoto[];
+  jornadaId?: string;
+  createdAt: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type FieldLocation = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+};
+
+export type FieldWorkday = {
+  id: string;
+  obraId: string;
+  obraNombre: string;
+  equipoId?: string;
+  equipoNombre?: string;
+  userId: string;
+  userName: string;
+  fecha: string;
+  horaInicio: string;
+  ubicacionInicio?: FieldLocation;
+  ubicacionInicioDisponible?: boolean;
+  horaFin?: string;
+  ubicacionFin?: FieldLocation;
+  ubicacionFinDisponible?: boolean;
+  estado: "activa" | "finalizada";
+  tareasIds: string[];
+  fotosInicio?: TaskPhoto[];
+  fotosAvance?: TaskPhoto[];
+  fotosFin?: TaskPhoto[];
+  observacionInicio?: string;
+  observacionFin?: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type StoredData = {
   obras: Obra[];
   oportunidades: OportunidadCRM[];
@@ -405,6 +498,8 @@ export type StoredData = {
   clientes: Cliente[];
   proveedores: Proveedor[];
   cheques: Cheque[];
+  tareas: FieldTask[];
+  jornadasCampo: FieldWorkday[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

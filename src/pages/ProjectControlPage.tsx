@@ -27,6 +27,8 @@ import {
   deleteProgressRubric,
   getActividadesByObra,
   getCuadrillas,
+  getFieldTasks,
+  getFieldWorkdays,
   getObras,
   getPendingMaterialsByWork,
   getProgressActivityByWork,
@@ -40,6 +42,8 @@ import { canConfigureProgressForUser, canCreateWork, canRegisterProgressForUser 
 import type {
   Actividad,
   Cuadrilla,
+  FieldTask,
+  FieldWorkday,
   Obra,
   ProgressActivityLog,
   ProgressCalculationMode,
@@ -92,6 +96,8 @@ export default function ProjectControlPage() {
   const [progressActivity, setProgressActivity] = useState<ProgressActivityLog[]>([]);
   const [legacyActivity, setLegacyActivity] = useState<Actividad[]>([]);
   const [cuadrillas, setCuadrillas] = useState<Cuadrilla[]>([]);
+  const [fieldTasks, setFieldTasks] = useState<FieldTask[]>([]);
+  const [fieldWorkdays, setFieldWorkdays] = useState<FieldWorkday[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [loading, setLoading] = useState(true);
@@ -118,11 +124,14 @@ export default function ProjectControlPage() {
         Promise.all(loadedObras.map((obra) => getPendingMaterialsByWork(obra.id))).then((items) => items.flat()),
         getCuadrillas()
       ]);
+      const [tasks, workdays] = await Promise.all([getFieldTasks(), getFieldWorkdays()]);
       setObras(loadedObras);
       setRubrics(allRubrics);
       setReports(allReports);
       setMaterials(allMaterials);
       setCuadrillas(crews);
+      setFieldTasks(tasks);
+      setFieldWorkdays(workdays);
 
       if (obraId) {
         const [activity, legacy] = await Promise.all([
@@ -255,6 +264,8 @@ export default function ProjectControlPage() {
           onSaveProductionStages={handleSaveProductionStages}
           reports={obraReports}
           rubrics={obraRubrics}
+          tasks={fieldTasks.filter((task) => task.obraId === selectedObra.id)}
+          workdays={fieldWorkdays.filter((jornada) => jornada.obraId === selectedObra.id)}
         />
         {reportModalOpen ? (
           <ProgressReportModal
@@ -443,7 +454,9 @@ function ProgressDetail({
   onOpenReport,
   onSaveProductionStages,
   reports,
-  rubrics
+  rubrics,
+  tasks,
+  workdays
 }: {
   actividades: ProgressActivityLog[];
   canConfigure: boolean;
@@ -463,12 +476,15 @@ function ProgressDetail({
   onSaveProductionStages: (stages: ProductionStage[]) => Promise<void>;
   reports: ProgressReport[];
   rubrics: WorkProgressRubric[];
+  tasks: FieldTask[];
+  workdays: FieldWorkday[];
 }) {
   const overallProgress = calculateWeightedProgressFromReports(rubrics, reports);
   const overallProgressLabel = Math.round(overallProgress);
   const weightState = validateRubricWeights(rubrics);
   const pendingMaterials = materials.filter((item) => item.estado !== "Resuelto");
   const activeCrew = getActiveCrew(obra.id, cuadrillas);
+  const activeFieldWorkday = workdays.find((jornada) => jornada.estado === "activa");
   const latestReport = reports[0];
   const completedStages = obra.etapasProduccion.filter((stage) => stage.estado === "Completado").length;
   const installedMeters = calculateInstalledM2(rubrics, reports);
@@ -548,7 +564,7 @@ function ProgressDetail({
             <Metric label="Produccion completada" value={`${completedStages}/${obra.etapasProduccion.length} etapas`} />
             <Metric label="M2 instalados" value={`${installedMeters} m2`} />
             <Metric label="Ultima actualizacion" value={latestReport ? `${formatDateShort(latestReport.fecha)} ${latestReport.hora}` : formatDateTime(obra.updatedAt)} />
-            <Metric label="Cuadrilla activa hoy" value={activeCrew ? `${activeCrew.nombre} desde ${activeCrew.horaInicio || "--:--"}` : "Sin cuadrilla activa actualmente"} />
+            <Metric label="Cuadrilla activa hoy" value={activeFieldWorkday ? `${activeFieldWorkday.equipoNombre || activeFieldWorkday.userName} desde ${activeFieldWorkday.horaInicio}` : activeCrew ? `${activeCrew.nombre} desde ${activeCrew.horaInicio || "--:--"}` : "Sin cuadrilla activa actualmente"} />
           </div>
         </DataCard>
 
@@ -595,10 +611,38 @@ function ProgressDetail({
 
         <DataCard title="Instalacion">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Metric label="Cuadrilla" value={activeCrew?.nombre ?? "Sin cuadrilla activa actualmente"} />
-            <Metric label="Estado de jornada" value={activeCrew ? activeCrew.estado : "Sin jornada activa"} />
-            <Metric label="Hora inicio" value={activeCrew?.horaInicio || "--:--"} />
+            <Metric label="Cuadrilla" value={activeFieldWorkday?.equipoNombre ?? activeCrew?.nombre ?? "Sin cuadrilla activa actualmente"} />
+            <Metric label="Estado de jornada" value={activeFieldWorkday ? activeFieldWorkday.estado : activeCrew ? activeCrew.estado : "Sin jornada activa"} />
+            <Metric label="Hora inicio" value={activeFieldWorkday?.horaInicio || activeCrew?.horaInicio || "--:--"} />
             <Metric label="Ultimo avance" value={latestReport ? `${latestReport.hora} · ${latestReport.userName}` : "Sin reportes"} />
+          </div>
+        </DataCard>
+
+        <DataCard title="Tareas de la obra">
+          <div className="space-y-3">
+            {tasks.length ? tasks.map((task) => (
+              <div key={task.id} className="rounded-md border border-slate-100 p-3">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-next-text">{task.titulo}</p>
+                    <p className="mt-1 text-xs font-semibold text-next-muted">
+                      Asignado a {task.asignadoANombre || "Sin asignar"} · {task.fechaAsignada ? formatDateShort(task.fechaAsignada) : "Sin fecha"}
+                    </p>
+                    {task.rubroNombre && task.cantidadReportada ? (
+                      <p className="mt-2 rounded-md bg-orange-50 px-2 py-1 text-xs font-black text-next-orange">
+                        Tarea reporto {task.cantidadReportada} {formatUnitLabel(task.unidad, task.cantidadReportada)} para {task.rubroNombre}. Pendiente de validacion.
+                      </p>
+                    ) : null}
+                  </div>
+                  <StatusBadge label={taskStatusLabel(task.estado)} status={badgeForTask(task.estado)} />
+                </div>
+                <div className="mt-3 grid gap-2 text-xs font-semibold text-next-muted sm:grid-cols-3">
+                  <span>Fotos: {task.fotos?.length ?? 0}</span>
+                  <span>Cantidad: {task.cantidadPrevista ? `${task.cantidadPrevista} ${formatUnitLabel(task.unidad, task.cantidadPrevista)}` : "No aplica"}</span>
+                  <span>{task.observacionCampo || task.observacionFiscalizador || "Sin observacion"}</span>
+                </div>
+              </div>
+            )) : <EmptyState text="No hay tareas creadas para esta obra." />}
           </div>
         </DataCard>
 
@@ -1111,4 +1155,24 @@ function badgeForWork(status: WorkStatus): BadgeStatus {
   if (status === "Finalizada" || status === "Cobrado") return "success";
   if (status === "Produccion" || status === "Instalacion" || status === "Facturacion") return "info";
   return "warning";
+}
+
+function taskStatusLabel(status: FieldTask["estado"]) {
+  const labels: Record<FieldTask["estado"], string> = {
+    pendiente: "Pendiente",
+    asignada: "Asignada",
+    en_proceso: "En proceso",
+    reportada: "Reportada",
+    completada: "Completada",
+    observada: "Observada",
+    cancelada: "Cancelada"
+  };
+  return labels[status];
+}
+
+function badgeForTask(status: FieldTask["estado"]): BadgeStatus {
+  if (status === "completada") return "success";
+  if (status === "reportada") return "warning";
+  if (status === "observada" || status === "cancelada") return "critical";
+  return "info";
 }

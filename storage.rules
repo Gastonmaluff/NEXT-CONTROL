@@ -42,7 +42,7 @@ service firebase.storage {
         || isWorkCreator(obraId)
         || (
           active()
-          && userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador"]
+          && userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo"]
           && isAssignedToWork(obraId)
         );
     }

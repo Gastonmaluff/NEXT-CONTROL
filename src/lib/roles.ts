@@ -12,11 +12,11 @@ export function canManageFinances(role: UserRole): boolean {
 }
 
 export function canEditProduction(role: UserRole): boolean {
-  return role === "admin" || role === "gerencia" || role === "produccion" || role === "supervisor";
+  return role === "admin" || role === "gerencia" || role === "produccion" || role === "fiscalizador" || role === "supervisor";
 }
 
 export function canUploadInstallationPhotos(role: UserRole): boolean {
-  return role === "admin" || role === "gerencia" || role === "instalador" || role === "supervisor" || role === "fiscalizador" || role === "encargado";
+  return role === "admin" || role === "gerencia" || role === "instalador" || role === "equipo_campo" || role === "supervisor" || role === "fiscalizador" || role === "encargado";
 }
 
 export function canManageSettings(role: UserRole): boolean {
@@ -72,5 +72,37 @@ export function canRegisterProgressForUser(user?: Pick<SystemUser, "role" | "act
 }
 
 export function canManageInstallation(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
-  return Boolean(user?.active && ["admin", "gerencia", "supervisor", "encargado", "instalador"].includes(user.role));
+  return Boolean(user?.active && ["admin", "gerencia", "fiscalizador", "supervisor", "encargado", "instalador", "equipo_campo"].includes(user.role));
+}
+
+export function canCreateTasks(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "fiscalizador", "supervisor"].includes(user.role));
+}
+
+export function canAssignTasks(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "fiscalizador", "supervisor"].includes(user.role));
+}
+
+export function canViewAllTasks(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia"].includes(user.role));
+}
+
+export function canViewAssignedTasks(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["fiscalizador", "supervisor", "encargado", "equipo_campo", "instalador"].includes(user.role));
+}
+
+export function canStartWorkDay(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["equipo_campo", "instalador", "admin", "gerencia"].includes(user.role));
+}
+
+export function canUploadTaskPhotos(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["equipo_campo", "instalador", "fiscalizador", "supervisor", "encargado", "admin", "gerencia"].includes(user.role));
+}
+
+export function canValidateTaskProgress(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "fiscalizador", "supervisor"].includes(user.role));
+}
+
+export function canViewFieldMap(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia", "fiscalizador", "supervisor"].includes(user.role));
 }
