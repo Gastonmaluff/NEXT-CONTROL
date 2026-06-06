@@ -1,6 +1,8 @@
-import { Camera, X } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { Camera, Trash2, Upload, X } from "lucide-react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { currentUser } from "../../lib/roles";
+import { buildProgressPhotoPath, uploadFile } from "../../lib/storageUpload";
+import { firebaseStorage, isFirebaseConfigured } from "../../lib/firebase";
 import type {
   Cuadrilla,
   Obra,
@@ -15,7 +17,7 @@ import {
   calculateTotalExecuted,
   clampProgress
 } from "../../utils/progress";
-import { formatUnitLabel } from "../../utils/units";
+import { formatUnitLabel, normalizeUnit } from "../../utils/units";
 
 type ReportDraft = Omit<ProgressReport, "id" | "createdAt" | "updatedAt">;
 
@@ -49,9 +51,12 @@ export default function ProgressReportModal({
     seTrabajoHoy: true,
     observacionGeneral: "",
     incidentes: "",
-    proximoTrabajo: "",
-    photosText: ""
+    proximoTrabajo: ""
   });
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [photoWarning, setPhotoWarning] = useState("");
+  const [uploadStatus, setUploadStatus] = useState("");
   const [entries, setEntries] = useState<Record<string, { cantidad: string; porcentaje: string; justificacion: string; observacion: string }>>(
     () =>
       Object.fromEntries(
@@ -75,6 +80,13 @@ export default function ProgressReportModal({
   });
 
   const selectedCrew = cuadrillas.find((crew) => crew.id === general.cuadrillaId);
+  const storageReady = isFirebaseConfigured() && Boolean(firebaseStorage);
+
+  useEffect(() => {
+    const urls = photoFiles.map((file) => URL.createObjectURL(file));
+    setPhotoPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [photoFiles]);
 
   const preview = useMemo(() => {
     return rubrics.map((rubro) => {
@@ -103,8 +115,8 @@ export default function ProgressReportModal({
       if (item.rubro.modoCalculo === "cantidad") {
         if (!item.today) continue;
         if (item.nextQuantity > item.rubro.cantidadTotalPrevista) {
-          const ok = window.confirm(`${item.rubro.nombre} supera el total previsto. Guardar igualmente limitado al 100%?`);
-          if (!ok) return;
+          setError(`${item.rubro.nombre} supera el total previsto.`);
+          return;
         }
         reportEntries.push({
           id: `entry-${item.rubro.id}-${Date.now()}`,
@@ -137,6 +149,11 @@ export default function ProgressReportModal({
       }
     }
 
+    if (material.material.trim() && !normalizeUnit(material.unidad)) {
+      setError("Selecciona una unidad valida para el material pendiente.");
+      return;
+    }
+
     const materialsReported: ProgressMaterialReport[] = material.material.trim()
       ? [
           {
@@ -144,7 +161,7 @@ export default function ProgressReportModal({
             obraId: obra.id,
             material: material.material,
             cantidad: Number(material.cantidad),
-            unidad: material.unidad,
+            unidad: normalizeUnit(material.unidad),
             observacion: material.observacion || undefined,
             estado: "Pendiente",
             reportadoPor: actor.nombre,
@@ -160,7 +177,24 @@ export default function ProgressReportModal({
     }
 
     setSaving(true);
+    let photoUrls: string[] = [];
     try {
+      if (photoFiles.length && storageReady) {
+        try {
+          setUploadStatus("Subiendo fotos...");
+          photoUrls = await Promise.all(
+            photoFiles.map((file) => uploadFile(buildProgressPhotoPath(obra.id, file), file))
+          );
+        } catch (uploadError) {
+          console.error("No se pudieron subir algunas fotos de avance.", uploadError);
+          setPhotoWarning("El avance se guardara sin algunas fotos. Podes volver a cargarlas despues.");
+        } finally {
+          setUploadStatus("");
+        }
+      } else if (photoFiles.length && !storageReady) {
+        setPhotoWarning("Firebase Storage no esta disponible. El avance se guardara sin fotos.");
+      }
+
       await onSubmit({
         obraId: obra.id,
         fecha: general.fecha,
@@ -174,10 +208,7 @@ export default function ProgressReportModal({
         observacionGeneral: general.observacionGeneral || undefined,
         incidentes: general.incidentes || undefined,
         proximoTrabajo: general.proximoTrabajo || undefined,
-        photos: general.photosText
-          .split("\n")
-          .map((item) => item.trim())
-          .filter(Boolean),
+        photos: photoUrls,
         entries: reportEntries,
         materialsReported: materialsReported.map((item) => ({ ...item, reportadoPor: actor.nombre }))
       });
@@ -303,10 +334,22 @@ export default function ProgressReportModal({
             <textarea className="field min-h-24 sm:col-span-2" placeholder="Observacion general" value={general.observacionGeneral} onChange={(event) => setGeneral({ ...general, observacionGeneral: event.target.value })} />
             <input className="field" placeholder="Incidentes opcionales" value={general.incidentes} onChange={(event) => setGeneral({ ...general, incidentes: event.target.value })} />
             <input className="field" placeholder="Proximo trabajo previsto" value={general.proximoTrabajo} onChange={(event) => setGeneral({ ...general, proximoTrabajo: event.target.value })} />
-            <label className="text-xs font-black uppercase text-next-muted sm:col-span-2">
-              Fotos de avance (URLs, una por linea)
-              <textarea className="field mt-1 min-h-20" placeholder="Fallback visual hasta conectar subida real" value={general.photosText} onChange={(event) => setGeneral({ ...general, photosText: event.target.value })} />
-            </label>
+            <ProgressPhotoUploader
+              files={photoFiles}
+              previews={photoPreviews}
+              status={uploadStatus}
+              warning={photoWarning}
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                const allowed = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type));
+                if (allowed.length !== files.length) {
+                  setPhotoWarning("Algunas fotos fueron ignoradas. Usa JPG, PNG o WebP.");
+                }
+                setPhotoFiles((current) => [...current, ...allowed]);
+                event.target.value = "";
+              }}
+              onRemove={(index) => setPhotoFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            />
           </div>
 
           <div className="rounded-lg bg-next-bg p-3">
@@ -317,7 +360,11 @@ export default function ProgressReportModal({
             <div className="grid gap-2 sm:grid-cols-[1fr_90px_110px_120px]">
               <input className="field" placeholder="Material" value={material.material} onChange={(event) => setMaterial({ ...material, material: event.target.value })} />
               <input className="field" placeholder="Cant." type="number" value={material.cantidad} onChange={(event) => setMaterial({ ...material, cantidad: event.target.value })} />
-              <input className="field" placeholder="Unidad" value={material.unidad} onChange={(event) => setMaterial({ ...material, unidad: event.target.value })} />
+              <select className="field" value={material.unidad} onChange={(event) => setMaterial({ ...material, unidad: normalizeUnit(event.target.value) })}>
+                <option value="" disabled>Seleccionar unidad</option>
+                <option value="m2">m²</option>
+                <option value="unidad">unidad</option>
+              </select>
               <select className="field" value={material.urgencia} onChange={(event) => setMaterial({ ...material, urgencia: event.target.value as "Baja" | "Media" | "Alta" })}>
                 <option>Baja</option>
                 <option>Media</option>
@@ -332,6 +379,54 @@ export default function ProgressReportModal({
           </button>
         </form>
       </section>
+    </div>
+  );
+}
+
+function ProgressPhotoUploader({
+  files,
+  onChange,
+  onRemove,
+  previews,
+  status,
+  warning
+}: {
+  files: File[];
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (index: number) => void;
+  previews: string[];
+  status: string;
+  warning: string;
+}) {
+  return (
+    <div className="sm:col-span-2 rounded-lg border border-dashed border-slate-200 bg-next-bg p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 text-sm font-black text-next-text">
+          <Camera className="h-4 w-4 text-next-blue" aria-hidden="true" />
+          Fotos de avance
+        </div>
+        <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md bg-next-blue px-3 text-xs font-black text-white">
+          <Upload className="h-4 w-4" aria-hidden="true" />
+          Subir fotos
+          <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onChange} />
+        </label>
+      </div>
+      {files.length ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {files.map((file, index) => (
+            <div key={`${file.name}-${index}`} className="relative overflow-hidden rounded-md bg-white ring-1 ring-slate-200">
+              <img className="aspect-square w-full object-cover" src={previews[index]} alt={file.name} />
+              <button className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-md bg-white text-next-red shadow" type="button" onClick={() => onRemove(index)} title="Eliminar foto">
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs font-semibold text-next-muted">JPG, PNG o WebP. En celular permite galeria o camara segun navegador.</p>
+      )}
+      {status ? <p className="mt-2 text-xs font-black text-next-blue">{status}</p> : null}
+      {warning ? <p className="mt-2 text-xs font-semibold text-next-orange">{warning}</p> : null}
     </div>
   );
 }

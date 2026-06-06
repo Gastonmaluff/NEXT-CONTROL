@@ -63,6 +63,8 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     reportesAvance: data.reportesAvance ?? seedData.reportesAvance,
     materialesPendientes: data.materialesPendientes ?? seedData.materialesPendientes,
     actividadesAvance: data.actividadesAvance ?? seedData.actividadesAvance,
-    users: data.users ?? seedData.users
+    users: data.users ?? seedData.users,
+    clientes: data.clientes ?? seedData.clientes ?? [],
+    proveedores: data.proveedores ?? seedData.proveedores ?? []
   };
 }

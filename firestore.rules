@@ -120,6 +120,14 @@ service cloud.firestore {
       allow read, write: if canReadFinance();
     }
 
+    match /clientes/{id} {
+      allow read, write: if canReadFinance();
+    }
+
+    match /proveedores/{id} {
+      allow read, write: if canReadFinance();
+    }
+
     match /cuadrillas/{id} {
       allow read: if isActiveUser();
       allow write: if isActiveUser()

@@ -9,9 +9,11 @@ import { useAuth } from "../context/AuthContext";
 import { firebaseStorage, isFirebaseConfigured } from "../lib/firebase";
 import {
   createMovement,
+  createProveedor,
   deleteMovement,
   getFinancialWorks,
   getMovementsByWork,
+  getProveedores,
   updateFinancialWork
 } from "../lib/firestore";
 import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../lib/storageUpload";
@@ -20,7 +22,9 @@ import type {
   FinancialMovementKind,
   FinancialPaymentMethod,
   FinancialStatus,
-  Obra
+  Obra,
+  Proveedor,
+  SupplierCategory
 } from "../types";
 import {
   formatCompactGuarani,
@@ -88,6 +92,8 @@ function emptyMovementForm(tipo: FinancialMovementKind) {
     bancoCheque: "",
     monto: "",
     tercero: "",
+    proveedorId: "",
+    proveedorNombre: "",
     observacion: ""
   };
 }
@@ -110,6 +116,7 @@ export default function FinancesPage() {
   const [workRenderStatus, setWorkRenderStatus] = useState("");
   const [movementModal, setMovementModal] = useState<FinancialMovementKind | null>(null);
   const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
 
   const selectedWork = works.find((work) => work.id === obraId) ?? null;
   const movements = useMemo(
@@ -152,8 +159,10 @@ export default function FinancesPage() {
       const loadedMovements = (await Promise.all(
         loadedWorks.map((work) => getMovementsByWork(work.id))
       )).flat();
+      const loadedProveedores = await getProveedores();
       setWorks(loadedWorks);
       setAllMovements(loadedMovements);
+      setProveedores(loadedProveedores);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las finanzas.");
     } finally {
@@ -307,7 +316,9 @@ export default function FinancesPage() {
         fechaCobroCheque: movementForm.metodoPago === "Cheque" ? movementForm.fechaCobroCheque || undefined : undefined,
         bancoCheque: movementForm.metodoPago === "Cheque" ? movementForm.bancoCheque || undefined : undefined,
         monto: Number(movementForm.monto),
-        tercero: movementForm.tercero ? toTitleCase(movementForm.tercero) : undefined,
+        tercero: getMovementThirdParty(movementForm),
+        proveedorId: movementModal === "compra" ? movementForm.proveedorId || undefined : undefined,
+        proveedorNombre: movementModal === "compra" ? movementForm.proveedorNombre || getMovementThirdParty(movementForm) : undefined,
         observacion: movementForm.observacion || undefined
       });
       await loadMovements(selectedWork.id);
@@ -325,6 +336,15 @@ export default function FinancesPage() {
     await loadMovements(selectedWork.id);
     await loadWorks();
     setMessage("Movimiento eliminado.");
+  }
+
+  async function handleCreateProveedor(data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) {
+    const created = await createProveedor({
+      ...data,
+      createdBy: profile?.uid ?? "unknown"
+    });
+    setProveedores((current) => [created, ...current]);
+    return created;
   }
 
   if (loading) {
@@ -372,6 +392,8 @@ export default function FinancesPage() {
         }}
         movementModal={movementModal}
         movementForm={movementForm}
+        proveedores={proveedores}
+        onCreateProveedor={handleCreateProveedor}
         setMovementForm={setMovementForm}
         onSaveMovement={handleSaveMovement}
         onCloseMovementModal={() => setMovementModal(null)}
@@ -503,6 +525,8 @@ function FinancialDetail({
   onCloseWorkModal,
   movementModal,
   movementForm,
+  proveedores,
+  onCreateProveedor,
   setMovementForm,
   onSaveMovement,
   onCloseMovementModal
@@ -526,6 +550,8 @@ function FinancialDetail({
   onCloseWorkModal: () => void;
   movementModal: FinancialMovementKind | null;
   movementForm: ReturnType<typeof emptyMovementForm>;
+  proveedores: Proveedor[];
+  onCreateProveedor: (data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) => Promise<Proveedor>;
   setMovementForm: (values: ReturnType<typeof emptyMovementForm>) => void;
   onSaveMovement: (event: FormEvent<HTMLFormElement>) => void;
   onCloseMovementModal: () => void;
@@ -666,14 +692,14 @@ function FinancialDetail({
         <SummaryBlock
           title="Resumen por categoria"
           groups={egresosByCategory}
+          emptyText="Todavia no hay compras cargadas."
           total={totalEgresos}
-          fallback={["Vidrio", "Aluminio", "Accesorios", "Mano de obra", "Transporte", "Otros"]}
         />
         <SummaryBlock
           title="Resumen de ingresos"
           groups={ingresosByCategory}
+          emptyText="Todavia no hay ingresos cargados."
           total={totalIngresos}
-          fallback={["Anticipo", "Certificacion", "Pago parcial", "Otros ingresos"]}
         />
       </section>
 
@@ -695,6 +721,8 @@ function FinancialDetail({
         <MovementModal
           type={movementModal}
           values={movementForm}
+          proveedores={proveedores}
+          onCreateProveedor={onCreateProveedor}
           setValues={setMovementForm}
           onSubmit={onSaveMovement}
           onClose={onCloseMovementModal}
@@ -834,6 +862,7 @@ function MovementRow({
 }) {
   const isIngreso = movement.tipo === "ingreso";
   const isCheque = movement.metodoPago === "Cheque";
+  const thirdParty = getMovementParty(movement);
   return (
     <>
       <div className={`grid min-w-[1180px] grid-cols-[74px_58px_minmax(132px,1.05fr)_minmax(86px,0.68fr)_minmax(118px,0.9fr)_74px_70px_86px_86px_104px_104px_72px] items-center gap-1 px-1 py-2 text-[11px] leading-tight xl:min-w-0 xl:grid-cols-[82px_64px_minmax(160px,1.1fr)_minmax(96px,0.7fr)_minmax(140px,0.95fr)_82px_78px_94px_94px_112px_112px_78px] xl:gap-2 xl:text-xs ${isIngreso ? "bg-green-50/35" : "bg-orange-50/35"}`}>
@@ -841,7 +870,7 @@ function MovementRow({
         <span className="font-black uppercase text-next-text">{formatMovementType(movement.tipo)}</span>
         <span className="min-w-0 truncate font-bold text-next-text" title={movement.concepto}>{movement.concepto}</span>
         <span className="min-w-0 truncate" title={movement.categoria}>{movement.categoria}</span>
-        <span className="min-w-0 truncate font-semibold text-next-text" title={movement.tercero || "-"}>{movement.tercero || "-"}</span>
+        <span className="min-w-0 truncate font-semibold text-next-text" title={thirdParty}>{thirdParty}</span>
         <span className="min-w-0 truncate">{movement.metodoPago || "-"}</span>
         <span className="min-w-0 truncate font-bold text-next-text" title={isCheque ? movement.numeroCheque || "-" : "-"}>{isCheque && movement.numeroCheque ? movement.numeroCheque : "-"}</span>
         <span className="font-semibold text-next-muted">{isCheque && movement.fechaEmisionCheque ? formatDateShort(movement.fechaEmisionCheque) : "-"}</span>
@@ -875,6 +904,7 @@ function MovementCard({
 }) {
   const isIngreso = movement.tipo === "ingreso";
   const isCheque = movement.metodoPago === "Cheque";
+  const thirdParty = getMovementParty(movement);
   return (
     <article className={`rounded-lg border p-4 ${isIngreso ? "border-green-100 bg-green-50" : "border-orange-100 bg-orange-50"}`}>
       <div className="flex items-start justify-between gap-3">
@@ -887,7 +917,7 @@ function MovementCard({
       </div>
       <div className="mt-3 grid gap-2 text-sm text-next-muted">
         <RowLabel label="Metodo" value={movement.metodoPago || "-"} />
-        <RowLabel label="Proveedor / Cliente" value={movement.tercero || "-"} />
+        <RowLabel label="Proveedor / Cliente" value={thirdParty} />
         {isCheque ? (
           <>
             <RowLabel label="Cheque" value={movement.numeroCheque || "-"} />
@@ -919,6 +949,7 @@ function MovementDetails({ movement, compact = false }: { movement: FinancialMov
         <DetailItem label="Detalle" value={movement.detalle || "-"} />
         <DetailItem label="Cantidad" value={movement.cantidad ? String(movement.cantidad) : "-"} />
         <DetailItem label="Unidad" value={formattedUnit} />
+        <DetailItem label="Proveedor / Cliente" value={getMovementParty(movement)} />
         <DetailItem label="Banco cheque" value={movement.bancoCheque || "-"} />
         <DetailItem label="Observacion" value={movement.observacion || "-"} />
         <DetailItem label="Creado" value={formatDateTime(movement.createdAt)} />
@@ -1038,13 +1069,17 @@ function FormField({ children, label }: { children: ReactNode; label: string }) 
 }
 
 function MovementModal({
+  onCreateProveedor,
   type,
+  proveedores,
   values,
   setValues,
   onSubmit,
   onClose
 }: {
+  onCreateProveedor: (data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) => Promise<Proveedor>;
   type: FinancialMovementKind;
+  proveedores: Proveedor[];
   values: ReturnType<typeof emptyMovementForm>;
   setValues: (values: ReturnType<typeof emptyMovementForm>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1052,6 +1087,7 @@ function MovementModal({
 }) {
   const title = type === "ingreso" ? "Agregar ingreso" : type === "compra" ? "Agregar compra" : "Agregar egreso";
   const isCheque = values.metodoPago === "Cheque";
+  const [providerSelectorOpen, setProviderSelectorOpen] = useState(false);
   function updatePaymentMethod(method: FinancialPaymentMethod) {
     setValues({
       ...values,
@@ -1115,7 +1151,12 @@ function MovementModal({
               <input className="field" value={values.detalle} onChange={(event) => setValues({ ...values, detalle: event.target.value })} />
             </MovementFormField>
             <MovementFormField label="Proveedor / persona">
-              <input className="field" value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+              <button className="field flex items-center justify-between text-left" type="button" onClick={() => setProviderSelectorOpen(true)}>
+                <span className={values.proveedorNombre || values.tercero ? "text-next-text" : "text-next-muted"}>
+                  {values.proveedorNombre || values.tercero || "Seleccionar o crear proveedor"}
+                </span>
+                <Plus className="h-4 w-4 text-next-blue" aria-hidden="true" />
+              </button>
             </MovementFormField>
             <MovementFormField label="Cantidad">
               <input className="field" min={0} type="number" value={values.cantidad} onChange={(event) => setValues({ ...values, cantidad: event.target.value })} />
@@ -1181,6 +1222,22 @@ function MovementModal({
           Guardar movimiento
         </button>
       </form>
+      {providerSelectorOpen ? (
+        <ProveedorSelectorModal
+          onClose={() => setProviderSelectorOpen(false)}
+          onCreate={onCreateProveedor}
+          onSelect={(proveedor) => {
+            setValues({
+              ...values,
+              proveedorId: proveedor.id,
+              proveedorNombre: proveedor.nombre,
+              tercero: proveedor.nombre
+            });
+            setProviderSelectorOpen(false);
+          }}
+          proveedores={proveedores}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -1199,6 +1256,120 @@ function MovementFormField({
       {label}
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+const supplierCategories: SupplierCategory[] = ["Vidrio", "Aluminio", "Accesorios", "Transporte", "Mano de obra", "Otros"];
+
+function ProveedorSelectorModal({
+  onClose,
+  onCreate,
+  onSelect,
+  proveedores
+}: {
+  onClose: () => void;
+  onCreate: (data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">) => Promise<Proveedor>;
+  onSelect: (proveedor: Proveedor) => void;
+  proveedores: Proveedor[];
+}) {
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    nombre: "",
+    ruc: "",
+    telefono: "",
+    whatsapp: "",
+    email: "",
+    direccion: "",
+    categoriaPrincipal: "Vidrio" as SupplierCategory,
+    contactoPrincipal: "",
+    observaciones: ""
+  });
+  const filtered = proveedores.filter((proveedor) =>
+    `${proveedor.nombre} ${proveedor.ruc ?? ""} ${proveedor.categoriaPrincipal}`.toLowerCase().includes(query.toLowerCase())
+  );
+
+  async function create() {
+    if (!form.nombre.trim()) return;
+    const duplicated = proveedores.find((proveedor) =>
+      proveedor.nombre.trim().toLowerCase() === form.nombre.trim().toLowerCase()
+      || (proveedor.ruc && form.ruc && proveedor.ruc.trim() === form.ruc.trim())
+    );
+
+    if (duplicated) {
+      onSelect(duplicated);
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const created = await onCreate({
+        nombre: toTitleCase(form.nombre),
+        ruc: form.ruc.trim() || undefined,
+        telefono: form.telefono.trim() || undefined,
+        whatsapp: form.whatsapp.trim() || undefined,
+        email: form.email.trim() || undefined,
+        direccion: form.direccion.trim() || undefined,
+        categoriaPrincipal: form.categoriaPrincipal,
+        contactoPrincipal: form.contactoPrincipal ? toTitleCase(form.contactoPrincipal) : undefined,
+        observaciones: form.observaciones.trim() || undefined
+      });
+      onSelect(created);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-4xl rounded-lg bg-white p-4 shadow-2xl sm:p-5">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-next-blue">Proveedor de compra</p>
+            <h3 className="mt-1 text-xl font-black text-next-text">Seleccionar o crear proveedor</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+          <div className="min-w-0">
+            <input className="field" placeholder="Buscar proveedor por nombre, RUC o categoria" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+              {filtered.map((proveedor) => (
+                <button key={proveedor.id} className="w-full rounded-md border border-slate-100 bg-next-bg px-3 py-3 text-left transition hover:border-next-blue hover:bg-white" type="button" onClick={() => onSelect(proveedor)}>
+                  <p className="text-sm font-black text-next-text">{proveedor.nombre}</p>
+                  <p className="mt-1 text-xs font-semibold text-next-muted">
+                    {[proveedor.categoriaPrincipal, proveedor.ruc, proveedor.telefono].filter(Boolean).join(" · ")}
+                  </p>
+                </button>
+              ))}
+              {!filtered.length ? <EmptyState text="No hay proveedores con esa busqueda." /> : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-next-bg p-3">
+            <p className="text-sm font-black text-next-text">Crear nuevo proveedor</p>
+            <div className="mt-3 grid gap-2">
+              <input className="field" placeholder="Nombre / razon social" value={form.nombre} onBlur={() => setForm({ ...form, nombre: toTitleCase(form.nombre) })} onChange={(event) => setForm({ ...form, nombre: event.target.value })} />
+              <input className="field" placeholder="RUC opcional" value={form.ruc} onChange={(event) => setForm({ ...form, ruc: event.target.value })} />
+              <select className="field" value={form.categoriaPrincipal} onChange={(event) => setForm({ ...form, categoriaPrincipal: event.target.value as SupplierCategory })}>
+                {supplierCategories.map((category) => <option key={category}>{category}</option>)}
+              </select>
+              <input className="field" placeholder="Telefono" value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value })} />
+              <input className="field" placeholder="WhatsApp" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} />
+              <input className="field" placeholder="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <input className="field" placeholder="Direccion" value={form.direccion} onChange={(event) => setForm({ ...form, direccion: event.target.value })} />
+              <input className="field" placeholder="Contacto principal" value={form.contactoPrincipal} onBlur={() => setForm({ ...form, contactoPrincipal: toTitleCase(form.contactoPrincipal) })} onChange={(event) => setForm({ ...form, contactoPrincipal: event.target.value })} />
+              <input className="field" placeholder="Observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} />
+            </div>
+            <button className="mt-3 h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white disabled:opacity-60" type="button" disabled={creating} onClick={() => void create()}>
+              {creating ? "Creando..." : "Crear y seleccionar"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1346,25 +1517,24 @@ function TotalPill({
 }
 
 function SummaryBlock({
+  emptyText,
   title,
   groups,
-  total,
-  fallback
+  total
 }: {
+  emptyText: string;
   title: string;
   groups: Record<string, number>;
   total: number;
-  fallback: string[];
 }) {
-  const entries = Object.entries(groups).length
-    ? Object.entries(groups)
-    : fallback.map((category) => [category, 0] as [string, number]);
+  const entries = Object.entries(groups).filter(([, value]) => value > 0);
 
   return (
     <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
       <h2 className="text-base font-black text-next-text">{title}</h2>
-      <div className="mt-4 space-y-3">
-        {entries.map(([category, value]) => (
+      {entries.length ? (
+        <div className="mt-4 space-y-3">
+          {entries.map(([category, value]) => (
           <div key={category}>
             <div className="mb-1 flex items-center justify-between gap-3 text-sm">
               <span className="font-bold text-next-text">{category}</span>
@@ -1374,8 +1544,11 @@ function SummaryBlock({
               <div className="h-full rounded-full bg-next-blue" style={{ width: `${total ? Math.min(100, Math.round((value / total) * 100)) : 0}%` }} />
             </div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState text={emptyText} />
+      )}
     </section>
   );
 }
@@ -1521,4 +1694,15 @@ function formatMovementType(type: FinancialMovementKind): string {
 
 function formatFinancialStatus(status: FinancialStatus): string {
   return status === "Atencion" ? "Atención" : status;
+}
+function getMovementThirdParty(values: ReturnType<typeof emptyMovementForm>): string | undefined {
+  const name = values.proveedorNombre || values.tercero;
+  return name ? toTitleCase(name) : undefined;
+}
+
+function getMovementParty(movement: FinancialMovement): string {
+  return movement.proveedorNombre
+    ?? movement.clienteNombre
+    ?? movement.tercero
+    ?? "-";
 }

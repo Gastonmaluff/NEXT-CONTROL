@@ -15,10 +15,12 @@ import { initialProductionStages, initialRubros, seedData } from "../data/seedDa
 import type {
   Actividad,
   Cobro,
+  Cliente,
   Cuadrilla,
   FinancialMovement,
   Obra,
   OportunidadCRM,
+  Proveedor,
   ProgressActivityLog,
   ProgressMaterialReport,
   ProgressReport,
@@ -51,7 +53,9 @@ const collections = {
   reportesAvance: "reportesAvance",
   materialesPendientes: "materialesPendientes",
   actividadesAvance: "actividadesAvance",
-  users: "users"
+  users: "users",
+  clientes: "clientes",
+  proveedores: "proveedores"
 } as const;
 
 function shouldUseFirebase() {
@@ -264,6 +268,44 @@ export async function createObra(data: ObraInput): Promise<Obra> {
 
 export async function updateObra(id: string, data: Partial<Obra>): Promise<Obra> {
   return updateDocument<Obra>("obras", id, { ...data, updatedAt: now() });
+}
+
+export async function getClientes(): Promise<Cliente[]> {
+  return (await getCollection<Cliente>("clientes")).sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+export async function createCliente(
+  data: Omit<Cliente, "id" | "createdAt" | "updatedAt">
+): Promise<Cliente> {
+  const createdAt = now();
+  return createDocument<Cliente>("clientes", {
+    ...data,
+    createdAt,
+    updatedAt: createdAt
+  });
+}
+
+export async function updateCliente(id: string, data: Partial<Cliente>): Promise<Cliente> {
+  return updateDocument<Cliente>("clientes", id, { ...data, updatedAt: now() });
+}
+
+export async function getProveedores(): Promise<Proveedor[]> {
+  return (await getCollection<Proveedor>("proveedores")).sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+export async function createProveedor(
+  data: Omit<Proveedor, "id" | "createdAt" | "updatedAt">
+): Promise<Proveedor> {
+  const createdAt = now();
+  return createDocument<Proveedor>("proveedores", {
+    ...data,
+    createdAt,
+    updatedAt: createdAt
+  });
+}
+
+export async function updateProveedor(id: string, data: Partial<Proveedor>): Promise<Proveedor> {
+  return updateDocument<Proveedor>("proveedores", id, { ...data, updatedAt: now() });
 }
 
 export async function deleteObra(id: string): Promise<void> {

@@ -6,12 +6,13 @@ import {
   ClipboardCheck,
   Image as ImageIcon,
   Package,
+  Plus,
   Settings2,
   Trash2,
   UserRound
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ProgressReportModal from "../components/progress/ProgressReportModal";
 import DataCard from "../components/ui/DataCard";
@@ -31,6 +32,7 @@ import {
   getProgressActivityByWork,
   getProgressReportsByWork,
   getProgressRubricsByWork,
+  updateObra,
   updatePendingMaterial,
   updateProgressRubric
 } from "../lib/firestore";
@@ -43,6 +45,8 @@ import type {
   ProgressCalculationMode,
   ProgressMaterialReport,
   ProgressReport,
+  ProductionStage,
+  ProductionStageStatus,
   WorkProgressRubric,
   WorkStatus
 } from "../types";
@@ -54,7 +58,7 @@ import {
   getLatestRubricEntry,
   validateRubricWeights
 } from "../utils/progress";
-import { formatUnitLabel } from "../utils/units";
+import { formatUnitLabel, normalizeUnit } from "../utils/units";
 
 const workStatuses: WorkStatus[] = [
   "Produccion",
@@ -205,6 +209,13 @@ export default function ProjectControlPage() {
     await loadAll();
   }
 
+  async function handleSaveProductionStages(stages: ProductionStage[]) {
+    if (!selectedObra) return;
+    await updateObra(selectedObra.id, { etapasProduccion: stages });
+    setMessage("Checklist de produccion actualizado.");
+    await loadAll();
+  }
+
   if (loading) {
     return <StateCard text="Cargando avance de obras..." />;
   }
@@ -230,6 +241,7 @@ export default function ProjectControlPage() {
         canConfigure={canConfigureProgressForUser(profile)}
         canRegister={canRegisterProgressForUser(profile)}
           cuadrillas={cuadrillas}
+          currentUserName={profile?.nombre ?? "Usuario"}
           error={error}
           legacyActivity={legacyActivity}
           materials={obraMaterials}
@@ -240,6 +252,7 @@ export default function ProjectControlPage() {
           onMaterialStatus={handleMaterialStatus}
           onOpenConfig={() => setConfigModalOpen(true)}
           onOpenReport={() => setReportModalOpen(true)}
+          onSaveProductionStages={handleSaveProductionStages}
           reports={obraReports}
           rubrics={obraRubrics}
         />
@@ -417,6 +430,7 @@ function ProgressDetail({
   canConfigure,
   canRegister,
   cuadrillas,
+  currentUserName,
   error,
   legacyActivity,
   materials,
@@ -427,6 +441,7 @@ function ProgressDetail({
   onMaterialStatus,
   onOpenConfig,
   onOpenReport,
+  onSaveProductionStages,
   reports,
   rubrics
 }: {
@@ -434,6 +449,7 @@ function ProgressDetail({
   canConfigure: boolean;
   canRegister: boolean;
   cuadrillas: Cuadrilla[];
+  currentUserName: string;
   error: string;
   legacyActivity: Actividad[];
   materials: ProgressMaterialReport[];
@@ -444,10 +460,12 @@ function ProgressDetail({
   onMaterialStatus: (material: ProgressMaterialReport, estado: ProgressMaterialReport["estado"]) => void;
   onOpenConfig: () => void;
   onOpenReport: () => void;
+  onSaveProductionStages: (stages: ProductionStage[]) => Promise<void>;
   reports: ProgressReport[];
   rubrics: WorkProgressRubric[];
 }) {
   const overallProgress = calculateWeightedProgressFromReports(rubrics, reports);
+  const overallProgressLabel = Math.round(overallProgress);
   const weightState = validateRubricWeights(rubrics);
   const pendingMaterials = materials.filter((item) => item.estado !== "Resuelto");
   const activeCrew = getActiveCrew(obra.id, cuadrillas);
@@ -504,13 +522,10 @@ function ProgressDetail({
             <div className="mb-2 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-black text-next-text">Avance general</p>
-                <p className="text-xs font-semibold text-next-muted">
-                  El avance se calcula por ejecucion fisica real, no por consumo de presupuesto.
-                </p>
               </div>
-              <p className="text-3xl font-black text-next-blue">{overallProgress}%</p>
+              <p className="text-3xl font-black text-next-blue">{overallProgressLabel}%</p>
             </div>
-            <ProgressBar value={overallProgress} />
+            <ProgressBar value={overallProgressLabel} />
             {!obra.progressConfigured || !rubrics.length ? (
               <p className="mt-3 text-xs font-black text-next-orange">
                 Avance sin configurar. Usa Configurar avance para definir rubros, cantidades y pesos.
@@ -529,7 +544,7 @@ function ProgressDetail({
         <DataCard title="Resumen operativo">
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric label="Estado operativo" value={obra.estado} />
-            <Metric label="Avance fisico" value={`${overallProgress}%`} />
+            <Metric label="Avance fisico" value={`${overallProgressLabel}%`} />
             <Metric label="Produccion completada" value={`${completedStages}/${obra.etapasProduccion.length} etapas`} />
             <Metric label="M2 instalados" value={`${installedMeters} m2`} />
             <Metric label="Ultima actualizacion" value={latestReport ? `${formatDateShort(latestReport.fecha)} ${latestReport.hora}` : formatDateTime(obra.updatedAt)} />
@@ -538,12 +553,10 @@ function ProgressDetail({
         </DataCard>
 
         <DataCard title="Avance por rubros">
-          <div className="mb-4 rounded-md bg-next-light px-3 py-3 text-xs font-bold leading-5 text-next-blue">
-            El avance se calcula por ejecucion fisica real, no por consumo de presupuesto.
-          </div>
           <div className="space-y-4">
             {rubrics.length ? rubrics.map((rubro) => {
               const progress = calculateRubricProgress(rubro, reports);
+              const progressLabel = Math.round(progress);
               const executed = calculateTotalExecuted(rubro.id, reports);
               const latest = getLatestRubricEntry(rubro.id, reports);
               const report = latest ? reports.find((item) => item.entries.some((entry) => entry.id === latest.id)) : null;
@@ -556,9 +569,9 @@ function ProgressDetail({
                         {executed} {formatUnitLabel(rubro.unidad, executed)} / {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} · Peso {rubro.pesoOperativo}% · {rubro.modoCalculo}
                       </p>
                     </div>
-                    <span className="text-xl font-black text-next-blue">{progress}%</span>
+                    <span className="text-xl font-black text-next-blue">{progressLabel}%</span>
                   </div>
-                  <ProgressBar value={progress} />
+                  <ProgressBar value={progressLabel} />
                   <div className="mt-3 grid gap-2 text-xs font-semibold text-next-muted sm:grid-cols-2">
                     <span>Ultima actualizacion: {report ? `${formatDateShort(report.fecha)} ${report.hora}` : "Sin reportes"}</span>
                     <span>Responsable: {report?.userName ?? "Pendiente"}</span>
@@ -572,14 +585,12 @@ function ProgressDetail({
         </DataCard>
 
         <DataCard title="Produccion">
-          <div className="space-y-3">
-            {obra.etapasProduccion.map((stage) => (
-              <div key={stage.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-100 px-3 py-2">
-                <span className="text-sm font-bold text-next-text">{stage.nombre}</span>
-                <StatusBadge label={stage.estado} status={stage.estado === "Completado" ? "success" : stage.estado === "En proceso" ? "info" : "warning"} />
-              </div>
-            ))}
-          </div>
+          <ProductionChecklistEditor
+            canEdit={canConfigure}
+            stages={obra.etapasProduccion}
+            updatedBy={currentUserName}
+            onSave={onSaveProductionStages}
+          />
         </DataCard>
 
         <DataCard title="Instalacion">
@@ -599,7 +610,7 @@ function ProgressDetail({
                   <div>
                     <p className="text-sm font-black text-next-text">{material.material}</p>
                     <p className="mt-1 text-xs font-semibold text-next-muted">
-                      {material.cantidad} {material.unidad} · Reportado por {material.reportadoPor} · {formatDateShort(material.fechaReporte)}
+                      {material.cantidad} {formatUnitLabel(material.unidad, material.cantidad)} · Reportado por {material.reportadoPor} · {formatDateShort(material.fechaReporte)}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-next-muted">{material.observacion || "Sin observacion"}</p>
                   </div>
@@ -667,7 +678,7 @@ function ProgressDetail({
                 <ul className="mt-3 space-y-2">
                   {report.entries.map((entry) => (
                     <li key={entry.id} className="text-xs font-semibold leading-5 text-next-muted">
-                      <span className="font-black text-next-text">{entry.rubroNombre}</span>: {entry.porcentajeAnterior}% → {entry.porcentajeNuevo}%
+                      <span className="font-black text-next-text">{entry.rubroNombre}</span>: {Math.round(entry.porcentajeAnterior)}% → {Math.round(entry.porcentajeNuevo)}%
                       {entry.cantidadEjecutadaHoy ? ` · ${entry.cantidadEjecutadaHoy} ejecutado hoy` : ""}
                       {entry.observacion ? ` · ${entry.observacion}` : ""}
                       {entry.justificacionManual ? ` · ${entry.justificacionManual}` : ""}
@@ -681,6 +692,137 @@ function ProgressDetail({
       </section>
     </div>
   );
+}
+
+function ProductionChecklistEditor({
+  canEdit,
+  onSave,
+  stages,
+  updatedBy
+}: {
+  canEdit: boolean;
+  onSave: (stages: ProductionStage[]) => Promise<void>;
+  stages: ProductionStage[];
+  updatedBy: string;
+}) {
+  const [items, setItems] = useState<ProductionStage[]>(() => normalizeProductionStages(stages));
+  const [saving, setSaving] = useState(false);
+  const completed = items.filter((stage) => stage.estado === "Completado").length;
+
+  useEffect(() => {
+    setItems(normalizeProductionStages(stages));
+  }, [stages]);
+
+  function updateStage(id: string, data: Partial<ProductionStage>) {
+    const timestamp = new Date().toISOString();
+    setItems((current) =>
+      current.map((stage) =>
+        stage.id === id
+          ? { ...stage, ...data, updatedAt: timestamp, updatedBy }
+          : stage
+      )
+    );
+  }
+
+  function addStage() {
+    const timestamp = new Date().toISOString();
+    setItems((current) => [
+      ...current,
+      {
+        id: `stage-${timestamp}-${current.length + 1}`,
+        nombre: "Nueva etapa",
+        estado: "Pendiente",
+        updatedAt: timestamp,
+        updatedBy
+      }
+    ]);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(items.filter((stage) => stage.nombre.trim()).map((stage) => ({
+        ...stage,
+        nombre: stage.nombre.trim()
+      })));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <p className="text-sm font-black text-next-blue">
+          Produccion: {completed}/{items.length} etapas completadas
+        </p>
+        {canEdit ? (
+          <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={addStage}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Agregar etapa
+          </button>
+        ) : null}
+      </div>
+
+      {items.length ? items.map((stage) => (
+        <div key={stage.id} className="grid gap-2 rounded-md border border-slate-100 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_160px_36px] sm:items-center">
+          {canEdit ? (
+            <input
+              className="field h-9"
+              value={stage.nombre}
+              onChange={(event) => updateStage(stage.id, { nombre: event.target.value })}
+            />
+          ) : (
+            <span className="text-sm font-bold text-next-text">{stage.nombre}</span>
+          )}
+          {canEdit ? (
+            <select
+              className="field h-9"
+              value={stage.estado}
+              onChange={(event) => updateStage(stage.id, { estado: event.target.value as ProductionStageStatus })}
+            >
+              <option>Pendiente</option>
+              <option>En proceso</option>
+              <option>Completado</option>
+            </select>
+          ) : (
+            <StatusBadge label={stage.estado} status={stage.estado === "Completado" ? "success" : stage.estado === "En proceso" ? "info" : "warning"} />
+          )}
+          {canEdit ? (
+            <button
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-next-red"
+              type="button"
+              onClick={() => setItems((current) => current.filter((item) => item.id !== stage.id))}
+              title="Eliminar etapa"
+              aria-label="Eliminar etapa"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
+          {stage.updatedAt ? (
+            <p className="text-[11px] font-semibold text-next-muted sm:col-span-3">
+              Actualizado por {stage.updatedBy ?? "Sistema"} · {formatDateTime(stage.updatedAt)}
+            </p>
+          ) : null}
+        </div>
+      )) : <EmptyState text="Todavia no hay etapas de produccion." />}
+
+      {canEdit ? (
+        <button className="h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={save}>
+          {saving ? "Guardando..." : "Guardar checklist"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function normalizeProductionStages(stages: ProductionStage[]): ProductionStage[] {
+  if (stages.length) return stages;
+  return ["Medicion", "Planos", "Compra aluminio", "Compra vidrio", "Corte", "Armado", "Vidriado", "Embalaje"].map((nombre, index) => ({
+    id: `stage-base-${index + 1}`,
+    nombre,
+    estado: "Pendiente" as ProductionStageStatus
+  }));
 }
 
 function ProgressConfigModal({
@@ -737,18 +879,33 @@ function ProgressConfigModal({
           <div className={`rounded-md px-3 py-2 text-xs font-black ${totalWeight === 100 ? "bg-green-50 text-next-green" : "bg-orange-50 text-next-orange"}`}>
             Suma de pesos: {totalWeight}%
           </div>
+          <div className="hidden grid-cols-[1.3fr_110px_150px_120px_130px_80px] gap-2 px-3 text-[11px] font-black uppercase text-next-muted lg:grid">
+            <span>Rubro</span>
+            <span>Unidad</span>
+            <span>Cantidad total prevista</span>
+            <span>Peso del rubro</span>
+            <span>Avance manual</span>
+            <span>Acciones</span>
+          </div>
           <div className="space-y-3">
             {rows.map((row, index) => (
-              <div key={row.id ?? index} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-[1.2fr_90px_130px_90px_130px_80px_auto]">
-                <input className="field" required placeholder="Rubro" value={row.nombre} onChange={(event) => updateRow(index, { nombre: event.target.value })} />
-                <input className="field" required placeholder="Unidad" value={row.unidad} onChange={(event) => updateRow(index, { unidad: event.target.value })} />
-                <input className="field" min={0} required placeholder="Cantidad prevista" type="number" value={row.cantidadTotalPrevista} onChange={(event) => updateRow(index, { cantidadTotalPrevista: event.target.value })} />
-                <input className="field" max={100} min={0} required placeholder="Peso" type="number" value={row.pesoOperativo} onChange={(event) => updateRow(index, { pesoOperativo: event.target.value })} />
-                <select className="field" value={row.modoCalculo} onChange={(event) => updateRow(index, { modoCalculo: event.target.value as ProgressCalculationMode, avanceManualPermitido: event.target.value === "manual" })}>
-                  <option value="cantidad">cantidad</option>
-                  <option value="manual">manual</option>
-                </select>
-                <input className="field" min={1} type="number" value={row.orden} onChange={(event) => updateRow(index, { orden: event.target.value })} />
+              <div key={row.id ?? index} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-[1.3fr_110px_150px_120px_130px_80px]">
+                <LabeledCell label="Rubro"><input className="field" required value={row.nombre} onChange={(event) => updateRow(index, { nombre: event.target.value })} /></LabeledCell>
+                <LabeledCell label="Unidad">
+                  <select className="field" required value={normalizeUnit(row.unidad)} onChange={(event) => updateRow(index, { unidad: normalizeUnit(event.target.value) })}>
+                    <option value="" disabled>Seleccionar unidad</option>
+                    <option value="m2">m²</option>
+                    <option value="unidad">unidad</option>
+                  </select>
+                </LabeledCell>
+                <LabeledCell label="Cantidad total prevista"><input className="field" min={0} required type="number" value={row.cantidadTotalPrevista} onChange={(event) => updateRow(index, { cantidadTotalPrevista: event.target.value })} /></LabeledCell>
+                <LabeledCell label="Peso del rubro"><input className="field" max={100} min={0} required type="number" value={row.pesoOperativo} onChange={(event) => updateRow(index, { pesoOperativo: event.target.value })} /></LabeledCell>
+                <LabeledCell label="Avance manual">
+                  <select className="field" value={row.avanceManualPermitido ? "manual" : "cantidad"} onChange={(event) => updateRow(index, { modoCalculo: event.target.value as ProgressCalculationMode, avanceManualPermitido: event.target.value === "manual" })}>
+                    <option value="cantidad">No</option>
+                    <option value="manual">Si</option>
+                  </select>
+                </LabeledCell>
                 <button
                   className="h-10 rounded-md border border-red-100 px-3 text-xs font-black text-next-red"
                   type="button"
@@ -769,7 +926,7 @@ function ProgressConfigModal({
               ...current,
               {
                 nombre: "Nuevo rubro",
-                unidad: "unidades",
+                unidad: "unidad",
                 cantidadTotalPrevista: "0",
                 pesoOperativo: "0",
                 modoCalculo: "cantidad",
@@ -856,6 +1013,15 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function LabeledCell({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="block min-w-0 text-[11px] font-black uppercase text-next-muted lg:text-transparent">
+      {label}
+      <div className="mt-1 lg:mt-0">{children}</div>
+    </label>
+  );
+}
+
 function Notice({ tone, text }: { tone: "success" | "error"; text: string }) {
   const classes = tone === "success"
     ? "border-green-100 bg-green-50 text-next-green"
@@ -933,7 +1099,7 @@ function operationalSummary(obra: Obra, progress: number, pendingMaterials: numb
   if (pendingMaterials) return "Hay materiales pendientes que pueden afectar el avance de instalacion.";
   if (progress >= 85) return "Obra en etapa final de control, instalacion y terminaciones.";
   if (obra.estado === "Produccion") return "Produccion en curso con seguimiento de rubros y compras tecnicas.";
-  return "Seguimiento operativo activo con avance fisico actualizado por reportes.";
+  return "Seguimiento operativo actualizado.";
 }
 
 function cleanPersonLabel(value: string) {

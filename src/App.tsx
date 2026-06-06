@@ -11,6 +11,7 @@ import PlaceholderPage from "./pages/PlaceholderPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
 import SettingsPage from "./pages/SettingsPage";
 import SupervisorPage from "./pages/SupervisorPage";
+import SuppliersPage from "./pages/SuppliersPage";
 import UsersPage from "./pages/UsersPage";
 
 export default function App() {
@@ -64,7 +65,7 @@ function AppRoutes() {
             <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
             <Route path="/produccion" element={<ProjectControlPage />} />
             <Route path="/cobros" element={<FinancesPage />} />
-            <Route path="/proveedores" element={<PlaceholderPage title="Proveedores" />} />
+            <Route path="/proveedores" element={<SuppliersPage />} />
             <Route path="/inventario" element={<PlaceholderPage title="Inventario" />} />
             <Route path="/reportes" element={<PlaceholderPage title="Reportes" />} />
             <Route path="/configuracion" element={<SettingsPage />} />

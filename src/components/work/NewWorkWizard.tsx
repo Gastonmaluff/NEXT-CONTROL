@@ -6,12 +6,14 @@ import CurrencyInput from "../ui/CurrencyInput";
 import { firebaseStorage, isFirebaseConfigured } from "../../lib/firebase";
 import {
   createActividad,
+  createCliente,
   createObra,
   createProgressRubric,
+  getClientes,
   updateObra
 } from "../../lib/firestore";
 import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../../lib/storageUpload";
-import type { Obra, ProgressCalculationMode, WorkStatus } from "../../types";
+import type { Cliente, Obra, ProgressCalculationMode, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
 import { toTitleCase } from "../../utils/text";
 import { normalizeUnit, type OperationalUnit } from "../../utils/units";
@@ -58,9 +60,24 @@ export default function NewWorkWizard({
   const [dirty, setDirty] = useState(false);
   const [destination, setDestination] = useState<WizardDestination>(defaultDestination);
   const [configureProgressNow, setConfigureProgressNow] = useState(false);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [clienteModalOpen, setClienteModalOpen] = useState(false);
+  const [clienteQuery, setClienteQuery] = useState("");
+  const [clienteForm, setClienteForm] = useState({
+    nombre: "",
+    ruc: "",
+    telefono: "",
+    whatsapp: "",
+    email: "",
+    direccion: "",
+    ciudad: "",
+    contactoPrincipal: "",
+    observaciones: ""
+  });
   const [general, setGeneral] = useState({
     nombre: "",
     cliente: "",
+    clienteId: "",
     arquitecto: "",
     direccion: "",
     fechaInicio: getTodayInputDate(),
@@ -84,6 +101,12 @@ export default function NewWorkWizard({
   const [renderPreviewUrl, setRenderPreviewUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const storageReady = isFirebaseConfigured() && Boolean(firebaseStorage);
+
+  useEffect(() => {
+    getClientes()
+      .then(setClientes)
+      .catch((loadError) => console.error("No se pudieron cargar clientes.", loadError));
+  }, []);
 
   useEffect(() => {
     if (!renderFile) {
@@ -221,6 +244,8 @@ export default function NewWorkWizard({
       const created = await withTimeout(createObra({
         nombre: normalizedGeneral.nombre,
         cliente: normalizedGeneral.cliente,
+        clienteId: normalizedGeneral.clienteId || undefined,
+        clienteNombre: normalizedGeneral.cliente,
         arquitecto: normalizedGeneral.arquitecto,
         ubicacion: normalizedGeneral.direccion,
         direccion: normalizedGeneral.direccion,
@@ -407,7 +432,16 @@ export default function NewWorkWizard({
                   <input className="field" required value={general.nombre} onBlur={() => setGeneral((current) => ({ ...current, nombre: toTitleCase(current.nombre) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, nombre: event.target.value }); }} />
                 </Field>
                 <Field label="Cliente" required>
-                  <input className="field" required value={general.cliente} onBlur={() => setGeneral((current) => ({ ...current, cliente: toTitleCase(current.cliente) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, cliente: event.target.value }); }} />
+                  <button
+                    className="field flex items-center justify-between text-left"
+                    type="button"
+                    onClick={() => setClienteModalOpen(true)}
+                  >
+                    <span className={general.cliente ? "text-next-text" : "text-next-muted"}>
+                      {general.cliente || "Seleccionar o crear cliente"}
+                    </span>
+                    <Plus className="h-4 w-4 text-next-blue" aria-hidden="true" />
+                  </button>
                 </Field>
                 <Field label="Arquitecto opcional">
                   <input className="field" value={general.arquitecto} onBlur={() => setGeneral((current) => ({ ...current, arquitecto: toTitleCase(current.arquitecto) }))} onChange={(event) => { markDirty(); setGeneral({ ...general, arquitecto: event.target.value }); }} />
@@ -626,6 +660,27 @@ export default function NewWorkWizard({
             )}
           </div>
         </form>
+        {clienteModalOpen ? (
+          <ClienteSelectorModal
+            clientes={clientes}
+            form={clienteForm}
+            query={clienteQuery}
+            setForm={setClienteForm}
+            setQuery={setClienteQuery}
+            onClose={() => setClienteModalOpen(false)}
+            onCreate={handleCreateCliente}
+            onSelect={(cliente) => {
+              markDirty();
+              setGeneral((current) => ({
+                ...current,
+                cliente: cliente.nombre,
+                clienteId: cliente.id,
+                direccion: current.direccion || cliente.direccion || ""
+              }));
+              setClienteModalOpen(false);
+            }}
+          />
+        ) : null}
       </section>
     </div>
   );
@@ -660,6 +715,63 @@ export default function NewWorkWizard({
         avanceManualPermitido: false
       }
     ]));
+  }
+
+  async function handleCreateCliente() {
+    if (!clienteForm.nombre.trim()) {
+      setError("Carga el nombre o razon social del cliente.");
+      return;
+    }
+
+    const duplicated = clientes.find((cliente) =>
+      cliente.nombre.trim().toLowerCase() === clienteForm.nombre.trim().toLowerCase()
+      || (cliente.ruc && clienteForm.ruc && cliente.ruc.trim() === clienteForm.ruc.trim())
+    );
+
+    if (duplicated) {
+      markDirty();
+      setGeneral((current) => ({
+        ...current,
+        cliente: duplicated.nombre,
+        clienteId: duplicated.id,
+        direccion: current.direccion || duplicated.direccion || ""
+      }));
+      setClienteModalOpen(false);
+      return;
+    }
+
+    const created = await createCliente({
+      nombre: toTitleCase(clienteForm.nombre),
+      ruc: clienteForm.ruc.trim() || undefined,
+      telefono: clienteForm.telefono.trim() || undefined,
+      whatsapp: clienteForm.whatsapp.trim() || undefined,
+      email: clienteForm.email.trim() || undefined,
+      direccion: clienteForm.direccion.trim() || undefined,
+      ciudad: clienteForm.ciudad ? toTitleCase(clienteForm.ciudad) : undefined,
+      contactoPrincipal: clienteForm.contactoPrincipal ? toTitleCase(clienteForm.contactoPrincipal) : undefined,
+      observaciones: clienteForm.observaciones.trim() || undefined,
+      createdBy: authUser?.uid ?? profile?.uid ?? "unknown"
+    });
+    setClientes((current) => [created, ...current]);
+    setGeneral((current) => ({
+      ...current,
+      cliente: created.nombre,
+      clienteId: created.id,
+      direccion: current.direccion || created.direccion || ""
+    }));
+    setClienteForm({
+      nombre: "",
+      ruc: "",
+      telefono: "",
+      whatsapp: "",
+      email: "",
+      direccion: "",
+      ciudad: "",
+      contactoPrincipal: "",
+      observaciones: ""
+    });
+    markDirty();
+    setClienteModalOpen(false);
   }
 }
 
@@ -738,6 +850,111 @@ function ImageUploadField({
   );
 }
 
+function ClienteSelectorModal({
+  clientes,
+  form,
+  onClose,
+  onCreate,
+  onSelect,
+  query,
+  setForm,
+  setQuery
+}: {
+  clientes: Cliente[];
+  form: {
+    nombre: string;
+    ruc: string;
+    telefono: string;
+    whatsapp: string;
+    email: string;
+    direccion: string;
+    ciudad: string;
+    contactoPrincipal: string;
+    observaciones: string;
+  };
+  onClose: () => void;
+  onCreate: () => Promise<void>;
+  onSelect: (cliente: Cliente) => void;
+  query: string;
+  setForm: (form: {
+    nombre: string;
+    ruc: string;
+    telefono: string;
+    whatsapp: string;
+    email: string;
+    direccion: string;
+    ciudad: string;
+    contactoPrincipal: string;
+    observaciones: string;
+  }) => void;
+  setQuery: (query: string) => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const filtered = clientes.filter((cliente) =>
+    `${cliente.nombre} ${cliente.ruc ?? ""} ${cliente.email ?? ""}`.toLowerCase().includes(query.toLowerCase())
+  );
+
+  async function create() {
+    setCreating(true);
+    try {
+      await onCreate();
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-4xl rounded-lg bg-white p-4 shadow-2xl sm:p-5">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-next-blue">Cliente de la obra</p>
+            <h3 className="mt-1 text-xl font-black text-next-text">Seleccionar o crear cliente</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+          <div className="min-w-0">
+            <input className="field" placeholder="Buscar cliente por nombre, RUC o email" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+              {filtered.map((cliente) => (
+                <button key={cliente.id} className="w-full rounded-md border border-slate-100 bg-next-bg px-3 py-3 text-left transition hover:border-next-blue hover:bg-white" type="button" onClick={() => onSelect(cliente)}>
+                  <p className="text-sm font-black text-next-text">{cliente.nombre}</p>
+                  <p className="mt-1 text-xs font-semibold text-next-muted">
+                    {[cliente.ruc, cliente.telefono, cliente.email].filter(Boolean).join(" · ") || "Sin datos de contacto"}
+                  </p>
+                </button>
+              ))}
+              {!filtered.length ? <EmptyState text="No hay clientes con esa busqueda." /> : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-next-bg p-3">
+            <p className="text-sm font-black text-next-text">Crear nuevo cliente</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <input className="field" required placeholder="Nombre / razon social" value={form.nombre} onBlur={() => setForm({ ...form, nombre: toTitleCase(form.nombre) })} onChange={(event) => setForm({ ...form, nombre: event.target.value })} />
+              <input className="field" placeholder="RUC opcional" value={form.ruc} onChange={(event) => setForm({ ...form, ruc: event.target.value })} />
+              <input className="field" placeholder="Telefono" value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value })} />
+              <input className="field" placeholder="WhatsApp" value={form.whatsapp} onChange={(event) => setForm({ ...form, whatsapp: event.target.value })} />
+              <input className="field" placeholder="Email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <input className="field" placeholder="Direccion" value={form.direccion} onChange={(event) => setForm({ ...form, direccion: event.target.value })} />
+              <input className="field" placeholder="Ciudad" value={form.ciudad} onBlur={() => setForm({ ...form, ciudad: toTitleCase(form.ciudad) })} onChange={(event) => setForm({ ...form, ciudad: event.target.value })} />
+              <input className="field" placeholder="Contacto principal" value={form.contactoPrincipal} onBlur={() => setForm({ ...form, contactoPrincipal: toTitleCase(form.contactoPrincipal) })} onChange={(event) => setForm({ ...form, contactoPrincipal: event.target.value })} />
+              <input className="field" placeholder="Observaciones" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} />
+            </div>
+            <button className="mt-3 h-10 w-full rounded-md bg-next-blue px-3 text-xs font-black text-white disabled:opacity-60" type="button" disabled={creating} onClick={() => void create()}>
+              {creating ? "Creando..." : "Crear y seleccionar"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function Section({
   children,
   description,
@@ -808,6 +1025,14 @@ function Notice({ text, tone = "error" }: { text: string; tone?: "error" | "warn
     : "border-red-100 bg-red-50 text-next-red";
   return (
     <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${classes}`}>
+      {text}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-6 text-center text-xs font-semibold text-next-muted">
       {text}
     </div>
   );

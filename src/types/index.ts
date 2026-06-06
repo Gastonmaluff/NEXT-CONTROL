@@ -41,6 +41,42 @@ export type FinancialStatus =
   | "Margen bajo"
   | "Pendiente de cobro";
 
+export type Cliente = {
+  id: string;
+  nombre: string;
+  ruc?: string;
+  telefono?: string;
+  whatsapp?: string;
+  email?: string;
+  direccion?: string;
+  ciudad?: string;
+  contactoPrincipal?: string;
+  observaciones?: string;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type SupplierCategory = "Vidrio" | "Aluminio" | "Accesorios" | "Transporte" | "Mano de obra" | "Otros";
+
+export type Proveedor = {
+  id: string;
+  nombre: string;
+  ruc?: string;
+  telefono?: string;
+  whatsapp?: string;
+  email?: string;
+  direccion?: string;
+  categoriaPrincipal: SupplierCategory;
+  contactoPrincipal?: string;
+  observaciones?: string;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
 export type SystemUser = {
   uid: string;
   nombre: string;
@@ -94,6 +130,10 @@ export type FinancialMovement = {
   bancoCheque?: string;
   monto: number;
   tercero?: string;
+  proveedorId?: string;
+  proveedorNombre?: string;
+  clienteId?: string;
+  clienteNombre?: string;
   observacion?: string;
   createdAt: string;
   updatedAt?: string;
@@ -187,6 +227,8 @@ export type ProductionStage = {
   id: string;
   nombre: string;
   estado: ProductionStageStatus;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type MissingMaterial = {
@@ -203,6 +245,8 @@ export type Obra = {
   id: string;
   nombre: string;
   cliente: string;
+  clienteId?: string;
+  clienteNombre?: string;
   arquitecto: string;
   ubicacion: string;
   direccion?: string;
@@ -309,6 +353,8 @@ export type StoredData = {
   materialesPendientes: ProgressMaterialReport[];
   actividadesAvance: ProgressActivityLog[];
   users: SystemUser[];
+  clientes: Cliente[];
+  proveedores: Proveedor[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

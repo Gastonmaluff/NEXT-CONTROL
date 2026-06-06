@@ -5,6 +5,10 @@ export function buildWorkRenderPath(obraId: string, file: File): string {
   return `obras/${obraId}/render/${Date.now()}-${sanitizeStorageFileName(file.name || "render.jpg")}`;
 }
 
+export function buildProgressPhotoPath(obraId: string, file: File): string {
+  return `obras/${obraId}/progress/${Date.now()}-${sanitizeStorageFileName(file.name || "avance.jpg")}`;
+}
+
 export async function uploadFile(path: string, file: File): Promise<string> {
   if (!isFirebaseConfigured() || !firebaseStorage) {
     throw new Error("Firebase Storage todavia no esta configurado.");

@@ -21,11 +21,73 @@ export const initialProductionStages = [
 const now = "2026-06-02T09:00:00.000Z";
 
 export const seedData: StoredData = {
+  clientes: [
+    {
+      id: "cliente-palmanova",
+      nombre: "Inversora del Este S.A.",
+      ruc: "",
+      telefono: "",
+      whatsapp: "",
+      email: "",
+      direccion: "Av. Santa Teresa, Asuncion",
+      ciudad: "Asuncion",
+      contactoPrincipal: "",
+      observaciones: "Cliente demo vinculado a Residencias Palmanova.",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "cliente-aurora",
+      nombre: "Aurora Desarrollos",
+      ruc: "",
+      telefono: "",
+      whatsapp: "",
+      email: "",
+      direccion: "Asuncion",
+      ciudad: "Asuncion",
+      contactoPrincipal: "",
+      observaciones: "Cliente demo vinculado a Edificio Aurora.",
+      createdAt: now,
+      updatedAt: now
+    }
+  ],
+  proveedores: [
+    {
+      id: "proveedor-vidriera-x",
+      nombre: "Vidriera X",
+      ruc: "",
+      telefono: "",
+      whatsapp: "",
+      email: "",
+      direccion: "",
+      categoriaPrincipal: "Vidrio",
+      contactoPrincipal: "",
+      observaciones: "Proveedor demo de vidrio.",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "proveedor-aluminio-este",
+      nombre: "Aluminio Del Este",
+      ruc: "",
+      telefono: "",
+      whatsapp: "",
+      email: "",
+      direccion: "",
+      categoriaPrincipal: "Aluminio",
+      contactoPrincipal: "",
+      observaciones: "Proveedor demo de aluminio.",
+      createdAt: now,
+      updatedAt: now
+    }
+  ],
   obras: [
     {
       id: "obra-palmanova",
       nombre: "Residencias Palmanova",
       cliente: "Inversora del Este S.A.",
+      clienteId: "cliente-palmanova",
+      clienteNombre: "Inversora del Este S.A.",
       arquitecto: "Arq. Sofia Ramos",
       ubicacion: "Av. Santa Teresa, Asuncion",
       montoAprobado: 1050000000,
@@ -72,6 +134,8 @@ export const seedData: StoredData = {
       id: "obra-aurora",
       nombre: "Edificio Aurora",
       cliente: "Aurora Desarrollos",
+      clienteId: "cliente-aurora",
+      clienteNombre: "Aurora Desarrollos",
       arquitecto: "Arq. Diego Ferreira",
       ubicacion: "Palmanova 1234, Asuncion",
       montoAprobado: 780000000,
@@ -328,6 +392,8 @@ export const seedData: StoredData = {
       fechaCobroCheque: "2026-06-30",
       bancoCheque: "Banco Continental",
       tercero: "Vidriera X",
+      proveedorId: "proveedor-vidriera-x",
+      proveedorNombre: "Vidriera X",
       createdAt: now
     },
     {
@@ -340,6 +406,8 @@ export const seedData: StoredData = {
       monto: 140000000,
       metodoPago: "Transferencia",
       tercero: "Aluminio del Este",
+      proveedorId: "proveedor-aluminio-este",
+      proveedorNombre: "Aluminio Del Este",
       createdAt: now
     },
     {
