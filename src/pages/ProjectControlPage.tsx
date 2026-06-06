@@ -328,9 +328,10 @@ export default function ProjectControlPage() {
         <NewWorkWizard
           defaultDestination="avance"
           onClose={() => setNewWorkOpen(false)}
-          onCreated={(obra, destination) => {
+          onCreated={(obra, destination, notice) => {
             setNewWorkOpen(false);
             setObras((current) => [obra, ...current]);
+            setMessage(notice ?? "Obra creada correctamente.");
             if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
             if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
             if (destination === "control") navigate("/control");

@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [progressRubrics, setProgressRubrics] = useState<WorkProgressRubric[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [newWorkOpen, setNewWorkOpen] = useState(false);
 
   useEffect(() => {
@@ -135,6 +136,11 @@ export default function DashboardPage() {
       {error ? (
         <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-next-red">
           {error}
+        </div>
+      ) : null}
+      {message ? (
+        <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-next-green">
+          {message}
         </div>
       ) : null}
 
@@ -269,8 +275,9 @@ export default function DashboardPage() {
         <NewWorkWizard
           defaultDestination="control"
           onClose={() => setNewWorkOpen(false)}
-          onCreated={(obra, destination) => {
+          onCreated={(obra, destination, notice) => {
             setNewWorkOpen(false);
+            setMessage(notice ?? "Obra creada correctamente.");
             if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
             if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
             if (destination === "control") setObras((current) => [obra, ...current]);

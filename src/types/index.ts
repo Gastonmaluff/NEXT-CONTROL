@@ -212,6 +212,10 @@ export type Obra = {
   fechaComprometida?: string;
   imageUrl?: string;
   renderUrl?: string;
+  renderStoragePath?: string;
+  renderFileName?: string;
+  renderUploadedAt?: string;
+  renderUploadedBy?: string;
   responsable: string;
   encargado?: string;
   supervisor?: string;

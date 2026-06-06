@@ -1,10 +1,12 @@
 import { ArrowLeft, Building2, ChevronDown, ChevronRight, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import CurrencyInput from "../components/ui/CurrencyInput";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import NewWorkWizard from "../components/work/NewWorkWizard";
+import { useAuth } from "../context/AuthContext";
+import { firebaseStorage, isFirebaseConfigured } from "../lib/firebase";
 import {
   createMovement,
   deleteMovement,
@@ -12,6 +14,7 @@ import {
   getMovementsByWork,
   updateFinancialWork
 } from "../lib/firestore";
+import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../lib/storageUpload";
 import type {
   FinancialMovement,
   FinancialMovementKind,
@@ -47,6 +50,8 @@ const paymentMethods: FinancialPaymentMethod[] = [
   "Credito",
   "Otro"
 ];
+
+const maxRenderFileSize = 8 * 1024 * 1024;
 
 const categoriesByType: Record<FinancialMovementKind, string[]> = {
   ingreso: ["Anticipo", "Certificacion", "Pago parcial", "Pago final", "Retencion liberada", "Otro ingreso"],
@@ -90,6 +95,7 @@ function emptyMovementForm(tipo: FinancialMovementKind) {
 export default function FinancesPage() {
   const { obraId } = useParams();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [works, setWorks] = useState<Obra[]>([]);
   const [allMovements, setAllMovements] = useState<FinancialMovement[]>([]);
   const [query, setQuery] = useState("");
@@ -100,6 +106,8 @@ export default function FinancesPage() {
   const [workModal, setWorkModal] = useState<"edit" | null>(null);
   const [newWorkOpen, setNewWorkOpen] = useState(false);
   const [workForm, setWorkForm] = useState(emptyWorkForm);
+  const [workRenderFile, setWorkRenderFile] = useState<File | null>(null);
+  const [workRenderStatus, setWorkRenderStatus] = useState("");
   const [movementModal, setMovementModal] = useState<FinancialMovementKind | null>(null);
   const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
 
@@ -167,6 +175,8 @@ export default function FinancesPage() {
 
   function openEditWork() {
     if (!selectedWork) return;
+    setWorkRenderFile(null);
+    setWorkRenderStatus("");
     setWorkForm({
       nombre: selectedWork.nombre,
       cliente: selectedWork.cliente,
@@ -191,7 +201,7 @@ export default function FinancesPage() {
 
     try {
       if (workModal === "edit" && selectedWork) {
-        const updated = await updateFinancialWork(selectedWork.id, {
+        let updated = await updateFinancialWork(selectedWork.id, {
           nombre: toTitleCase(workForm.nombre),
           cliente: toTitleCase(workForm.cliente),
           arquitecto: workForm.arquitecto ? toTitleCase(workForm.arquitecto) : "",
@@ -207,9 +217,39 @@ export default function FinancesPage() {
           totalContratado,
           valorFinalContratado: totalContratado
         });
+        if (workRenderFile) {
+          if (!isFirebaseConfigured() || !firebaseStorage) {
+            setMessage("Datos de obra actualizados. La imagen se podra cargar cuando Firebase Storage este disponible.");
+          } else {
+            try {
+              setWorkRenderStatus("Subiendo imagen...");
+              const uploadPath = buildWorkRenderPath(selectedWork.id, workRenderFile);
+              const renderUrl = await withTimeout(
+                uploadFile(uploadPath, workRenderFile),
+                25000,
+                "subir la imagen de la obra"
+              );
+              updated = await updateFinancialWork(selectedWork.id, {
+                renderUrl,
+                renderStoragePath: uploadPath,
+                renderFileName: sanitizeStorageFileName(workRenderFile.name),
+                renderUploadedAt: new Date().toISOString(),
+                renderUploadedBy: profile?.uid ?? "unknown"
+              });
+              setMessage("Datos de obra e imagen actualizados.");
+            } catch (renderError) {
+              console.error("No se pudo actualizar la imagen/render de la obra.", renderError);
+              setMessage("Datos de obra actualizados. La imagen no pudo subirse, podes intentar nuevamente.");
+            } finally {
+              setWorkRenderStatus("");
+            }
+          }
+        } else {
+          setMessage("Datos de obra actualizados.");
+        }
         setWorks((current) => current.map((work) => (work.id === updated.id ? updated : work)));
-        setMessage("Datos de obra actualizados.");
       }
+      setWorkRenderFile(null);
       setWorkModal(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la obra.");
@@ -305,8 +345,31 @@ export default function FinancesPage() {
         workModal={workModal}
         workForm={workForm}
         setWorkForm={setWorkForm}
+        renderFile={workRenderFile}
+        renderStatus={workRenderStatus}
+        onRenderChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          if (!file) return;
+          if (!isAllowedRenderImage(file)) {
+            setError("Formato no valido. Usa JPG, PNG o WebP.");
+            event.target.value = "";
+            return;
+          }
+          if (file.size > maxRenderFileSize) {
+            setError("La imagen no puede superar 8 MB.");
+            event.target.value = "";
+            return;
+          }
+          setError("");
+          setWorkRenderFile(file);
+        }}
+        onRenderClear={() => setWorkRenderFile(null)}
         onSaveWork={handleSaveWork}
-        onCloseWorkModal={() => setWorkModal(null)}
+        onCloseWorkModal={() => {
+          setWorkRenderFile(null);
+          setWorkRenderStatus("");
+          setWorkModal(null);
+        }}
         movementModal={movementModal}
         movementForm={movementForm}
         setMovementForm={setMovementForm}
@@ -375,18 +438,41 @@ export default function FinancesPage() {
           mode={workModal}
           values={workForm}
           setValues={setWorkForm}
+          renderFile={workRenderFile}
+          renderStatus={workRenderStatus}
+          onRenderChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            if (!file) return;
+            if (!isAllowedRenderImage(file)) {
+              setError("Formato no valido. Usa JPG, PNG o WebP.");
+              event.target.value = "";
+              return;
+            }
+            if (file.size > maxRenderFileSize) {
+              setError("La imagen no puede superar 8 MB.");
+              event.target.value = "";
+              return;
+            }
+            setError("");
+            setWorkRenderFile(file);
+          }}
+          onRenderClear={() => setWorkRenderFile(null)}
           onSubmit={handleSaveWork}
-          onClose={() => setWorkModal(null)}
+          onClose={() => {
+            setWorkRenderFile(null);
+            setWorkRenderStatus("");
+            setWorkModal(null);
+          }}
         />
       ) : null}
       {newWorkOpen ? (
         <NewWorkWizard
           defaultDestination="finanzas"
           onClose={() => setNewWorkOpen(false)}
-          onCreated={(obra, destination) => {
+          onCreated={(obra, destination, notice) => {
             setNewWorkOpen(false);
             setWorks((current) => [obra, ...current]);
-            setMessage("Obra creada.");
+            setMessage(notice ?? "Obra creada.");
             if (destination === "avance") navigate(`/avance-obras/${obra.id}`);
             if (destination === "finanzas") navigate(`/finanzas-obras/${obra.id}`);
             if (destination === "control") navigate("/control");
@@ -409,6 +495,10 @@ function FinancialDetail({
   workModal,
   workForm,
   setWorkForm,
+  renderFile,
+  renderStatus,
+  onRenderChange,
+  onRenderClear,
   onSaveWork,
   onCloseWorkModal,
   movementModal,
@@ -428,6 +518,10 @@ function FinancialDetail({
   workModal: "edit" | null;
   workForm: typeof emptyWorkForm;
   setWorkForm: (values: typeof emptyWorkForm) => void;
+  renderFile: File | null;
+  renderStatus: string;
+  onRenderChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRenderClear: () => void;
   onSaveWork: (event: FormEvent<HTMLFormElement>) => void;
   onCloseWorkModal: () => void;
   movementModal: FinancialMovementKind | null;
@@ -588,6 +682,10 @@ function FinancialDetail({
           mode={workModal}
           values={workForm}
           setValues={setWorkForm}
+          renderFile={renderFile}
+          renderStatus={renderStatus}
+          onRenderChange={onRenderChange}
+          onRenderClear={onRenderClear}
           onSubmit={onSaveWork}
           onClose={onCloseWorkModal}
         />
@@ -841,12 +939,20 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 
 function WorkModal({
   mode,
+  onRenderChange,
+  onRenderClear,
+  renderFile,
+  renderStatus,
   values,
   setValues,
   onSubmit,
   onClose
 }: {
   mode: "edit";
+  onRenderChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRenderClear: () => void;
+  renderFile: File | null;
+  renderStatus: string;
   values: typeof emptyWorkForm;
   setValues: (values: typeof emptyWorkForm) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -870,6 +976,26 @@ function WorkModal({
           </FormField>
           <FormField label="Direccion opcional">
             <input className="field" value={values.direccion} onChange={(event) => setValues({ ...values, direccion: event.target.value })} />
+          </FormField>
+          <FormField label="Imagen/render">
+            <div className="rounded-md border border-dashed border-slate-200 bg-next-bg p-3">
+              <input
+                className="block w-full text-xs font-semibold text-next-muted file:mr-3 file:h-9 file:rounded-md file:border-0 file:bg-next-blue file:px-3 file:text-xs file:font-black file:text-white"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={onRenderChange}
+              />
+              {renderFile ? (
+                <div className="mt-2 rounded-md bg-white px-3 py-2 ring-1 ring-slate-100">
+                  <p className="truncate text-xs font-black text-next-text" title={renderFile.name}>{renderFile.name}</p>
+                  <p className="mt-1 text-xs font-semibold text-next-muted">{formatFileSize(renderFile.size)}</p>
+                  <button className="mt-2 h-8 rounded-md border border-red-100 px-2 text-xs font-black text-next-red" type="button" onClick={onRenderClear}>
+                    Eliminar imagen
+                  </button>
+                </div>
+              ) : null}
+              {renderStatus ? <p className="mt-2 text-xs font-black text-next-blue">{renderStatus}</p> : null}
+            </div>
           </FormField>
           <FormField label="Fecha de inicio">
             <input className="field" type="date" value={values.fechaInicio} onChange={(event) => setValues({ ...values, fechaInicio: event.target.value })} />
@@ -1338,6 +1464,33 @@ function getRowTotals(obra: Obra, movements: FinancialMovement[]) {
     saldo: calculateSaldoPendiente(obra, movements),
     status: calculateFinancialStatus(obra, movements)
   };
+}
+
+function isAllowedRenderImage(file: File) {
+  return ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`La conexion tardo demasiado al ${label}. Intenta nuevamente.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function badgeForFinancial(status: FinancialStatus): BadgeStatus {

@@ -24,10 +24,41 @@ service firebase.storage {
         );
     }
 
+    function canUploadWorkImage(obraId) {
+      return active()
+        && (
+          userDoc().role in ["admin", "gerencia", "administracion"]
+          || (
+            userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador"]
+            && obraId in userDoc().assignedWorkIds
+          )
+        );
+    }
+
+    function isAllowedImage() {
+      return request.resource != null
+        && request.resource.contentType in ["image/jpeg", "image/png", "image/webp"];
+    }
+
+    function isAllowedImageSize() {
+      return request.resource != null
+        && request.resource.size <= 8 * 1024 * 1024;
+    }
+
+    match /obras/{obraId}/render/{fileName} {
+      allow read: if canUseWork(obraId);
+      allow create, update: if canUploadWorkImage(obraId)
+        && isAllowedImage()
+        && isAllowedImageSize();
+      allow delete: if canUploadWorkImage(obraId);
+    }
+
     match /obras/{obraId}/{allPaths=**} {
       allow read: if canUseWork(obraId);
-      allow write: if canUseWork(obraId)
-        && userDoc().role in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "administracion"];
+      allow create, update: if canUploadWorkImage(obraId)
+        && isAllowedImage()
+        && isAllowedImageSize();
+      allow delete: if canUploadWorkImage(obraId);
     }
 
     match /{allPaths=**} {

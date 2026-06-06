@@ -10,7 +10,7 @@ import {
   createProgressRubric,
   updateObra
 } from "../../lib/firestore";
-import { uploadFile } from "../../lib/storageUpload";
+import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../../lib/storageUpload";
 import type { Obra, ProgressCalculationMode, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
 import { toTitleCase } from "../../utils/text";
@@ -21,8 +21,10 @@ type WizardDestination = "avance" | "finanzas" | "control";
 type NewWorkWizardProps = {
   defaultDestination: WizardDestination;
   onClose: () => void;
-  onCreated: (obra: Obra, destination: WizardDestination) => void;
+  onCreated: (obra: Obra, destination: WizardDestination, notice?: string) => void;
 };
+
+const maxRenderFileSize = 8 * 1024 * 1024;
 
 type RubricDraft = {
   nombre: string;
@@ -191,6 +193,7 @@ export default function NewWorkWizard({
     setWarning("");
     setUploadStatus("");
     logNewWorkStep("Validacion terminada");
+    let completionNotice = "Obra creada correctamente.";
 
     const normalizedGeneral = {
       ...general,
@@ -250,28 +253,38 @@ export default function NewWorkWizard({
       if (renderFile && storageReady) {
         try {
           setUploadStatus("Subiendo imagen...");
-          logNewWorkStep("Subiendo imagen");
+          const uploadPath = buildWorkRenderPath(created.id, renderFile);
+          logNewWorkStep("Starting render upload", {
+            storageBucket: firebaseStorage?.app.options.storageBucket,
+            uploadPath,
+            contentType: renderFile.type,
+            size: renderFile.size
+          });
           const extension = getFileExtension(renderFile);
           const url = await withTimeout(
-            uploadFile(
-              `obras/${created.id}/render/${Date.now()}-${sanitizeFileName(renderFile.name || `render.${extension}`)}`,
-              renderFile
-            ),
+            uploadFile(uploadPath, renderFile),
             25000,
             "subir la imagen de la obra"
           );
-          createdWithImage = await withTimeout(updateObra(created.id, { renderUrl: url }), 15000, "guardar la URL del render");
-          logNewWorkStep("Imagen subida");
+          createdWithImage = await withTimeout(updateObra(created.id, {
+            renderUrl: url,
+            renderStoragePath: uploadPath,
+            renderFileName: sanitizeStorageFileName(renderFile.name || `render.${extension}`),
+            renderUploadedAt: new Date().toISOString(),
+            renderUploadedBy: profile?.uid ?? "unknown"
+          }), 15000, "guardar la URL del render");
+          logNewWorkStep("Upload success", { obraId: created.id, uploadPath });
         } catch (uploadError) {
+          logNewWorkStep("Upload failed", getErrorDetails(uploadError));
           console.error("No se pudo subir la imagen principal de la obra.", uploadError);
-          setWarning("La obra fue creada, pero no se pudo subir la imagen. Podes volver a cargarla cuando Firebase Storage este disponible.");
-          window.alert("La obra fue creada, pero no se pudo subir la imagen. Podes volver a cargarla cuando Firebase Storage este disponible.");
+          completionNotice = "Obra creada. La imagen no pudo subirse, pero podes cargarla despues desde Editar obra.";
+          setWarning(completionNotice);
         } finally {
           setUploadStatus("");
         }
       } else if (renderFile && !storageReady) {
-        setWarning("La obra fue creada. La imagen se guardara cuando Firebase Storage este disponible.");
-        window.alert("La obra fue creada. La imagen se guardara cuando Firebase Storage este disponible.");
+        completionNotice = "Obra creada. La imagen se podra cargar cuando Firebase Storage este disponible.";
+        setWarning(completionNotice);
       }
 
       if (configureProgressNow && normalizedRubrics.length) {
@@ -303,8 +316,10 @@ export default function NewWorkWizard({
           logNewWorkStep("Rubros guardados");
         } catch (rubricError) {
           console.error("No se pudieron guardar los rubros operativos.", rubricError);
-          setWarning("La obra fue creada, pero no se pudieron guardar los rubros. Configura el avance despues desde Avance de obras.");
-          window.alert("La obra fue creada, pero no se pudieron guardar los rubros. Configura el avance despues desde Avance de obras.");
+          completionNotice = completionNotice === "Obra creada correctamente."
+            ? "La obra fue creada, pero no se pudieron guardar los rubros. Configura el avance despues desde Avance de obras."
+            : `${completionNotice} Ademas, no se pudieron guardar los rubros.`;
+          setWarning(completionNotice);
           try {
             createdWithImage = await withTimeout(updateObra(created.id, { progressConfigured: false, rubrosAvance: [] }), 15000, "marcar avance sin configurar");
           } catch (updateError) {
@@ -329,7 +344,8 @@ export default function NewWorkWizard({
       }
 
       logNewWorkStep("Creacion finalizada", { obraId: createdWithImage.id });
-      onCreated(createdWithImage, destination);
+      setSaving(false);
+      onCreated(createdWithImage, destination, completionNotice);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo crear la obra.");
       console.error("No se pudo crear la obra.", saveError);
@@ -409,6 +425,11 @@ export default function NewWorkWizard({
                     if (!file) return;
                     if (!isAllowedImage(file)) {
                       setError("Formato no valido. Usa JPG, PNG o WebP.");
+                      event.target.value = "";
+                      return;
+                    }
+                    if (file.size > maxRenderFileSize) {
+                      setError("La imagen no puede superar 8 MB.");
                       event.target.value = "";
                       return;
                     }
@@ -812,6 +833,15 @@ function logNewWorkStep(message: string, data?: unknown) {
   }
 }
 
+function getErrorDetails(error: unknown) {
+  return {
+    code: typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : undefined,
+    message: error instanceof Error ? error.message : String(error)
+  };
+}
+
 function isAllowedImage(file: File) {
   return ["image/jpeg", "image/png", "image/webp"].includes(file.type);
 }
@@ -822,15 +852,6 @@ function getFileExtension(file: File) {
   if (file.type === "image/png") return "png";
   if (file.type === "image/webp") return "webp";
   return "jpg";
-}
-
-function sanitizeFileName(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "-")
-    .replace(/-+/g, "-")
-    .toLowerCase();
 }
 
 function formatFileSize(bytes: number) {
