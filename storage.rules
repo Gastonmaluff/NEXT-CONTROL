@@ -27,12 +27,19 @@ service firebase.storage {
         && obraId in userDoc().assignedWorkIds;
     }
 
+    function isWorkCreator(obraId) {
+      return active()
+        && firestore.exists(/databases/(default)/documents/obras/$(obraId))
+        && firestore.get(/databases/(default)/documents/obras/$(obraId)).data.createdBy == request.auth.uid;
+    }
+
     function canUseWork(obraId) {
-      return isManagement() || isAssignedToWork(obraId);
+      return isManagement() || isAssignedToWork(obraId) || isWorkCreator(obraId);
     }
 
     function canUploadWorkImage(obraId) {
       return isManagement()
+        || isWorkCreator(obraId)
         || (
           active()
           && userDoc().role in ["supervisor", "fiscalizador", "encargado", "instalador"]

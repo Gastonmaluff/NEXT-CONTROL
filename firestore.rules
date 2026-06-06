@@ -48,20 +48,26 @@ service cloud.firestore {
         && workId in userProfile().assignedWorkIds;
     }
 
+    function isWorkCreator(workId) {
+      return isActiveUser()
+        && exists(/databases/$(database)/documents/obras/$(workId))
+        && get(/databases/$(database)/documents/obras/$(workId)).data.createdBy == request.auth.uid;
+    }
+
     function canReadWork(workId) {
-      return isManagement() || canReadFinance() || isAssignedToWork(workId);
+      return isManagement() || canReadFinance() || isAssignedToWork(workId) || isWorkCreator(workId);
     }
 
     function canWriteWork(workId) {
-      return isManagement() || canReadFinance() || isAssignedToWork(workId);
+      return isManagement() || canReadFinance() || isAssignedToWork(workId) || isWorkCreator(workId);
     }
 
     function canReadOperationalRecord() {
-      return isManagement() || isAssignedToWork(resource.data.obraId);
+      return isManagement() || isAssignedToWork(resource.data.obraId) || isWorkCreator(resource.data.obraId);
     }
 
     function canCreateOperationalRecord() {
-      return isManagement() || isAssignedToWork(request.resource.data.obraId);
+      return isManagement() || isAssignedToWork(request.resource.data.obraId) || isWorkCreator(request.resource.data.obraId);
     }
 
     match /users/{uid} {
