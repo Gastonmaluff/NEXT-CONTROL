@@ -38,6 +38,7 @@ import {
   groupIngresosByCategoria
 } from "../utils/finance";
 import { toTitleCase } from "../utils/text";
+import { formatUnitLabel, normalizeUnit } from "../utils/units";
 
 const paymentMethods: FinancialPaymentMethod[] = [
   "Efectivo",
@@ -75,7 +76,7 @@ function emptyMovementForm(tipo: FinancialMovementKind) {
     detalle: "",
     cantidad: "",
     unidad: "",
-    metodoPago: "Transferencia" as FinancialPaymentMethod,
+    metodoPago: (tipo === "ingreso" || tipo === "compra" ? "Cheque" : "Transferencia") as FinancialPaymentMethod,
     numeroCheque: "",
     fechaEmisionCheque: "",
     fechaCobroCheque: "",
@@ -216,6 +217,8 @@ export default function FinancesPage() {
   }
 
   function openMovement(type: FinancialMovementKind) {
+    setError("");
+    setMessage("");
     setMovementForm(emptyMovementForm(type));
     setMovementModal(type);
   }
@@ -223,6 +226,31 @@ export default function FinancesPage() {
   async function handleSaveMovement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedWork || !movementModal) return;
+    setError("");
+
+    if (movementForm.metodoPago === "Cheque") {
+      if (!movementForm.numeroCheque.trim()) {
+        setError("Carga el numero de cheque.");
+        return;
+      }
+      if (!movementForm.fechaEmisionCheque) {
+        setError("Carga la fecha de emision del cheque.");
+        return;
+      }
+      if (!movementForm.fechaCobroCheque) {
+        setError("Carga la fecha de cobro del cheque.");
+        return;
+      }
+      if (movementForm.fechaCobroCheque < movementForm.fechaEmisionCheque) {
+        setError("La fecha de cobro no puede ser anterior a la fecha de emision.");
+        return;
+      }
+    }
+
+    if (movementModal === "compra" && movementForm.cantidad && !normalizeUnit(movementForm.unidad)) {
+      setError("Selecciona una unidad valida para la compra.");
+      return;
+    }
 
     try {
       await createMovement(selectedWork.id, {
@@ -232,7 +260,7 @@ export default function FinancesPage() {
         categoria: movementForm.categoria,
         detalle: movementForm.detalle || undefined,
         cantidad: movementForm.cantidad ? Number(movementForm.cantidad) : undefined,
-        unidad: movementForm.unidad || undefined,
+        unidad: movementModal === "compra" ? normalizeUnit(movementForm.unidad) || undefined : movementForm.unidad || undefined,
         metodoPago: movementForm.metodoPago,
         numeroCheque: movementForm.metodoPago === "Cheque" ? movementForm.numeroCheque || undefined : undefined,
         fechaEmisionCheque: movementForm.metodoPago === "Cheque" ? movementForm.fechaEmisionCheque || undefined : undefined,
@@ -786,12 +814,13 @@ function MovementCard({
 }
 
 function MovementDetails({ movement, compact = false }: { movement: FinancialMovement; compact?: boolean }) {
+  const formattedUnit = movement.unidad ? formatUnitLabel(movement.unidad, movement.cantidad ?? 0) : "-";
   return (
     <div className={`${compact ? "mt-3 rounded-md bg-white/70 p-3" : "min-w-[1180px] rounded-b-md border-t border-slate-100 bg-white px-4 py-3 xl:min-w-0"} text-xs text-next-muted`}>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <DetailItem label="Detalle" value={movement.detalle || "-"} />
         <DetailItem label="Cantidad" value={movement.cantidad ? String(movement.cantidad) : "-"} />
-        <DetailItem label="Unidad" value={movement.unidad || "-"} />
+        <DetailItem label="Unidad" value={formattedUnit} />
         <DetailItem label="Banco cheque" value={movement.bancoCheque || "-"} />
         <DetailItem label="Observacion" value={movement.observacion || "-"} />
         <DetailItem label="Creado" value={formatDateTime(movement.createdAt)} />
@@ -897,46 +926,222 @@ function MovementModal({
 }) {
   const title = type === "ingreso" ? "Agregar ingreso" : type === "compra" ? "Agregar compra" : "Agregar egreso";
   const isCheque = values.metodoPago === "Cheque";
+  function updatePaymentMethod(method: FinancialPaymentMethod) {
+    setValues({
+      ...values,
+      metodoPago: method,
+      ...(method === "Cheque"
+        ? {}
+        : {
+            numeroCheque: "",
+            fechaEmisionCheque: "",
+            fechaCobroCheque: "",
+            bancoCheque: ""
+          })
+    });
+  }
+
   return (
     <Modal title={title} onClose={onClose}>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
-        <input className="field" type="date" value={values.fecha} onChange={(event) => setValues({ ...values, fecha: event.target.value })} />
-        <input className="field" required placeholder="Concepto" value={values.concepto} onChange={(event) => setValues({ ...values, concepto: event.target.value })} />
-        <select className="field" value={values.categoria} onChange={(event) => setValues({ ...values, categoria: event.target.value })}>
-          {categoriesByType[type].map((category) => <option key={category}>{category}</option>)}
-        </select>
-        <CurrencyInput required placeholder="Monto" value={Number(values.monto || 0)} onValueChange={(value) => setValues({ ...values, monto: String(value) })} />
-        {type !== "ingreso" ? (
+        {type === "ingreso" ? (
           <>
+            <MovementFormField label="Fecha del ingreso">
+              <input className="field" type="date" value={values.fecha} onChange={(event) => setValues({ ...values, fecha: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Concepto">
+              <input className="field" required value={values.concepto} onChange={(event) => setValues({ ...values, concepto: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Tipo de ingreso">
+              <CategorySelect type={type} value={values.categoria} onChange={(categoria) => setValues({ ...values, categoria })} />
+            </MovementFormField>
+            <MovementFormField label="Monto">
+              <CurrencyInput required placeholder="Monto" value={Number(values.monto || 0)} onValueChange={(value) => setValues({ ...values, monto: String(value) })} />
+            </MovementFormField>
+            <MovementFormField label="Metodo de pago">
+              <PaymentMethodSelect value={values.metodoPago} onChange={updatePaymentMethod} />
+            </MovementFormField>
+            <MovementFormField label="Cliente / pagador">
+              <input className="field" value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+            </MovementFormField>
+            {isCheque ? <ChequeFields values={values} setValues={setValues} /> : null}
+            <MovementFormField className="sm:col-span-2" label="Observacion">
+              <input className="field" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
+            </MovementFormField>
+          </>
+        ) : null}
+
+        {type === "compra" ? (
+          <>
+            <MovementFormField label="Fecha de compra">
+              <input className="field" type="date" value={values.fecha} onChange={(event) => setValues({ ...values, fecha: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Concepto">
+              <input className="field" required value={values.concepto} onChange={(event) => setValues({ ...values, concepto: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Categoria">
+              <CategorySelect type={type} value={values.categoria} onChange={(categoria) => setValues({ ...values, categoria })} />
+            </MovementFormField>
+            <MovementFormField label="Monto">
+              <CurrencyInput required placeholder="Monto" value={Number(values.monto || 0)} onValueChange={(value) => setValues({ ...values, monto: String(value) })} />
+            </MovementFormField>
+            <MovementFormField label="Detalle">
+              <input className="field" value={values.detalle} onChange={(event) => setValues({ ...values, detalle: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Proveedor / persona">
+              <input className="field" value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Cantidad">
+              <input className="field" min={0} type="number" value={values.cantidad} onChange={(event) => setValues({ ...values, cantidad: event.target.value })} />
+            </MovementFormField>
+            <MovementFormField label="Unidad">
+              <select className="field" value={normalizeUnit(values.unidad)} onChange={(event) => setValues({ ...values, unidad: normalizeUnit(event.target.value) })}>
+                <option value="" disabled>Seleccionar unidad</option>
+                <option value="m2">m²</option>
+                <option value="unidad">unidad</option>
+              </select>
+            </MovementFormField>
+            <MovementFormField label="Metodo de pago">
+              <PaymentMethodSelect value={values.metodoPago} onChange={updatePaymentMethod} />
+            </MovementFormField>
+            {isCheque ? (
+              <MovementFormField label="Numero de cheque">
+                <input className="field" required value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />
+              </MovementFormField>
+            ) : null}
+            {isCheque ? (
+              <>
+                <MovementFormField label="Banco opcional">
+                  <input className="field" value={values.bancoCheque} onChange={(event) => setValues({ ...values, bancoCheque: event.target.value })} />
+                </MovementFormField>
+                <MovementFormField label="Observacion">
+                  <input className="field" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
+                </MovementFormField>
+                <ChequeDateFields values={values} setValues={setValues} />
+              </>
+            ) : (
+              <MovementFormField className="sm:col-span-2" label="Observacion">
+                <input className="field" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
+              </MovementFormField>
+            )}
+          </>
+        ) : null}
+
+        {type === "egreso" ? (
+          <>
+            <input className="field" type="date" value={values.fecha} onChange={(event) => setValues({ ...values, fecha: event.target.value })} />
+            <input className="field" required placeholder="Concepto" value={values.concepto} onChange={(event) => setValues({ ...values, concepto: event.target.value })} />
+            <select className="field" value={values.categoria} onChange={(event) => setValues({ ...values, categoria: event.target.value })}>
+              {categoriesByType[type].map((category) => <option key={category}>{category}</option>)}
+            </select>
+            <CurrencyInput required placeholder="Monto" value={Number(values.monto || 0)} onValueChange={(value) => setValues({ ...values, monto: String(value) })} />
             <input className="field" placeholder="Detalle" value={values.detalle} onChange={(event) => setValues({ ...values, detalle: event.target.value })} />
             <input className="field" type="number" placeholder="Cantidad opcional" value={values.cantidad} onChange={(event) => setValues({ ...values, cantidad: event.target.value })} />
             <input className="field" placeholder="Unidad opcional" value={values.unidad} onChange={(event) => setValues({ ...values, unidad: event.target.value })} />
+            <PaymentMethodSelect value={values.metodoPago} onChange={updatePaymentMethod} />
+            <input className="field" placeholder="Proveedor / persona" value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
+            {isCheque ? (
+              <>
+                <input className="field" required placeholder="Numero de cheque" value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />
+                <input className="field" placeholder="Banco opcional" value={values.bancoCheque} onChange={(event) => setValues({ ...values, bancoCheque: event.target.value })} />
+                <ChequeDateFields values={values} setValues={setValues} />
+              </>
+            ) : null}
+            <input className="field" placeholder="Observacion" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
           </>
         ) : null}
-        <select className="field" value={values.metodoPago} onChange={(event) => setValues({ ...values, metodoPago: event.target.value as FinancialPaymentMethod })}>
-          {paymentMethods.map((method) => <option key={method}>{method}</option>)}
-        </select>
-        <input className="field" placeholder={type === "ingreso" ? "Cliente / pagador" : "Proveedor / persona"} value={values.tercero} onBlur={() => setValues({ ...values, tercero: toTitleCase(values.tercero) })} onChange={(event) => setValues({ ...values, tercero: event.target.value })} />
-        {isCheque ? (
-          <>
-            <input className="field" required placeholder="Numero de cheque" value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />
-            <input className="field" placeholder="Banco opcional" value={values.bancoCheque} onChange={(event) => setValues({ ...values, bancoCheque: event.target.value })} />
-            <label className="text-xs font-black uppercase text-next-muted">
-              Fecha emision cheque
-              <input className="field mt-1" type="date" value={values.fechaEmisionCheque} onChange={(event) => setValues({ ...values, fechaEmisionCheque: event.target.value })} />
-            </label>
-            <label className="text-xs font-black uppercase text-next-muted">
-              Fecha cobro cheque
-              <input className="field mt-1" required type="date" value={values.fechaCobroCheque} onChange={(event) => setValues({ ...values, fechaCobroCheque: event.target.value })} />
-            </label>
-          </>
-        ) : null}
-        <input className="field" placeholder="Observacion" value={values.observacion} onChange={(event) => setValues({ ...values, observacion: event.target.value })} />
+
         <button className="h-11 rounded-md bg-next-blue px-4 text-sm font-black text-white sm:col-span-2" type="submit">
           Guardar movimiento
         </button>
       </form>
     </Modal>
+  );
+}
+
+function MovementFormField({
+  children,
+  className = "",
+  label
+}: {
+  children: ReactNode;
+  className?: string;
+  label: string;
+}) {
+  return (
+    <label className={`block text-xs font-black uppercase text-next-muted ${className}`}>
+      {label}
+      <div className="mt-1">{children}</div>
+    </label>
+  );
+}
+
+function CategorySelect({
+  onChange,
+  type,
+  value
+}: {
+  onChange: (value: string) => void;
+  type: FinancialMovementKind;
+  value: string;
+}) {
+  return (
+    <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
+      {categoriesByType[type].map((category) => <option key={category}>{category}</option>)}
+    </select>
+  );
+}
+
+function PaymentMethodSelect({
+  onChange,
+  value
+}: {
+  onChange: (value: FinancialPaymentMethod) => void;
+  value: FinancialPaymentMethod;
+}) {
+  return (
+    <select className="field" value={value} onChange={(event) => onChange(event.target.value as FinancialPaymentMethod)}>
+      {paymentMethods.map((method) => <option key={method}>{method}</option>)}
+    </select>
+  );
+}
+
+function ChequeFields({
+  setValues,
+  values
+}: {
+  setValues: (values: ReturnType<typeof emptyMovementForm>) => void;
+  values: ReturnType<typeof emptyMovementForm>;
+}) {
+  return (
+    <>
+      <MovementFormField label="Numero de cheque">
+        <input className="field" required value={values.numeroCheque} onChange={(event) => setValues({ ...values, numeroCheque: event.target.value })} />
+      </MovementFormField>
+      <MovementFormField label="Banco opcional">
+        <input className="field" value={values.bancoCheque} onChange={(event) => setValues({ ...values, bancoCheque: event.target.value })} />
+      </MovementFormField>
+      <ChequeDateFields values={values} setValues={setValues} />
+    </>
+  );
+}
+
+function ChequeDateFields({
+  setValues,
+  values
+}: {
+  setValues: (values: ReturnType<typeof emptyMovementForm>) => void;
+  values: ReturnType<typeof emptyMovementForm>;
+}) {
+  return (
+    <>
+      <MovementFormField label="Fecha de emision del cheque">
+        <input className="field" required type="date" value={values.fechaEmisionCheque} onChange={(event) => setValues({ ...values, fechaEmisionCheque: event.target.value })} />
+      </MovementFormField>
+      <MovementFormField label="Fecha de cobro del cheque">
+        <input className="field" required type="date" value={values.fechaCobroCheque} onChange={(event) => setValues({ ...values, fechaCobroCheque: event.target.value })} />
+      </MovementFormField>
+    </>
   );
 }
 
