@@ -42,6 +42,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/control" replace /> : <LoginPage />} />
+      <Route path="/fiscalizador" element={<SupervisorPage />} />
+      <Route path="/fiscalizadores" element={<SupervisorPage />} />
+      <Route path="/supervisor" element={<SupervisorPage />} />
 
       {!isAuthenticated ? (
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -62,9 +65,6 @@ function AppRoutes() {
             <Route path="/avance-obras" element={<ProjectControlPage />} />
             <Route path="/avance-obras/:obraId" element={<ProjectControlPage />} />
             <Route path="/obras" element={<Navigate to="/avance-obras" replace />} />
-            <Route path="/supervisor" element={<SupervisorPage />} />
-            <Route path="/fiscalizador" element={<SupervisorPage />} />
-            <Route path="/fiscalizadores" element={<SupervisorPage />} />
             <Route path="/finanzas-obras" element={<FinancesPage />} />
             <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
             <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
