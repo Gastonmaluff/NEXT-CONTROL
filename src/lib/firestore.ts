@@ -174,6 +174,28 @@ async function createDocument<T extends { id: string }>(
   }
 }
 
+async function createDocumentWithId<T extends { id: string }>(
+  name: keyof typeof collections,
+  id: string,
+  data: Omit<T, "id">
+): Promise<T> {
+  if (!shouldUseFirebase() || !firestoreDb) {
+    const stored = getStoredData();
+    const record = sanitizeForFirestore({ id, ...data }) as T;
+    (stored[name] as unknown as T[]).unshift(record);
+    saveStoredData(stored);
+    return record;
+  }
+
+  try {
+    const sanitized = sanitizeForFirestore(data) as Omit<T, "id">;
+    await setDoc(doc(firestoreDb, collections[name], id), sanitized);
+    return { id, ...sanitized } as T;
+  } catch (error) {
+    throw withError(error, `No se pudo crear ${collections[name]}.`);
+  }
+}
+
 async function updateDocument<T extends { id: string }>(
   name: keyof typeof collections,
   id: string,
@@ -590,18 +612,26 @@ export async function getFieldWorkdaysByWork(obraId: string): Promise<FieldWorkd
 }
 
 export async function createFieldWorkday(
-  data: Omit<FieldWorkday, "id" | "createdAt" | "updatedAt">
+  data: Omit<FieldWorkday, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<FieldWorkday> {
   const createdAt = now();
-  const jornada = await createDocument<FieldWorkday>("jornadasCampo", {
-    ...data,
-    createdAt
-  });
+  const { id, ...workdayData } = data;
+  const jornada = id
+    ? await createDocumentWithId<FieldWorkday>("jornadasCampo", id, {
+        ...workdayData,
+        createdAt
+      })
+    : await createDocument<FieldWorkday>("jornadasCampo", {
+        ...workdayData,
+        createdAt
+      });
 
   await createProgressActivity({
     obraId: jornada.obraId,
     tipo: "jornada",
-    descripcion: `Jornada iniciada por ${jornada.equipoNombre || jornada.userName}.`,
+    descripcion: jornada.fotoLlegada
+      ? `Jornada iniciada con foto de llegada por ${jornada.equipoNombre || jornada.userName}.`
+      : `Jornada iniciada por ${jornada.equipoNombre || jornada.userName}.`,
     userId: jornada.userId,
     userName: jornada.userName,
     fechaHora: createdAt,
@@ -624,7 +654,9 @@ export async function updateFieldWorkday(
     await createProgressActivity({
       obraId: updated.obraId,
       tipo: "jornada",
-      descripcion: `Jornada finalizada por ${updated.equipoNombre || updated.userName}.`,
+      descripcion: data.fotoCierre
+        ? `Jornada finalizada con foto de cierre por ${updated.equipoNombre || updated.userName}.`
+        : `Jornada finalizada por ${updated.equipoNombre || updated.userName}.`,
       userId: updated.userId,
       userName: updated.userName,
       fechaHora: now(),

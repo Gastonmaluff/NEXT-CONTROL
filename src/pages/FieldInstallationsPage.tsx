@@ -152,12 +152,27 @@ export default function FieldInstallationsPage() {
       setError("No tenes permisos para iniciar jornada.");
       return;
     }
+    if (!startFiles.length) {
+      setWarning("Para iniciar jornada, primero subi la foto de llegada.");
+      return;
+    }
+    if (!isFirebaseConfigured() || !firebaseStorage) {
+      setError("No se pudo subir la foto de llegada. Firebase Storage no esta disponible.");
+      return;
+    }
     setSaving(true);
     setError("");
     setWarning("");
     try {
       const now = new Date();
+      const jornadaId = `jornada-${task.obraId}-${Date.now()}`;
+      setUploadStatus("Subiendo foto de llegada...");
+      const storagePath = buildWorkdayPhotoPath(task.obraId, jornadaId, "inicio", startFiles[0]);
+      const photoUrl = await uploadFile(storagePath, startFiles[0]);
+      const fotoLlegada = buildPhoto(photoUrl, storagePath, startFiles[0].name, task.obraId, { jornadaId, phase: "inicio" }, profile.uid);
+
       const jornada = await createFieldWorkday({
+        id: jornadaId,
         obraId: task.obraId,
         obraNombre: task.obraNombre,
         equipoId: profile.teamName ?? profile.uid,
@@ -170,27 +185,31 @@ export default function FieldInstallationsPage() {
         ubicacionInicioDisponible: Boolean(location) || !forcedWithoutLocation,
         estado: "activa",
         tareasIds: [task.id],
+        fotoLlegada,
+        fotosInicio: [fotoLlegada],
         observacionInicio: forcedWithoutLocation ? "Jornada iniciada sin ubicacion por confirmacion del usuario." : undefined
       });
 
-      const fotosInicio = await uploadWorkdayPhotos(jornada, "inicio", startFiles);
-      if (fotosInicio.length) {
-        await updateFieldWorkday(jornada.id, { fotosInicio });
-      }
       await updateFieldTask(task.id, { estado: task.estado === "pendiente" ? "en_proceso" : task.estado, jornadaId: jornada.id });
       setStartFiles([]);
-      setMessage(location ? "Jornada iniciada con ubicacion registrada." : "Jornada iniciada sin ubicacion.");
+      setMessage(location ? "Jornada iniciada correctamente con foto y ubicacion." : "Jornada iniciada correctamente con foto.");
       setPendingLocationAction(null);
       setSelectedTask(null);
       await load();
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "No se pudo iniciar la jornada.");
+      console.error("No se pudo iniciar jornada con foto de llegada.", startError);
+      setError("No se pudo subir la foto de llegada. Intenta nuevamente.");
     } finally {
+      setUploadStatus("");
       setSaving(false);
     }
   }
 
   async function handleStart(task: FieldTask) {
+    if (!startFiles.length) {
+      setWarning("Para iniciar jornada, primero subi la foto de llegada.");
+      return;
+    }
     setSelectedTask(task);
     setPendingLocationAction(null);
     setWarning("");
@@ -212,31 +231,49 @@ export default function FieldInstallationsPage() {
 
   async function finishWorkday(location?: FieldLocation | null, forcedWithoutLocation = false) {
     if (!activeWorkday) return;
+    if (!finishFiles.length) {
+      setWarning("Para finalizar jornada, primero subi la foto de cierre.");
+      return;
+    }
+    if (!isFirebaseConfigured() || !firebaseStorage) {
+      setError("No se pudo subir la foto de cierre. Firebase Storage no esta disponible.");
+      return;
+    }
     setSaving(true);
     setError("");
     setWarning("");
     try {
-      const fotosFin = await uploadWorkdayPhotos(activeWorkday, "fin", finishFiles);
+      setUploadStatus("Subiendo foto de cierre...");
+      const storagePath = buildWorkdayPhotoPath(activeWorkday.obraId, activeWorkday.id, "fin", finishFiles[0]);
+      const photoUrl = await uploadFile(storagePath, finishFiles[0]);
+      const fotoCierre = buildPhoto(photoUrl, storagePath, finishFiles[0].name, activeWorkday.obraId, { jornadaId: activeWorkday.id, phase: "fin" }, profile?.uid ?? "campo");
       await updateFieldWorkday(activeWorkday.id, {
         estado: "finalizada",
         horaFin: new Date().toTimeString().slice(0, 5),
         ubicacionFin: location ?? undefined,
         ubicacionFinDisponible: Boolean(location) || !forcedWithoutLocation,
-        fotosFin: fotosFin.length ? fotosFin : activeWorkday.fotosFin,
+        fotoCierre,
+        fotosFin: [...(activeWorkday.fotosFin ?? []), fotoCierre],
         observacionFin: forcedWithoutLocation ? "Jornada finalizada sin ubicacion por confirmacion del usuario." : undefined
       });
       setFinishFiles([]);
-      setMessage(location ? "Jornada finalizada con ubicacion registrada." : "Jornada finalizada sin ubicacion.");
+      setMessage(location ? "Jornada finalizada correctamente con foto y ubicacion." : "Jornada finalizada correctamente con foto.");
       setPendingLocationAction(null);
       await load();
     } catch (finishError) {
-      setError(finishError instanceof Error ? finishError.message : "No se pudo finalizar la jornada.");
+      console.error("No se pudo finalizar jornada con foto de cierre.", finishError);
+      setError("No se pudo subir la foto de cierre. Intenta nuevamente.");
     } finally {
+      setUploadStatus("");
       setSaving(false);
     }
   }
 
   async function handleFinish() {
+    if (!finishFiles.length) {
+      setWarning("Para finalizar jornada, primero subi la foto de cierre.");
+      return;
+    }
     try {
       setSaving(true);
       setMessage("Registrando ubicacion...");
@@ -375,12 +412,12 @@ export default function FieldInstallationsPage() {
         {error ? <Notice tone="error" text={error} /> : null}
 
         {pendingLocationAction === "start" && selectedTask ? (
-          <button className="h-11 w-full rounded-xl border border-next-orange bg-orange-50 px-4 text-sm font-black text-next-orange" type="button" disabled={saving} onClick={() => void startWorkday(selectedTask, null, true)}>
+          <button className="h-11 w-full rounded-xl border border-next-orange bg-orange-50 px-4 text-sm font-black text-next-orange disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving || !startFiles.length} onClick={() => void startWorkday(selectedTask, null, true)}>
             Iniciar sin ubicacion
           </button>
         ) : null}
         {pendingLocationAction === "finish" ? (
-          <button className="h-11 w-full rounded-xl border border-next-orange bg-orange-50 px-4 text-sm font-black text-next-orange" type="button" disabled={saving} onClick={() => void finishWorkday(null, true)}>
+          <button className="h-11 w-full rounded-xl border border-next-orange bg-orange-50 px-4 text-sm font-black text-next-orange disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={saving || !finishFiles.length} onClick={() => void finishWorkday(null, true)}>
             Finalizar sin ubicacion
           </button>
         ) : null}
@@ -421,25 +458,43 @@ export default function FieldInstallationsPage() {
           </div>
           {!activeWorkday ? (
             <div className="space-y-3">
-              <FieldPhotoUploader files={startFiles} label="Foto de llegada" multiple={false} onFilesChange={setStartFiles} status={uploadStatus} />
+              <FieldPhotoUploader
+                capture="environment"
+                files={startFiles}
+                helper="Subi una foto de llegada para iniciar la jornada."
+                label="Foto de llegada"
+                multiple={false}
+                onFilesChange={setStartFiles}
+                status={uploadStatus}
+              />
               <button
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-next-blue px-4 text-sm font-black text-white shadow-soft disabled:opacity-60"
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-next-blue px-4 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                 type="button"
-                disabled={saving || !activeTask}
+                disabled={saving || !activeTask || !startFiles.length}
                 onClick={() => activeTask ? void handleStart(activeTask) : undefined}
               >
                 <Play className="h-4 w-4" aria-hidden="true" />
-                Iniciar jornada
+                {saving ? "Iniciando jornada..." : "Iniciar jornada"}
               </button>
+              {!startFiles.length ? <p className="text-center text-xs font-semibold text-next-orange">Subi una foto de llegada para iniciar la jornada.</p> : null}
               {!activeTask ? <p className="text-center text-xs font-semibold text-next-muted">No hay tareas disponibles para iniciar.</p> : null}
             </div>
           ) : (
             <div className="space-y-3">
-              <FieldPhotoUploader files={finishFiles} label="Foto de cierre" multiple onFilesChange={setFinishFiles} status={uploadStatus} />
-              <button className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-next-red px-4 text-sm font-black text-white shadow-soft disabled:opacity-60" type="button" disabled={saving} onClick={() => void handleFinish()}>
+              <FieldPhotoUploader
+                capture="environment"
+                files={finishFiles}
+                helper="Subi una foto de cierre para finalizar la jornada."
+                label="Foto de cierre"
+                multiple={false}
+                onFilesChange={setFinishFiles}
+                status={uploadStatus}
+              />
+              <button className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-next-red px-4 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none" type="button" disabled={saving || !finishFiles.length} onClick={() => void handleFinish()}>
                 <Square className="h-4 w-4" aria-hidden="true" />
-                Finalizar jornada
+                {saving ? "Finalizando jornada..." : "Finalizar jornada"}
               </button>
+              {!finishFiles.length ? <p className="text-center text-xs font-semibold text-next-orange">Subi una foto de cierre para finalizar la jornada.</p> : null}
             </div>
           )}
         </section>
@@ -633,14 +688,15 @@ function buildPhoto(
   storagePath: string,
   fileName: string,
   obraId: string,
-  refs: { taskId?: string; jornadaId?: string; phase?: TaskPhoto["phase"] }
+  refs: { taskId?: string; jornadaId?: string; phase?: TaskPhoto["phase"] },
+  uploadedBy = "campo"
 ): TaskPhoto {
   return {
     id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     url,
     storagePath,
     fileName,
-    uploadedBy: "campo",
+    uploadedBy,
     uploadedAt: new Date().toISOString(),
     obraId,
     ...refs

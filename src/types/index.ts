@@ -473,6 +473,8 @@ export type FieldWorkday = {
   ubicacionFinDisponible?: boolean;
   estado: "activa" | "finalizada";
   tareasIds: string[];
+  fotoLlegada?: TaskPhoto;
+  fotoCierre?: TaskPhoto;
   fotosInicio?: TaskPhoto[];
   fotosAvance?: TaskPhoto[];
   fotosFin?: TaskPhoto[];
