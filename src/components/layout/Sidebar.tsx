@@ -16,7 +16,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      className={`fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-[linear-gradient(180deg,#061a2f_0%,#0b2b49_48%,#06182a_100%)] px-4 py-3 text-white shadow-[inset_-1px_0_0_rgba(255,255,255,0.08)] transition-[width,padding] duration-300 lg:inset-y-0 lg:left-0 lg:right-auto lg:border-b-0 lg:py-5 ${
+      className={`fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-[linear-gradient(180deg,#061a2f_0%,#0b2b49_48%,#06182a_100%)] px-4 py-3 text-white shadow-[inset_-1px_0_0_rgba(255,255,255,0.08)] transition-[width,padding] duration-300 lg:inset-y-0 lg:left-0 lg:right-auto lg:flex lg:h-screen lg:flex-col lg:overflow-hidden lg:border-b-0 lg:py-5 ${
         collapsed ? "lg:w-20 lg:px-3" : "lg:w-72 lg:px-5"
       }`}
     >
@@ -46,9 +46,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       <nav
-        className={`no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-5 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0 ${
+        className={`no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1 lg:mt-5 lg:block lg:min-h-0 lg:flex-1 lg:space-y-1.5 lg:pb-2 ${
           collapsed ? "justify-start" : ""
-        }`}
+        } ${collapsed ? "lg:overflow-visible" : "lg:overflow-y-auto lg:overflow-x-hidden lg:pr-1"}`}
       >
         {items.map((item) => {
           const Icon = item.icon;
