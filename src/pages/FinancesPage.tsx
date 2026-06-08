@@ -1,4 +1,4 @@
-import { ArrowLeft, Building2, ChevronDown, ChevronRight, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, ChevronDown, ChevronRight, Download, Edit3, Eye, Plus, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -12,6 +12,7 @@ import {
   createMovement,
   createProveedor,
   deleteMovement,
+  getCheques,
   getFinancialWorks,
   getClientes,
   getMovementsByWork,
@@ -20,6 +21,7 @@ import {
 } from "../lib/firestore";
 import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../lib/storageUpload";
 import type {
+  Cheque,
   FinancialMovement,
   FinancialMovementKind,
   FinancialPaymentMethod,
@@ -29,6 +31,7 @@ import type {
   Proveedor,
   SupplierCategory
 } from "../types";
+import { exportWorkbookToExcel, type ExcelSheet } from "../utils/excel";
 import {
   formatCompactGuarani,
   formatCurrencyPYG,
@@ -49,6 +52,7 @@ import {
 } from "../utils/finance";
 import { toTitleCase } from "../utils/text";
 import { formatUnitLabel, normalizeUnit } from "../utils/units";
+import { canManageFinancesForUser } from "../lib/roles";
 
 const paymentMethods: FinancialPaymentMethod[] = [
   "Efectivo",
@@ -125,6 +129,8 @@ export default function FinancesPage() {
   const [movementForm, setMovementForm] = useState(emptyMovementForm("ingreso"));
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [allCheques, setAllCheques] = useState<Cheque[]>([]);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const selectedWork = works.find((work) => work.id === obraId) ?? null;
   const movements = useMemo(
@@ -169,10 +175,15 @@ export default function FinancesPage() {
       )).flat();
       const loadedProveedores = await getProveedores();
       const loadedClientes = await getClientes();
+      const loadedCheques = await getCheques().catch((chequeError) => {
+        console.error("No se pudieron cargar cheques para exportacion financiera.", chequeError);
+        return [] as Cheque[];
+      });
       setWorks(loadedWorks);
       setAllMovements(loadedMovements);
       setClientes(loadedClientes);
       setProveedores(loadedProveedores);
+      setAllCheques(loadedCheques);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las finanzas.");
     } finally {
@@ -352,6 +363,29 @@ export default function FinancesPage() {
     }
   }
 
+  async function handleExportFinancialExcel() {
+    if (!selectedWork) return;
+    setExportingExcel(true);
+    setError("");
+    setMessage("");
+    try {
+      exportWorkbookToExcel({
+        fileName: buildFinanceExportFileName(selectedWork),
+        sheets: buildFinanceWorkbookSheets(
+          selectedWork,
+          movements,
+          allCheques.filter((cheque) => cheque.obraId === selectedWork.id)
+        )
+      });
+      setMessage("Excel exportado correctamente.");
+    } catch (exportError) {
+      console.error("No se pudo exportar el Excel de la obra.", exportError);
+      setError("No se pudo exportar el Excel de la obra.");
+    } finally {
+      setExportingExcel(false);
+    }
+  }
+
   async function handleDeleteMovement(movementId: string) {
     if (!selectedWork || !window.confirm("Eliminar este movimiento?")) return;
     await deleteMovement(selectedWork.id, movementId);
@@ -390,7 +424,11 @@ export default function FinancesPage() {
         onBack={() => navigate("/finanzas-obras")}
         onAddMovement={openMovement}
         onEditWork={openEditWork}
+        onExportExcel={handleExportFinancialExcel}
+        canExportExcel={canManageFinancesForUser(profile)}
+        exportingExcel={exportingExcel}
         onDeleteMovement={handleDeleteMovement}
+        cheques={allCheques.filter((cheque) => cheque.obraId === selectedWork.id)}
         message={message}
         error={error}
         workModal={workModal}
@@ -564,7 +602,11 @@ function FinancialDetail({
   onCreateProveedor,
   setMovementForm,
   onSaveMovement,
-  onCloseMovementModal
+  onCloseMovementModal,
+  onExportExcel,
+  canExportExcel,
+  exportingExcel,
+  cheques
 }: {
   obra: Obra;
   movements: FinancialMovement[];
@@ -592,6 +634,10 @@ function FinancialDetail({
   setMovementForm: (values: ReturnType<typeof emptyMovementForm>) => void;
   onSaveMovement: (event: FormEvent<HTMLFormElement>) => void;
   onCloseMovementModal: () => void;
+  onExportExcel: () => void;
+  canExportExcel: boolean;
+  exportingExcel: boolean;
+  cheques: Cheque[];
 }) {
   const [expandedMovements, setExpandedMovements] = useState<Record<string, boolean>>({});
   const totalContratado = getTotalContratado(obra);
@@ -620,6 +666,17 @@ function FinancialDetail({
           <p className="text-sm font-black uppercase text-next-blue">Administracion</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">FINANZAS DE OBRA</h1>
         </div>
+        {canExportExcel ? (
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-next-blue px-4 text-sm font-black text-white shadow-soft transition hover:bg-next-blue/90 disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            onClick={onExportExcel}
+            disabled={exportingExcel}
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            {exportingExcel ? "Exportando..." : "Exportar Excel"}
+          </button>
+        ) : null}
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}
@@ -739,6 +796,20 @@ function FinancialDetail({
           total={totalIngresos}
         />
       </section>
+
+      {cheques.length ? (
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-soft">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-black text-next-text">Cheques vinculados</h2>
+              <p className="mt-1 text-sm font-semibold text-next-muted">Tambien se incluyen en el Excel de la obra.</p>
+            </div>
+            <span className="rounded-full bg-next-blue/10 px-3 py-1 text-xs font-black uppercase text-next-blue">
+              {cheques.length} registros
+            </span>
+          </div>
+        </section>
+      ) : null}
 
       {workModal ? (
         <WorkModal
@@ -1874,6 +1945,146 @@ function formatMovementType(type: FinancialMovementKind): string {
 function formatFinancialStatus(status: FinancialStatus): string {
   return status === "Atencion" ? "Atención" : status;
 }
+function buildFinanceWorkbookSheets(obra: Obra, movements: FinancialMovement[], cheques: Cheque[]): ExcelSheet[] {
+  const totalContratado = getTotalContratado(obra);
+  const totalIngresos = calculateTotalIngresos(movements);
+  const totalCompras = movements
+    .filter((movement) => movement.tipo === "compra")
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const totalEgresosOperativos = movements
+    .filter((movement) => movement.tipo === "egreso")
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const totalEgresos = calculateTotalEgresos(movements);
+  const resultado = calculateResultadoActual(obra, movements);
+  const saldo = calculateSaldoPendiente(obra, movements);
+  const margen = calculateMargenActual(obra, movements);
+  const egresosByCategory = groupEgresosByCategoria(movements);
+  const ingresosByCategory = groupIngresosByCategoria(movements);
+  const egresosEntries = Object.entries(egresosByCategory).filter(([, value]) => value > 0);
+  const ingresosEntries = Object.entries(ingresosByCategory).filter(([, value]) => value > 0);
+
+  return [
+    {
+      name: "Resumen",
+      rows: [
+        { Dato: "Nombre de obra", Valor: obra.nombre },
+        { Dato: "Cliente", Valor: obra.clienteNombre ?? obra.cliente },
+        { Dato: "Arquitecto", Valor: obra.arquitecto ?? "" },
+        { Dato: "Direccion", Valor: obra.direccion ?? obra.ubicacion ?? "" },
+        { Dato: "Fecha de inicio", Valor: obra.fechaInicio ?? "" },
+        { Dato: "Fecha comprometida", Valor: obra.fechaComprometida ?? obra.fechaEntrega ?? "" },
+        { Dato: "Estado", Valor: obra.estado },
+        { Dato: "Presupuesto aprobado", Valor: obra.presupuestoAprobado ?? obra.montoAprobado ?? 0 },
+        { Dato: "Adicionales", Valor: obra.adicionalesAprobados ?? 0 },
+        { Dato: "Descuentos", Valor: obra.descuentos ?? 0 },
+        { Dato: "Total contratado", Valor: totalContratado },
+        { Dato: "Total ingresado", Valor: totalIngresos },
+        { Dato: "Total compras", Valor: totalCompras },
+        { Dato: "Egresos operativos", Valor: totalEgresosOperativos },
+        { Dato: "Total egresado", Valor: totalEgresos },
+        { Dato: "Resultado actual", Valor: resultado },
+        { Dato: "Saldo pendiente", Valor: saldo },
+        { Dato: "Margen actual", Valor: `${margen}%` }
+      ]
+    },
+    movements.length
+      ? {
+          name: "Movimientos",
+          rows: movements.map((movement) => ({
+            Fecha: movement.fecha,
+            Tipo: movement.tipo,
+            Concepto: movement.concepto,
+            Categoria: movement.categoria,
+            "Proveedor / Cliente": getMovementPartyForExport(movement, obra),
+            "Metodo de pago": movement.metodoPago ?? "",
+            Banco: movement.bancoCheque ?? "",
+            "Nro cheque": movement.numeroCheque ?? "",
+            "Fecha emision cheque": movement.fechaEmisionCheque ?? "",
+            "Fecha cobro cheque": movement.fechaCobroCheque ?? "",
+            Cantidad: movement.cantidad ?? null,
+            Unidad: movement.unidad ? formatUnitLabel(normalizeUnit(movement.unidad), movement.cantidad ?? 0) : "",
+            Ingreso: movement.tipo === "ingreso" ? movement.monto : null,
+            Egreso: movement.tipo === "compra" || movement.tipo === "egreso" ? movement.monto : null,
+            Observacion: movement.observacion ?? ""
+          }))
+        }
+      : {
+          name: "Movimientos",
+          aoa: [["Todavia no hay movimientos cargados."]]
+        },
+    egresosEntries.length
+      ? {
+          name: "Categorias",
+          rows: egresosEntries.map(([categoria, total]) => ({
+            Categoria: categoria,
+            Total: total
+          }))
+        }
+      : {
+          name: "Categorias",
+          aoa: [["Todavia no hay compras cargadas."]]
+        },
+    ingresosEntries.length
+      ? {
+          name: "Ingresos",
+          rows: ingresosEntries.map(([categoria, total]) => ({
+            "Tipo de ingreso": categoria,
+            Total: total
+          }))
+        }
+      : {
+          name: "Ingresos",
+          aoa: [["Todavia no hay ingresos cargados."]]
+        },
+    cheques.length
+      ? {
+          name: "Cheques",
+          rows: cheques.map((cheque) => ({
+            Tipo: cheque.tipo,
+            Estado: cheque.estado,
+            "Cliente / Proveedor": cheque.terceroNombre,
+            Banco: cheque.bancoCheque ?? "",
+            "Nro cheque": cheque.numeroCheque,
+            "Fecha emision": cheque.fechaEmisionCheque,
+            "Fecha cobro/vencimiento": getFinanceChequeDueDate(cheque),
+            Monto: cheque.monto,
+            Observacion: cheque.observacion ?? ""
+          }))
+        }
+      : {
+          name: "Cheques",
+          aoa: [["No hay cheques vinculados a esta obra."]]
+        }
+  ];
+}
+
+function buildFinanceExportFileName(obra: Obra): string {
+  const normalizedName = sanitizeStorageFileName(obra.nombre || "obra")
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase();
+  return `finanzas-${normalizedName || "obra"}-${getTodayInputDate()}.xlsx`;
+}
+
+function getMovementPartyForExport(movement: FinancialMovement, obra: Obra): string {
+  if (movement.tipo === "ingreso") {
+    return movement.pagadorNombre
+      ?? movement.clienteNombre
+      ?? movement.tercero
+      ?? obra.clienteNombre
+      ?? obra.cliente
+      ?? "";
+  }
+
+  return movement.proveedorNombre
+    ?? movement.tercero
+    ?? movement.clienteNombre
+    ?? "";
+}
+
+function getFinanceChequeDueDate(cheque: Cheque): string {
+  return cheque.fechaCobroCheque || cheque.fechaVencimientoCheque || cheque.fechaEmisionCheque;
+}
+
 function getMovementThirdParty(values: ReturnType<typeof emptyMovementForm>): string | undefined {
   const name = values.proveedorNombre || values.tercero;
   return name ? toTitleCase(name) : undefined;

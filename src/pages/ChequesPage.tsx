@@ -2,7 +2,6 @@ import { Download, Eye, FileSpreadsheet, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import * as XLSX from "xlsx";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -11,6 +10,7 @@ import {
   updateCheque
 } from "../lib/firestore";
 import type { Cheque, ChequeStatus } from "../types";
+import { exportWorkbookToExcel } from "../utils/excel";
 import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
 
 const receivedStatuses: ChequeStatus[] = ["recibido", "depositado", "cobrado", "rechazado", "anulado"];
@@ -127,10 +127,10 @@ export default function ChequesPage() {
       "Fecha emisión": cheque.fechaEmisionCheque,
       Observación: cheque.observacion ?? ""
     }));
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Cheques");
-    XLSX.writeFile(workbook, `cheques-next-control-${getTodayInputDate()}.xlsx`);
+    exportWorkbookToExcel({
+      fileName: `cheques-next-control-${getTodayInputDate()}.xlsx`,
+      sheets: [{ name: "Cheques", rows }]
+    });
     setMessage("Exportacion generada correctamente.");
   }
 
