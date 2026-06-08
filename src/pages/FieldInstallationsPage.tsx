@@ -386,22 +386,22 @@ export default function FieldInstallationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7fb] px-4 py-4 text-next-text">
+    <main className="min-h-screen bg-[#f6f7f9] px-4 py-4 text-next-text">
       <div className="mx-auto max-w-xl space-y-4 pb-8 lg:max-w-3xl">
-        <header className="flex items-center justify-between rounded-[1.35rem] bg-next-navy px-4 py-3 text-white shadow-soft">
+        <header className="flex items-center justify-between rounded-[1.35rem] border border-white/80 bg-white/90 px-4 py-3 shadow-[0_18px_44px_rgba(15,23,42,0.06)] backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
-            <BrandLogo variant="compact" className="shrink-0" />
+            <BrandLogo variant="compact" className="shrink-0 rounded-2xl bg-next-navy p-1 shadow-sm" />
             <div className="min-w-0">
-              <p className="text-sm font-black leading-tight">NEXT CONTROL</p>
-              <p className="text-xs font-semibold text-white/65">Cuadrilla en obra</p>
+              <p className="text-sm font-black leading-tight text-next-text">NEXT CONTROL</p>
+              <p className="text-xs font-semibold text-next-muted">Cuadrilla en obra</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden min-w-0 text-right sm:block">
-              <p className="truncate text-xs font-black">{profile?.teamName ?? profile?.nombre ?? "Equipo"}</p>
-              <p className="text-[10px] font-bold uppercase text-white/55">{formatRole(profile?.role)}</p>
+              <p className="truncate text-xs font-black text-next-text">{profile?.teamName ?? profile?.nombre ?? "Equipo"}</p>
+              <p className="text-[10px] font-bold uppercase text-next-muted">{formatRole(profile?.role)}</p>
             </div>
-            <button className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/10" type="button" title="Notificaciones">
+            <button className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-next-blue ring-1 ring-slate-200" type="button" title="Notificaciones">
               <Bell className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
@@ -422,30 +422,32 @@ export default function FieldInstallationsPage() {
           </button>
         ) : null}
 
-        <section className="overflow-hidden rounded-[1.5rem] bg-white shadow-soft ring-1 ring-slate-200">
-          <div className="relative overflow-hidden bg-next-navy" style={{ height: 176 }}>
-            {activeWork?.renderUrl || activeWork?.imageUrl ? (
-              <img className="h-full w-full object-cover" src={activeWork.renderUrl ?? activeWork.imageUrl} alt={activeWork.nombre} />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22),transparent_32%),linear-gradient(135deg,#08295a,#15558f)]">
-                <BriefcaseBusiness className="h-14 w-14 text-white/85" aria-hidden="true" />
-              </div>
-            )}
-            <div className="absolute bg-gradient-to-t from-slate-950/70 to-transparent p-4 text-white" style={{ bottom: 0, left: 0, right: 0 }}>
-              <div className="mb-2 flex items-center gap-2">
-                <StatusBadge label={activeWorkday ? "Jornada activa" : activeTask ? "Lista para iniciar" : "Sin jornada"} status={activeWorkday ? "success" : activeTask ? "info" : "neutral"} />
-              </div>
-              <h1 className="text-xl font-black leading-tight">{activeWorkday?.obraNombre ?? activeTask?.obraNombre ?? "No hay jornada activa"}</h1>
-              <p className="mt-1 truncate text-sm font-semibold text-white/80">
+        <section className="rounded-[1.65rem] border border-white/80 bg-white/95 p-3 shadow-[0_22px_55px_rgba(15,23,42,0.07)]">
+          <div className="flex min-w-0 gap-3">
+            <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-[1.25rem] border border-slate-100 bg-[#f7f9fc] p-2 shadow-inner">
+              {activeWork?.renderUrl || activeWork?.imageUrl ? (
+                <img className="max-h-full max-w-full object-contain" src={activeWork.renderUrl ?? activeWork.imageUrl} alt={activeWork.nombre} />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center rounded-[1rem] bg-[linear-gradient(145deg,#eef5ff,#ffffff)]">
+                  <BriefcaseBusiness className="h-10 w-10 text-next-blue/65" aria-hidden="true" />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1 py-1">
+              <StatusBadge label={activeWorkday ? "Jornada activa" : activeTask ? "Lista para iniciar" : "Sin jornada"} status={activeWorkday ? "success" : activeTask ? "info" : "neutral"} />
+              <h1 className="mt-3 text-2xl font-black leading-tight text-next-text">{activeWorkday?.obraNombre ?? activeTask?.obraNombre ?? "No hay jornada activa"}</h1>
+              <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-next-muted">
                 {activeWork?.direccion ?? activeWork?.ubicacion ?? "Selecciona una tarea para iniciar jornada"}
               </p>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Obra asignada para hoy</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 p-4">
-            <MiniMetric label="Inicio" value={activeWorkday?.horaInicio ?? "--:--"} />
-            <MiniMetric label="Ubicacion" value={activeWorkday?.ubicacionInicio ? "Registrada" : activeWorkday ? "Sin GPS" : "Pendiente"} />
-            <MiniMetric label="Rol" value={formatRole(profile?.role)} />
-          </div>
+        </section>
+
+        <section className="grid grid-cols-3 gap-2">
+          <MiniMetric label="Inicio" value={activeWorkday?.horaInicio ?? "--:--"} />
+          <MiniMetric label="Ubicacion" value={activeWorkday?.ubicacionInicio ? "Registrada" : activeWorkday ? "Sin GPS" : "Pendiente"} />
+          <MiniMetric label="Rol" value={formatRole(profile?.role)} />
         </section>
 
         <section className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-soft">
@@ -513,9 +515,9 @@ export default function FieldInstallationsPage() {
               <TaskCard
                 key={task.id}
                 activeWorkday={activeWorkday}
-        onProcess={() => void handleTaskStatus(task, "en_proceso")}
-        onReport={() => openTaskReport(task)}
-        onStart={() => void handleStart(task)}
+                onProcess={() => void handleTaskStatus(task, "en_proceso")}
+                onReport={() => openTaskReport(task)}
+                onStart={() => void handleStart(task)}
                 saving={saving}
                 task={task}
               />
@@ -676,8 +678,8 @@ function TaskCard({
 
 function MiniMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-xl bg-next-bg px-3 py-2">
-      <p className="truncate text-[10px] font-black uppercase text-next-muted">{label}</p>
+    <div className="min-w-0 rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+      <p className="truncate text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 truncate text-xs font-black text-next-text" title={value}>{value}</p>
     </div>
   );
