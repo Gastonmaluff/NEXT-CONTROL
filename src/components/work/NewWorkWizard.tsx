@@ -13,10 +13,11 @@ import {
   updateObra
 } from "../../lib/firestore";
 import { buildWorkRenderPath, sanitizeStorageFileName, uploadFile } from "../../lib/storageUpload";
-import type { Cliente, Obra, ProgressCalculationMode, WorkStatus } from "../../types";
+import type { Cliente, Obra, ProgressCalculationMode, WorkBreakdownLoadMode, WorkBreakdownUnit, WorkStatus } from "../../types";
 import { formatCurrencyPYG, getTodayInputDate } from "../../utils/formatters";
 import { toTitleCase } from "../../utils/text";
 import { normalizeUnit, type OperationalUnit } from "../../utils/units";
+import { calculateM2Total, calculateM2Unitario, calculateRubricQuantityFromItems, roundMeasure } from "../../utils/workBreakdown";
 
 type WizardDestination = "avance" | "finanzas" | "control";
 
@@ -30,11 +31,26 @@ const maxRenderFileSize = 8 * 1024 * 1024;
 
 type RubricDraft = {
   nombre: string;
+  unidadPrincipal: WorkBreakdownUnit | "";
+  modoCarga: WorkBreakdownLoadMode;
   cantidadTotalPrevista: string;
   unidad: OperationalUnit | "";
   pesoOperativo: string;
   modoCalculo: ProgressCalculationMode;
   avanceManualPermitido: boolean;
+  requiereProduccion: boolean;
+  items: RubricItemDraft[];
+};
+
+type RubricItemDraft = {
+  id: string;
+  descripcion: string;
+  ancho: string;
+  alto: string;
+  cantidad: string;
+  unidad: WorkBreakdownUnit | "";
+  fabricarEnTaller: boolean;
+  observacion: string;
 };
 
 const statuses: WorkStatus[] = [
@@ -127,6 +143,10 @@ export default function NewWorkWizard({
     [financial]
   );
   const totalWeight = rubrics.reduce((sum, rubro) => sum + Number(rubro.pesoOperativo || 0), 0);
+  const productionCount = rubrics.reduce((sum, rubro) =>
+    sum + (rubro.modoCarga === "detalle"
+      ? rubro.items.filter((item) => item.fabricarEnTaller).length
+      : rubro.requiereProduccion ? 1 : 0), 0);
 
   function closeSafely() {
     if (dirty && !window.confirm("Cerrar sin guardar la nueva obra?")) {
@@ -170,17 +190,31 @@ export default function NewWorkWizard({
 
     if (currentStep === 3 && configureProgressNow) {
       if (!rubrics.length) return "Agrega al menos un rubro o elegi configurar despues.";
-      if (rubrics.some((rubro) => !rubro.nombre.trim() || !rubro.unidad.trim())) {
+      if (rubrics.some((rubro) => !rubro.nombre.trim() || !rubro.unidadPrincipal.trim())) {
         return "Todos los rubros necesitan nombre y unidad.";
       }
-      if (rubrics.some((rubro) => rubro.cantidadTotalPrevista === "" || Number(rubro.cantidadTotalPrevista) <= 0)) {
+      if (rubrics.some((rubro) => getRubricQuantity(rubro) <= 0)) {
         return "Todos los rubros necesitan una cantidad total prevista mayor a cero.";
       }
       if (rubrics.some((rubro) => rubro.pesoOperativo === "" || Number(rubro.pesoOperativo) < 0 || Number(rubro.pesoOperativo) > 100)) {
         return "Todos los rubros necesitan un peso entre 0 y 100.";
       }
-      if (rubrics.some((rubro) => Number(rubro.cantidadTotalPrevista || 0) < 0 || Number.isNaN(Number(rubro.cantidadTotalPrevista)) || Number.isNaN(Number(rubro.pesoOperativo)))) {
+      if (rubrics.some((rubro) => Number.isNaN(getRubricQuantity(rubro)) || Number.isNaN(Number(rubro.pesoOperativo)))) {
         return "Revisa cantidades y pesos. No pueden ser negativos ni invalidos.";
+      }
+      const invalidDetailed = rubrics.some((rubro) =>
+        rubro.modoCarga === "detalle" && (
+          !rubro.items.length ||
+          rubro.items.some((item) =>
+            !item.descripcion.trim() ||
+            !item.unidad ||
+            Number(item.cantidad || 0) <= 0 ||
+            (item.unidad === "m2" && (Number(item.ancho || 0) <= 0 || Number(item.alto || 0) <= 0))
+          )
+        )
+      );
+      if (invalidDetailed) {
+        return "En carga detallada, cada item necesita descripcion, unidad, cantidad y medidas cuando se mide en m2.";
       }
       if (Math.abs(totalWeight - 100) > 0.01) {
         return "La suma de pesos debe dar 100%.";
@@ -234,9 +268,29 @@ export default function NewWorkWizard({
     const normalizedRubrics = rubrics.map((rubro) => ({
       ...rubro,
       nombre: toTitleCase(rubro.nombre),
-      unidad: normalizeUnit(rubro.unidad) || rubro.unidad.trim(),
-      cantidad: Number(rubro.cantidadTotalPrevista || 0),
-      peso: Number(rubro.pesoOperativo || 0)
+      unidad: normalizeUnit(rubro.unidadPrincipal || rubro.unidad) || "unidad",
+      cantidad: getRubricQuantity(rubro),
+      peso: Number(rubro.pesoOperativo || 0),
+      items: rubro.items.map((item) => {
+        const unit = normalizeUnit(item.unidad) || "unidad";
+        const quantity = Number(item.cantidad || 0);
+        const width = item.ancho === "" ? undefined : Number(item.ancho);
+        const height = item.alto === "" ? undefined : Number(item.alto);
+        return {
+          id: item.id,
+          descripcion: toTitleCase(item.descripcion),
+          ancho: width,
+          alto: height,
+          cantidad: quantity,
+          unidad: unit,
+          m2Unitario: unit === "m2" ? calculateM2Unitario(width, height) : undefined,
+          m2Total: unit === "m2" ? calculateM2Total(width, height, quantity) : undefined,
+          fabricarEnTaller: item.fabricarEnTaller,
+          estadoProduccion: "pendiente" as const,
+          cantidadProducida: 0,
+          observacion: item.observacion.trim() || undefined
+        };
+      })
     }));
 
     try {
@@ -322,10 +376,17 @@ export default function NewWorkWizard({
                 obraId: created.id,
                 nombre: rubro.nombre,
                 unidad: rubro.unidad,
+                unidadPrincipal: rubro.unidad,
+                modoCarga: rubro.modoCarga,
                 cantidadTotalPrevista: rubro.cantidad,
                 pesoOperativo: rubro.peso,
                 modoCalculo: rubro.modoCalculo,
+                avanceManual: rubro.avanceManualPermitido,
                 avanceManualPermitido: rubro.avanceManualPermitido,
+                requiereProduccion: rubro.requiereProduccion,
+                items: rubro.items,
+                cantidadProducida: 0,
+                estadoProduccion: "pendiente",
                 orden: index + 1
               })
             )
@@ -565,47 +626,100 @@ export default function NewWorkWizard({
                     Suma de pesos: {formatWeight(totalWeight)}%. {Math.abs(totalWeight - 100) <= 0.01 ? "Correcto." : "Debe dar 100%."}
                   </div>
                   <div className="space-y-3">
-                    {rubrics.map((rubro, index) => (
-                      <div key={index} className="rounded-lg border border-slate-200 p-3">
-                        <div className="grid items-start gap-2 lg:grid-cols-[minmax(180px,34%)_minmax(100px,14%)_minmax(150px,22%)_minmax(120px,18%)_minmax(44px,7%)]">
-                        <RubricField label="Rubro">
-                          <input className="field h-9 px-2 text-xs" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
-                        </RubricField>
-                        <RubricField label="Unidad">
-                          <select className="field h-9 px-2 text-xs" value={rubro.unidad} onChange={(event) => updateRubricUnit(index, normalizeUnit(event.target.value))}>
-                            <option value="" disabled>Seleccionar unidad</option>
-                            <option value="m2">m²</option>
-                            <option value="unidad">unidad</option>
-                          </select>
-                        </RubricField>
-                        <RubricField label="Cantidad total prevista">
-                          <input className="field h-9 px-2 text-xs" min={0} type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
-                        </RubricField>
-                        <RubricField label="Peso del rubro">
-                          <input className="field h-9 px-2 text-right text-xs" max={100} min={0} type="number" value={rubro.pesoOperativo} onChange={(event) => updateRubric(index, { pesoOperativo: event.target.value })} />
-                        </RubricField>
-                        <div className="min-w-0">
-                          <div className="flex h-8 items-end text-[10px] font-black uppercase leading-tight text-next-muted">
-                            <span>Eliminar</span>
+                    {rubrics.map((rubro, index) => {
+                      const unit = normalizeUnit(rubro.unidadPrincipal || rubro.unidad);
+                      const calculatedQuantity = getRubricQuantity(rubro);
+                      return (
+                        <div key={index} className="rounded-lg border border-slate-200 p-3">
+                          <div className="grid items-start gap-2 xl:grid-cols-[minmax(180px,25%)_130px_120px_minmax(150px,18%)_120px_44px]">
+                            <RubricField label="Rubro">
+                              <input className="field h-9 px-2 text-xs" value={rubro.nombre} onBlur={() => updateRubric(index, { nombre: toTitleCase(rubro.nombre) })} onChange={(event) => updateRubric(index, { nombre: event.target.value })} />
+                            </RubricField>
+                            <RubricField label="Modo">
+                              <select className="field h-9 px-2 text-xs" value={rubro.modoCarga} onChange={(event) => updateRubricMode(index, event.target.value as WorkBreakdownLoadMode)}>
+                                <option value="simple">Simple</option>
+                                <option value="detalle">Detalle</option>
+                              </select>
+                            </RubricField>
+                            <RubricField label="Unidad">
+                              <select className="field h-9 px-2 text-xs" value={rubro.unidadPrincipal} onChange={(event) => updateRubricUnit(index, normalizeUnit(event.target.value))}>
+                                <option value="" disabled>Seleccionar</option>
+                                <option value="m2">m{String.fromCharCode(178)}</option>
+                                <option value="unidad">unidad</option>
+                              </select>
+                            </RubricField>
+                            <RubricField label={rubro.modoCarga === "detalle" ? "Total calculado" : "Cantidad total prevista"}>
+                              {rubro.modoCarga === "detalle" ? (
+                                <div className="flex h-9 items-center rounded-md bg-next-bg px-2 text-xs font-black text-next-text">
+                                  {calculatedQuantity ? formatMeasure(calculatedQuantity) + " " + (unit === "m2" ? `m${String.fromCharCode(178)}` : "unidad") : "-"}
+                                </div>
+                              ) : (
+                                <input className="field h-9 px-2 text-xs" min={0} step="0.01" type="number" value={rubro.cantidadTotalPrevista} onChange={(event) => updateRubric(index, { cantidadTotalPrevista: event.target.value })} />
+                              )}
+                            </RubricField>
+                            <RubricField label="Peso del rubro">
+                              <input className="field h-9 px-2 text-right text-xs" max={100} min={0} step="0.01" type="number" value={rubro.pesoOperativo} onChange={(event) => updateRubric(index, { pesoOperativo: event.target.value })} />
+                            </RubricField>
+                            <div className="min-w-0">
+                              <div className="flex h-8 items-end text-[10px] font-black uppercase leading-tight text-next-muted">
+                                <span>Eliminar</span>
+                              </div>
+                              <button className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-next-red transition hover:border-next-red hover:bg-red-50" type="button" onClick={() => removeRubric(index)} title="Eliminar rubro" aria-label="Eliminar rubro">
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
                           </div>
-                          <button className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-next-red transition hover:border-next-red hover:bg-red-50" type="button" onClick={() => removeRubric(index)} title="Eliminar rubro" aria-label="Eliminar rubro">
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
+
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <label className="inline-flex items-center gap-2 text-xs font-black text-next-muted">
+                              <input
+                                type="checkbox"
+                                checked={rubro.avanceManualPermitido}
+                                onChange={(event) => updateRubric(index, {
+                                  avanceManualPermitido: event.target.checked,
+                                  modoCalculo: event.target.checked ? "manual" : "cantidad"
+                                })}
+                              />
+                              Usar avance manual
+                            </label>
+                            <label className="inline-flex items-center gap-2 text-xs font-black text-next-muted">
+                              <input
+                                type="checkbox"
+                                checked={rubro.requiereProduccion}
+                                onChange={(event) => updateRubric(index, { requiereProduccion: event.target.checked })}
+                              />
+                              Fabricar en taller
+                            </label>
+                          </div>
+
+                          {rubro.modoCarga === "detalle" ? (
+                            <div className="mt-3 rounded-md bg-next-bg p-3">
+                              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-xs font-black uppercase text-next-blue">Items por medida</p>
+                                  <p className="text-xs font-semibold text-next-muted">Carga ancho, alto y cantidad para calcular m? automaticamente.</p>
+                                </div>
+                                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-next-blue bg-white px-3 text-xs font-black text-next-blue" type="button" onClick={() => addRubricItem(index)}>
+                                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                                  Agregar item
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                {rubro.items.map((item, itemIndex) => (
+                                  <RubricItemRow
+                                    key={item.id}
+                                    item={item}
+                                    onRemove={() => removeRubricItem(index, itemIndex)}
+                                    onUpdate={(data) => updateRubricItem(index, itemIndex, data)}
+                                  />
+                                ))}
+                                {!rubro.items.length ? <EmptyState text="Todavia no hay items cargados en este rubro." /> : null}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                        </div>
-                        <label className="mt-3 inline-flex items-center gap-2 text-xs font-black text-next-muted">
-                          <input
-                            type="checkbox"
-                            checked={rubro.avanceManualPermitido}
-                            onChange={(event) => updateRubric(index, {
-                              avanceManualPermitido: event.target.checked,
-                              modoCalculo: event.target.checked ? "manual" : "cantidad"
-                            })}
-                          />
-                          Usar avance manual
-                        </label>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <button className="inline-flex h-10 items-center gap-2 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={addRubric}>
                     <Plus className="h-4 w-4" aria-hidden="true" />
@@ -630,6 +744,7 @@ export default function NewWorkWizard({
                 <SummaryItem label="Total contratado" value={formatCurrencyPYG(totalContratado)} />
                 <SummaryItem label="Imagen/render" value={renderFile ? `Tiene imagen: ${renderFile.name}` : "Sin imagen"} />
                 <SummaryItem label="Rubros" value={configureProgressNow ? `${rubrics.length} rubro(s)` : "Se configurara despues"} />
+                <SummaryItem label="Produccion taller" value={configureProgressNow ? `${productionCount} item(s)` : "-"} />
                 <SummaryItem label="Suma de pesos" value={configureProgressNow ? `${formatWeight(totalWeight)}%` : "-"} />
               </div>
               <Field label="Despues de crear, abrir">
@@ -692,8 +807,53 @@ export default function NewWorkWizard({
 
   function updateRubricUnit(index: number, unidad: OperationalUnit | "") {
     updateRubric(index, {
-      unidad
+      unidad,
+      unidadPrincipal: unidad as WorkBreakdownUnit | ""
     });
+  }
+
+  function updateRubricMode(index: number, modoCarga: WorkBreakdownLoadMode) {
+    markDirty();
+    setRubrics((current) => current.map((rubro, rowIndex) => {
+      if (rowIndex !== index) return rubro;
+      return {
+        ...rubro,
+        modoCarga,
+        items: modoCarga === "detalle" && !rubro.items.length ? [createEmptyItem()] : rubro.items
+      };
+    }));
+  }
+
+  function addRubricItem(rubricIndex: number) {
+    markDirty();
+    setRubrics((current) => current.map((rubro, rowIndex) =>
+      rowIndex === rubricIndex
+        ? { ...rubro, items: [...rubro.items, createEmptyItem(rubro.unidadPrincipal || "m2")] }
+        : rubro
+    ));
+  }
+
+  function updateRubricItem(rubricIndex: number, itemIndex: number, data: Partial<RubricItemDraft>) {
+    markDirty();
+    setRubrics((current) => current.map((rubro, rowIndex) =>
+      rowIndex === rubricIndex
+        ? {
+            ...rubro,
+            items: rubro.items.map((item, currentItemIndex) =>
+              currentItemIndex === itemIndex ? { ...item, ...data } : item
+            )
+          }
+        : rubro
+    ));
+  }
+
+  function removeRubricItem(rubricIndex: number, itemIndex: number) {
+    markDirty();
+    setRubrics((current) => current.map((rubro, rowIndex) =>
+      rowIndex === rubricIndex
+        ? { ...rubro, items: rubro.items.filter((_, currentItemIndex) => currentItemIndex !== itemIndex) }
+        : rubro
+    ));
   }
 
   function removeRubric(index: number) {
@@ -708,11 +868,15 @@ export default function NewWorkWizard({
       ...current,
       {
         nombre: "",
+        unidadPrincipal: "",
+        modoCarga: "simple",
         cantidadTotalPrevista: "",
         unidad: "",
         pesoOperativo: "",
         modoCalculo: "cantidad",
-        avanceManualPermitido: false
+        avanceManualPermitido: false,
+        requiereProduccion: false,
+        items: []
       }
     ]));
   }
@@ -955,6 +1119,68 @@ function ClienteSelectorModal({
   );
 }
 
+function RubricItemRow({
+  item,
+  onRemove,
+  onUpdate
+}: {
+  item: RubricItemDraft;
+  onRemove: () => void;
+  onUpdate: (data: Partial<RubricItemDraft>) => void;
+}) {
+  const unit = normalizeUnit(item.unidad);
+  const quantity = Number(item.cantidad || 0);
+  const width = item.ancho === "" ? undefined : Number(item.ancho);
+  const height = item.alto === "" ? undefined : Number(item.alto);
+  const m2Unitario = calculateM2Unitario(width, height);
+  const m2Total = calculateM2Total(width, height, quantity);
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-2">
+      <div className="grid gap-2 xl:grid-cols-[minmax(160px,1fr)_92px_82px_82px_82px_120px_44px]">
+        <RubricField label="Detalle">
+          <input className="field h-9 px-2 text-xs" value={item.descripcion} onBlur={() => onUpdate({ descripcion: toTitleCase(item.descripcion) })} onChange={(event) => onUpdate({ descripcion: event.target.value })} />
+        </RubricField>
+        <RubricField label="Unidad">
+          <select className="field h-9 px-2 text-xs" value={item.unidad} onChange={(event) => onUpdate({ unidad: normalizeUnit(event.target.value) as WorkBreakdownUnit | "" })}>
+            <option value="" disabled>Seleccionar</option>
+            <option value="m2">m{String.fromCharCode(178)}</option>
+            <option value="unidad">unidad</option>
+          </select>
+        </RubricField>
+        <RubricField label="Ancho">
+          <input className="field h-9 px-2 text-xs" min={0} step="0.01" type="number" value={item.ancho} onChange={(event) => onUpdate({ ancho: event.target.value })} />
+        </RubricField>
+        <RubricField label="Alto">
+          <input className="field h-9 px-2 text-xs" min={0} step="0.01" type="number" value={item.alto} onChange={(event) => onUpdate({ alto: event.target.value })} />
+        </RubricField>
+        <RubricField label="Cantidad">
+          <input className="field h-9 px-2 text-xs" min={0} step="0.01" type="number" value={item.cantidad} onChange={(event) => onUpdate({ cantidad: event.target.value })} />
+        </RubricField>
+        <RubricField label="Resultado">
+          <div className="flex h-9 items-center rounded-md bg-next-bg px-2 text-[11px] font-black text-next-text">
+            {unit === "m2" && m2Total ? `${formatMeasure(m2Total)} m${String.fromCharCode(178)}` : `${formatMeasure(quantity)} unidad`}
+          </div>
+        </RubricField>
+        <div>
+          <div className="flex h-8 items-end text-[10px] font-black uppercase leading-tight text-next-muted">Quitar</div>
+          <button className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-next-red" type="button" onClick={onRemove} title="Eliminar item">
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-next-muted">
+        <span>m{String.fromCharCode(178)} unitario: {m2Unitario ? formatMeasure(m2Unitario) : "-"}</span>
+        <label className="inline-flex items-center gap-2 font-black">
+          <input type="checkbox" checked={item.fabricarEnTaller} onChange={(event) => onUpdate({ fabricarEnTaller: event.target.checked })} />
+          Fabricar en taller / Enviar a produccion
+        </label>
+        <input className="field h-8 min-w-[180px] flex-1 px-2 text-xs" placeholder="Observacion opcional" value={item.observacion} onChange={(event) => onUpdate({ observacion: event.target.value })} />
+      </div>
+    </div>
+  );
+}
+
 function Section({
   children,
   description,
@@ -1086,6 +1312,47 @@ function formatFileSize(bytes: number) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createEmptyItem(unit: WorkBreakdownUnit | "" = ""): RubricItemDraft {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    descripcion: "",
+    ancho: "",
+    alto: "",
+    cantidad: "",
+    unidad: unit,
+    fabricarEnTaller: false,
+    observacion: ""
+  };
+}
+
+function getRubricQuantity(rubro: RubricDraft): number {
+  const unit = normalizeUnit(rubro.unidadPrincipal || rubro.unidad) || "unidad";
+  if (rubro.modoCarga === "detalle") {
+    return calculateRubricQuantityFromItems(unit, rubro.items.map((item) => ({
+      id: item.id,
+      descripcion: item.descripcion,
+      ancho: item.ancho === "" ? undefined : Number(item.ancho),
+      alto: item.alto === "" ? undefined : Number(item.alto),
+      cantidad: Number(item.cantidad || 0),
+      unidad: normalizeUnit(item.unidad) || "unidad",
+      m2Unitario: calculateM2Unitario(Number(item.ancho || 0), Number(item.alto || 0)),
+      m2Total: calculateM2Total(Number(item.ancho || 0), Number(item.alto || 0), Number(item.cantidad || 0)),
+      fabricarEnTaller: item.fabricarEnTaller,
+      estadoProduccion: "pendiente",
+      cantidadProducida: 0,
+      observacion: item.observacion
+    })));
+  }
+  return roundMeasure(Number(rubro.cantidadTotalPrevista || 0));
+}
+
+function formatMeasure(value: number) {
+  return new Intl.NumberFormat("es-PY", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function distributeRubricWeights(rubrics: RubricDraft[]): RubricDraft[] {

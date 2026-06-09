@@ -30,9 +30,12 @@ export type PipelineStatus =
   | "Perdido";
 
 export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
+export type ProductionItemStatus = "pendiente" | "en_proceso" | "parcial" | "completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
 export type ProgressMaterialStatus = "Pendiente" | "Solicitado" | "Recibido" | "Resuelto";
 export type ProgressCalculationMode = "cantidad" | "manual";
+export type WorkBreakdownLoadMode = "simple" | "detalle";
+export type WorkBreakdownUnit = "m2" | "unidad";
 export type PaymentMethod = "Efectivo" | "Transferencia" | "Cheque" | "Otro";
 export type FinancialPaymentMethod = PaymentMethod | "Credito";
 export type InstallationTaskStatus = "Pendiente" | "Completada";
@@ -200,17 +203,44 @@ export type ProgressItem = {
   avance: number;
 };
 
+export type WorkBreakdownItem = {
+  id: string;
+  descripcion: string;
+  ancho?: number;
+  alto?: number;
+  cantidad: number;
+  unidad: WorkBreakdownUnit;
+  m2Unitario?: number;
+  m2Total?: number;
+  fabricarEnTaller: boolean;
+  estadoProduccion: ProductionItemStatus;
+  cantidadProducida: number;
+  observacion?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
 export type WorkProgressRubric = {
   id: string;
   obraId: string;
   nombre: string;
   unidad: string;
+  unidadPrincipal?: WorkBreakdownUnit;
+  modoCarga?: WorkBreakdownLoadMode;
   cantidadTotalPrevista: number;
   equivalenciaM2PorUnidad?: number;
   totalEquivalenteM2?: number;
   pesoOperativo: number;
   modoCalculo: ProgressCalculationMode;
+  avanceManual?: boolean;
   avanceManualPermitido: boolean;
+  requiereProduccion?: boolean;
+  items?: WorkBreakdownItem[];
+  cantidadProducida?: number;
+  estadoProduccion?: ProductionItemStatus;
+  observacionProduccion?: string;
+  fechaProduccionActualizada?: string;
+  responsableProduccion?: string;
   orden: number;
   createdAt: string;
   updatedAt?: string;

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { canManageFinancesForUser, canManageUsers } from "./lib/roles";
+import AdminInstallationsPage from "./pages/AdminInstallationsPage";
 import ChequesPage from "./pages/ChequesPage";
 import CrmPage from "./pages/CrmPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -9,6 +10,7 @@ import FieldInstallationsPage from "./pages/FieldInstallationsPage";
 import FinancesPage from "./pages/FinancesPage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import ProductionPage from "./pages/ProductionPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
 import SettingsPage from "./pages/SettingsPage";
 import SupervisorPage from "./pages/SupervisorPage";
@@ -68,7 +70,7 @@ function AppRoutes() {
             <Route path="/finanzas-obras" element={<FinancesPage />} />
             <Route path="/finanzas-obras/:obraId" element={<FinancesPage />} />
             <Route path="/presupuestos" element={<PlaceholderPage title="Presupuestos" />} />
-            <Route path="/produccion" element={<ProjectControlPage />} />
+            <Route path="/produccion" element={<ProductionPage />} />
             <Route
               path="/cheques"
               element={canManageFinancesForUser(profile) ? <ChequesPage /> : <Navigate to="/control" replace />}
@@ -76,7 +78,7 @@ function AppRoutes() {
             <Route path="/cobros" element={<Navigate to="/cheques" replace />} />
             <Route path="/proveedores" element={<SuppliersPage />} />
             <Route path="/tareas" element={<TasksPage />} />
-            <Route path="/instalaciones" element={<FieldInstallationsPage />} />
+            <Route path="/instalaciones" element={<AdminInstallationsPage />} />
             <Route path="/inventario" element={<PlaceholderPage title="Inventario" />} />
             <Route path="/reportes" element={<PlaceholderPage title="Reportes" />} />
             <Route path="/configuracion" element={<SettingsPage />} />
