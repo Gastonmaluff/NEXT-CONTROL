@@ -680,7 +680,7 @@ export default function NewWorkWizard({
                                   modoCalculo: event.target.checked ? "manual" : "cantidad"
                                 })}
                               />
-                              Usar avance manual
+                              Avance manual (porcentaje directo)
                             </label>
                             <label className="inline-flex items-center gap-2 text-xs font-black text-next-muted">
                               <input
@@ -691,6 +691,11 @@ export default function NewWorkWizard({
                               Fabricar en taller
                             </label>
                           </div>
+                          {rubro.avanceManualPermitido ? (
+                            <p className="mt-2 text-xs font-semibold text-next-muted">
+                              Permite cargar un porcentaje justificado cuando no sea posible medir por cantidad instalada.
+                            </p>
+                          ) : null}
 
                           {rubro.modoCarga === "detalle" ? (
                             <div className="mt-3 rounded-md bg-next-bg p-3">

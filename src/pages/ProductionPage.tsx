@@ -13,7 +13,7 @@ import {
 import type { Obra, ProductionItemStatus, WorkProgressRubric } from "../types";
 import { formatDateShort } from "../utils/formatters";
 import { formatUnitLabel } from "../utils/units";
-import { getProductionRows, productionProgress, type ProductionWorkRow } from "../utils/workBreakdown";
+import { calculateM2Total, calculateM2Unitario, getProductionRows, productionProgress, type ProductionWorkRow } from "../utils/workBreakdown";
 
 const statusLabels: Record<ProductionItemStatus, string> = {
   pendiente: "Pendiente",
@@ -218,6 +218,19 @@ export default function ProductionPage() {
               <ProgressBar value={productionProgress(row.cantidadProducida, row.cantidadTotal)} />
               <p className="text-right text-2xl font-black text-next-blue">{productionProgress(row.cantidadProducida, row.cantidadTotal)}%</p>
             </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <InfoCell label="Medida" value={formatMeasureLabel(row)} />
+              <InfoCell label="m2 unitario" value={formatM2Unit(row)} />
+              <InfoCell label="m2 total" value={formatM2Total(row)} />
+              <InfoCell label="Pendiente" value={`${Math.max(row.cantidadTotal - row.cantidadProducida, 0)} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Ultima actualizacion" value={formatProductionUpdated(row)} />
+              <InfoCell label="Responsable" value={formatProductionOwner(row)} />
+              <InfoCell label="Rubro" value={row.rubro.nombre} />
+              <InfoCell label="Unidad" value={formatUnitLabel(row.unidad, 1)} />
+            </div>
+            {row.observacion ? (
+              <p className="mt-3 rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">{row.observacion}</p>
+            ) : null}
           </article>
         )) : <EmptyState text="No hay items marcados para fabricar en taller." />}
       </section>
@@ -271,6 +284,44 @@ function Metric({ icon: Icon, value, tone = "blue" }: { icon: typeof Factory; va
       </span>
     </div>
   );
+}
+
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-next-bg px-3 py-2">
+      <p className="text-[11px] font-black uppercase text-next-muted">{label}</p>
+      <p className="mt-1 truncate text-xs font-black text-next-text" title={value}>{value}</p>
+    </div>
+  );
+}
+
+function formatMeasureLabel(row: ProductionWorkRow) {
+  if (row.item?.ancho && row.item?.alto) {
+    return `${row.item.ancho} x ${row.item.alto}`;
+  }
+  return "Carga simple";
+}
+
+function formatM2Unit(row: ProductionWorkRow) {
+  if (!row.item?.ancho || !row.item?.alto) return "-";
+  return `${calculateM2Unitario(row.item.ancho, row.item.alto)} m2`;
+}
+
+function formatM2Total(row: ProductionWorkRow) {
+  if (row.item?.ancho && row.item?.alto) {
+    return `${row.item.m2Total ?? calculateM2Total(row.item.ancho, row.item.alto, row.item.cantidad)} m2`;
+  }
+  if (row.unidad === "m2") return `${row.cantidadTotal} m2`;
+  return "-";
+}
+
+function formatProductionUpdated(row: ProductionWorkRow) {
+  const value = row.item?.updatedAt ?? row.rubro.fechaProduccionActualizada ?? row.rubro.updatedAt;
+  return value ? formatDateShort(value) : "-";
+}
+
+function formatProductionOwner(row: ProductionWorkRow) {
+  return row.item?.updatedBy ?? row.rubro.responsableProduccion ?? "-";
 }
 
 function badgeForProduction(status: ProductionItemStatus) {

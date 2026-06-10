@@ -63,6 +63,7 @@ import {
   validateRubricWeights
 } from "../utils/progress";
 import { formatUnitLabel, normalizeUnit } from "../utils/units";
+import { calculateM2Total, productionProgress } from "../utils/workBreakdown";
 
 const workStatuses: WorkStatus[] = [
   "Produccion",
@@ -576,22 +577,51 @@ function ProgressDetail({
               const executed = calculateTotalExecuted(rubro.id, reports);
               const latest = getLatestRubricEntry(rubro.id, reports);
               const report = latest ? reports.find((item) => item.entries.some((entry) => entry.id === latest.id)) : null;
+              const produced = getProducedQuantity(rubro);
               return (
                 <div key={rubro.id} className="rounded-lg border border-slate-100 p-3">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-next-text">{rubro.nombre}</p>
                       <p className="mt-1 text-xs font-semibold text-next-muted">
-                        {executed} {formatUnitLabel(rubro.unidad, executed)} / {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} · Peso {rubro.pesoOperativo}% · {rubro.modoCalculo}
+                        Total previsto: {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} | Producido: {produced} / {rubro.cantidadTotalPrevista} | Instalado: {executed} / {rubro.cantidadTotalPrevista} | Peso {rubro.pesoOperativo}%
                       </p>
                     </div>
                     <span className="text-xl font-black text-next-blue">{progressLabel}%</span>
                   </div>
                   <ProgressBar value={progressLabel} />
+                  {rubro.items?.length ? (
+                    <div className="mt-3 space-y-2 rounded-md bg-next-bg p-3">
+                      <p className="text-xs font-black uppercase text-next-blue">Desglose detallado</p>
+                      {rubro.items.map((item) => {
+                        const unit = normalizeUnit(item.unidad) || "unidad";
+                        const m2Total = item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
+                        const itemProduced = item.cantidadProducida ?? 0;
+                        const itemTotal = unit === "m2" ? m2Total : item.cantidad;
+                        return (
+                          <div key={item.id} className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-100">
+                            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-next-text">{item.descripcion}</p>
+                                <p className="mt-1 text-xs font-semibold text-next-muted">
+                                  {item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas"} | {item.cantidad} {formatUnitLabel(unit, item.cantidad)}
+                                  {unit === "m2" ? ` | ${item.m2Unitario ?? "-"} m2 unit. | ${m2Total} m2 total` : ""}
+                                </p>
+                              </div>
+                              <div className="grid gap-1 text-xs font-black text-next-muted sm:min-w-44">
+                                <span>Producido: {itemProduced} / {itemTotal}</span>
+                                <span>Instalado: se registra por reportes del rubro</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <div className="mt-3 grid gap-2 text-xs font-semibold text-next-muted sm:grid-cols-2">
                     <span>Ultima actualizacion: {report ? `${formatDateShort(report.fecha)} ${report.hora}` : "Sin reportes"}</span>
                     <span>Responsable: {report?.userName ?? "Pendiente"}</span>
-                    <span>Fuente: {latest?.modo === "manual" ? "Ajuste manual justificado" : "Cantidad ejecutada"}</span>
+                    <span>Fuente: {latest?.modo === "manual" ? "Ajuste manual justificado" : "Cantidad instalada reportada"}</span>
                     <span>{latest?.observacion || latest?.justificacionManual || "Sin observacion"}</span>
                   </div>
                 </div>
@@ -601,12 +631,13 @@ function ProgressDetail({
         </DataCard>
 
         <DataCard title="Produccion">
-          <ProductionChecklistEditor
-            canEdit={canConfigure}
-            stages={obra.etapasProduccion}
-            updatedBy={currentUserName}
-            onSave={onSaveProductionStages}
-          />
+          <div className="space-y-3">
+            {rubrics.some((rubro) => rubro.requiereProduccion || rubro.items?.some((item) => item.fabricarEnTaller)) ? rubrics.map((rubro) => (
+              <ProductionPreview key={rubro.id} rubro={rubro} />
+            )) : (
+              <EmptyState text="No hay rubros o items marcados para fabricar en taller." />
+            )}
+          </div>
         </DataCard>
 
         <DataCard title="Instalacion">
@@ -1057,6 +1088,50 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProductionPreview({ rubro }: { rubro: WorkProgressRubric }) {
+  const rows = getProductionPreviewRows(rubro);
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-100 p-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-next-text">{rubro.nombre}</p>
+          <p className="mt-1 text-xs font-semibold text-next-muted">
+            Produccion de taller separada del avance instalado en obra.
+          </p>
+        </div>
+        <span className="rounded-md bg-next-light px-2 py-1 text-xs font-black text-next-blue">
+          {rows.length} item(s)
+        </span>
+      </div>
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.id} className="rounded-md bg-next-bg px-3 py-2">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+              <div className="min-w-0">
+                <p className="text-sm font-black text-next-text">{row.descripcion}</p>
+                <p className="mt-1 text-xs font-semibold text-next-muted">
+                  {row.medida} | Total {row.total} {formatUnitLabel(row.unit, row.total)} | Pendiente {row.pending}
+                </p>
+              </div>
+              <div className="min-w-36">
+                <div className="flex items-center justify-between gap-2 text-xs font-black text-next-muted">
+                  <span>Producido</span>
+                  <span>{row.produced}/{row.total}</span>
+                </div>
+                <ProgressBar value={productionProgress(row.produced, row.total)} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LabeledCell({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block min-w-0 text-[11px] font-black uppercase text-next-muted lg:text-transparent">
@@ -1099,6 +1174,49 @@ function getReportsForWork(obraId: string, reports: ProgressReport[]) {
 
 function getMaterialsForWork(obraId: string, materials: ProgressMaterialReport[]) {
   return materials.filter((material) => material.obraId === obraId);
+}
+
+function getProducedQuantity(rubro: WorkProgressRubric) {
+  const itemProduction = (rubro.items ?? [])
+    .filter((item) => item.fabricarEnTaller)
+    .reduce((sum, item) => sum + Number(item.cantidadProducida ?? 0), 0);
+  if (itemProduction > 0) return Math.round(itemProduction * 100) / 100;
+  return Math.round(Number(rubro.cantidadProducida ?? 0) * 100) / 100;
+}
+
+function getProductionPreviewRows(rubro: WorkProgressRubric) {
+  const itemRows = (rubro.items ?? [])
+    .filter((item) => item.fabricarEnTaller)
+    .map((item) => {
+      const unit = normalizeUnit(item.unidad) || "unidad";
+      const total = unit === "m2" ? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad) : item.cantidad;
+      const produced = Number(item.cantidadProducida ?? 0);
+      return {
+        id: item.id,
+        descripcion: item.descripcion || rubro.nombre,
+        unit,
+        total,
+        produced,
+        pending: Math.max(total - produced, 0),
+        medida: item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas"
+      };
+    });
+
+  if (itemRows.length) return itemRows;
+  if (!rubro.requiereProduccion) return [];
+
+  const unit = normalizeUnit(rubro.unidadPrincipal ?? rubro.unidad) || "unidad";
+  const total = Number(rubro.cantidadTotalPrevista || 0);
+  const produced = Number(rubro.cantidadProducida ?? 0);
+  return [{
+    id: rubro.id,
+    descripcion: rubro.nombre,
+    unit,
+    total,
+    produced,
+    pending: Math.max(total - produced, 0),
+    medida: "Carga simple"
+  }];
 }
 
 function getActiveCrew(obraId: string, cuadrillas: Cuadrilla[]) {

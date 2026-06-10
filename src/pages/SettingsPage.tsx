@@ -1,9 +1,8 @@
-import { Cloud, Database, RefreshCcw, RotateCcw } from "lucide-react";
+import { Cloud, RefreshCcw } from "lucide-react";
 import { useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { loadSeedDataToFirebase } from "../lib/firestore";
 import {
   firebaseAuth,
   firebaseFunctions,
@@ -14,52 +13,17 @@ import {
   isFirebaseConfigured
 } from "../lib/firebase";
 import { canManageUsers } from "../lib/roles";
-import { getDataSourceLabel, resetDemoData } from "../lib/storage";
+import { getDataSourceLabel } from "../lib/storage";
 
 export default function SettingsPage() {
   const { authUser, isDemo, profile, role } = useAuth();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const firebaseReady = isFirebaseConfigured();
   const missingFirebaseVars = getMissingFirebaseEnvVars();
   const sourceLabel = getDataSourceLabel();
   const usingFirebase = sourceLabel === "Usando Firebase";
-
-  async function handleLoadFirebaseSeed() {
-    setMessage("");
-    setError("");
-
-    if (!firebaseReady) {
-      setError("Firebase todavia no esta configurado. Carga tus variables en .env.local.");
-      return;
-    }
-
-    const replace = window.confirm(
-      "Quieres reemplazar datos existentes si ya hay obras en Firebase?"
-    );
-
-    setLoading(true);
-    try {
-      const result = await loadSeedDataToFirebase(replace);
-      setMessage(result);
-    } catch (seedError) {
-      setError(seedError instanceof Error ? seedError.message : "No se pudo cargar el seed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleResetLocalDemo() {
-    if (!window.confirm("Restablecer datos demo locales?")) {
-      return;
-    }
-
-    resetDemoData();
-    setError("");
-    setMessage("Datos demo locales restablecidos.");
-  }
 
   return (
     <div className="space-y-6">
@@ -70,7 +34,7 @@ export default function SettingsPage() {
 
       {!firebaseReady ? (
         <div className="rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold leading-6 text-next-orange">
-          Firebase todavia no esta configurado. La app esta usando datos demo locales.
+          Firebase todavia no esta configurado. Revisa las variables de entorno antes de operar con datos reales.
           {missingFirebaseVars.length > 0 ? (
             <span className="mt-1 block text-xs">
               Faltan: {missingFirebaseVars.join(", ")}.
@@ -109,31 +73,18 @@ export default function SettingsPage() {
               </div>
             </div>
             <StatusBadge
-              label={usingFirebase ? "Firebase activo" : "Demo local"}
+              label={usingFirebase ? "Firebase activo" : "Modo local"}
               status={usingFirebase ? "success" : "warning"}
             />
           </div>
         </DataCard>
 
-        <DataCard title="Datos demo" subtitle="Carga o reinicia datos para presentaciones.">
+        <DataCard title="Servicios Firebase" subtitle="Estado operativo de los servicios conectados.">
           <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white transition hover:bg-next-navy disabled:opacity-60"
-              type="button"
-              onClick={handleLoadFirebaseSeed}
-              disabled={loading}
-            >
-              <Database className="h-5 w-5" aria-hidden="true" />
-              {loading ? "Cargando..." : "Cargar datos demo en Firebase"}
-            </button>
-            <button
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-next-blue bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
-              type="button"
-              onClick={handleResetLocalDemo}
-            >
-              <RotateCcw className="h-5 w-5" aria-hidden="true" />
-              Restablecer datos demo local
-            </button>
+            <Diagnostic label="Authentication" value={firebaseAuth ? "Disponible" : "No disponible"} ok={Boolean(firebaseAuth)} />
+            <Diagnostic label="Firestore" value={firestoreDb ? "Disponible" : "No disponible"} ok={Boolean(firestoreDb)} />
+            <Diagnostic label="Storage" value={firebaseStorage ? "Disponible" : "No disponible"} ok={Boolean(firebaseStorage)} />
+            <Diagnostic label="Functions" value={firebaseFunctions ? "Disponible" : "No disponible"} ok={Boolean(firebaseFunctions)} />
           </div>
         </DataCard>
       </section>
@@ -143,7 +94,7 @@ export default function SettingsPage() {
           {[
             ["Proyecto", "NEXT CONTROL"],
             ["Empresa", "Next Glass | Vidrios y Aluminios"],
-            ["Version", "Demo funcional"]
+            ["Version", "Produccion operativa"]
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-slate-100 bg-next-bg px-4 py-3">
               <p className="text-xs font-bold uppercase text-next-muted">{label}</p>
@@ -180,7 +131,7 @@ export default function SettingsPage() {
               value={missingFirebaseVars.length > 0 ? missingFirebaseVars.join(", ") : "Ninguna"}
               ok={missingFirebaseVars.length === 0}
             />
-            <Diagnostic label="Modo" value={isDemo ? "Demo local" : "Firebase"} ok={!isDemo} />
+            <Diagnostic label="Modo" value={isDemo ? "Local" : "Firebase"} ok={!isDemo} />
             <Diagnostic label="Usuario" value={profile?.nombre ?? authUser?.email ?? "Sin perfil"} ok={Boolean(profile)} />
             <Diagnostic label="UID" value={profile?.uid ?? authUser?.uid ?? "Sin UID"} ok={Boolean(authUser || profile)} />
             <Diagnostic label="Rol" value={role ?? "Sin rol"} ok={Boolean(role)} />

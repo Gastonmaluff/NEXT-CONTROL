@@ -11,7 +11,7 @@ import {
   updateFieldTask
 } from "../lib/firestore";
 import { canCreateTasks, canValidateTaskProgress, canViewAllTasks } from "../lib/roles";
-import type { FieldTask, FieldTaskStatus, FieldWorkday, Obra } from "../types";
+import type { FieldTask, FieldTaskStatus, FieldWorkday, Obra, TaskPhoto } from "../types";
 import { formatDateShort } from "../utils/formatters";
 import { formatUnitLabel, normalizeUnit } from "../utils/units";
 
@@ -269,6 +269,16 @@ export default function TasksPage() {
             )) : <EmptyState text="No hay jornadas activas." />}
           </div>
         </DataCard>
+        <DataCard title="Fotos y ubicacion de tareas">
+          <div className="space-y-3">
+            {visibleTasks.some((task) => (task.fotos?.length ?? 0) > 0 || getTaskWorkday(task, workdays)?.ubicacionInicio || getTaskWorkday(task, workdays)?.ubicacionFin) ? visibleTasks
+              .filter((task) => (task.fotos?.length ?? 0) > 0 || getTaskWorkday(task, workdays)?.ubicacionInicio || getTaskWorkday(task, workdays)?.ubicacionFin)
+              .slice(0, 6)
+              .map((task) => (
+                <TaskEvidenceCard key={task.id} task={task} workday={getTaskWorkday(task, workdays)} />
+              )) : <EmptyState text="Todavia no hay fotos o ubicaciones asociadas a las tareas visibles." />}
+          </div>
+        </DataCard>
       </section>
 
       {modalOpen ? (
@@ -433,6 +443,50 @@ function NewTaskModal({ onClose, onCreated, works }: { works: Obra[]; onClose: (
       </section>
     </div>
   );
+}
+
+function TaskEvidenceCard({ task, workday }: { task: FieldTask; workday?: FieldWorkday }) {
+  const photos = task.fotos ?? [];
+  const location = workday?.ubicacionFin ?? workday?.ubicacionInicio;
+  const locationTime = workday?.ubicacionFin ? workday.horaFin : workday?.horaInicio;
+  return (
+    <div className="rounded-md border border-slate-100 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-next-text">{task.titulo}</p>
+          <p className="mt-1 text-xs font-semibold text-next-muted">{task.obraNombre} | {task.asignadoANombre || "Sin asignar"}</p>
+        </div>
+        <span className="rounded-md bg-next-light px-2 py-1 text-xs font-black text-next-blue">{photos.length} foto(s)</span>
+      </div>
+      {photos.length ? <PhotoStrip photos={photos} /> : null}
+      <div className="mt-3 rounded-md bg-next-bg px-3 py-2">
+        <p className="text-xs font-black uppercase text-next-muted">Ubicacion</p>
+        {location ? (
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-next-muted">
+            <span>Registrada {locationTime ?? ""} | {location.lat.toFixed(5)}, {location.lng.toFixed(5)}</span>
+            <a className="inline-flex items-center gap-1 font-black text-next-blue" href={`https://www.google.com/maps?q=${location.lat},${location.lng}`} target="_blank" rel="noreferrer">
+              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+              Google Maps
+            </a>
+          </div>
+        ) : <p className="mt-1 text-xs font-semibold text-next-muted">Sin ubicacion vinculada.</p>}
+      </div>
+    </div>
+  );
+}
+
+function PhotoStrip({ photos }: { photos: TaskPhoto[] }) {
+  return (
+    <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+      {photos.slice(0, 6).map((photo) => (
+        <img key={photo.id} className="h-16 w-16 shrink-0 rounded-md object-cover ring-1 ring-slate-200" src={photo.url} alt={photo.fileName ?? "Foto de tarea"} />
+      ))}
+    </div>
+  );
+}
+
+function getTaskWorkday(task: FieldTask, workdays: FieldWorkday[]) {
+  return workdays.find((workday) => workday.id === task.jornadaId || workday.tareasIds.includes(task.id));
 }
 
 function TaskActions({

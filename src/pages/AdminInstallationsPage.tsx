@@ -89,6 +89,37 @@ export default function AdminInstallationsPage() {
         ))}
       </section>
 
+      <section className="grid gap-4 xl:grid-cols-2">
+        <DataCard title="Cuadrillas activas">
+          <ContentList
+            empty="No hay cuadrillas activas ahora."
+            items={activeWorkdays.map((jornada) => `${jornada.equipoNombre || jornada.userName} - ${jornada.obraNombre} - Inicio ${jornada.horaInicio}`)}
+          />
+        </DataCard>
+        <DataCard title="Jornadas pendientes de cierre">
+          <ContentList
+            empty="No hay jornadas pendientes de cierre."
+            items={activeWorkdays.map((jornada) => `${jornada.equipoNombre || jornada.userName} - ${jornada.obraNombre} - sin cierre desde ${jornada.horaInicio}`)}
+          />
+        </DataCard>
+        <DataCard title="Obras con actividad hoy">
+          <ContentList
+            empty="No hay obras con actividad hoy."
+            items={getWorkActivity(todayWorkdays, tasks).map((item) => `${item.obraNombre} - ${item.completed} tareas completadas - ${item.photos} fotos`)}
+          />
+        </DataCard>
+        <DataCard title="Tareas completadas hoy">
+          <ContentList
+            empty="No hay tareas completadas hoy."
+            items={todayTasks.filter((task) => task.estado === "completada").slice(0, 5).map((task) => `${task.titulo} - ${task.obraNombre} - ${task.asignadoANombre || "Sin responsable"}`)}
+          />
+        </DataCard>
+      </section>
+
+      <DataCard title="Fotos cargadas hoy">
+        <PhotoGrid photos={getTodayPhotos(todayWorkdays, todayTasks).slice(0, 12)} />
+      </DataCard>
+
       <section className="grid gap-3">
         {todayWorkdays.length ? todayWorkdays.map((jornada) => {
           const jornadaTasks = tasks.filter((task) => jornada.tareasIds.includes(task.id) || task.jornadaId === jornada.id);
@@ -164,6 +195,36 @@ export default function AdminInstallationsPage() {
       ) : null}
     </div>
   );
+}
+
+function ContentList({ empty, items }: { empty: string; items: string[] }) {
+  if (!items.length) return <EmptyState text={empty} />;
+  return (
+    <div className="space-y-2">
+      {items.slice(0, 6).map((item) => (
+        <p key={item} className="rounded-md bg-next-bg px-3 py-2 text-sm font-semibold text-next-text">{item}</p>
+      ))}
+    </div>
+  );
+}
+
+function getWorkActivity(workdays: FieldWorkday[], tasks: FieldTask[]) {
+  return workdays.map((jornada) => {
+    const relatedTasks = tasks.filter((task) => jornada.tareasIds.includes(task.id) || task.jornadaId === jornada.id || task.obraId === jornada.obraId);
+    const photos = collectWorkdayPhotos(jornada, relatedTasks);
+    return {
+      obraNombre: jornada.obraNombre,
+      completed: relatedTasks.filter((task) => task.estado === "completada").length,
+      photos: photos.length
+    };
+  });
+}
+
+function getTodayPhotos(workdays: FieldWorkday[], tasks: FieldTask[]) {
+  return [
+    ...workdays.flatMap((jornada) => collectWorkdayPhotos(jornada, tasks.filter((task) => jornada.tareasIds.includes(task.id) || task.jornadaId === jornada.id))),
+    ...tasks.flatMap((task) => task.fotos ?? [])
+  ].filter((photo, index, all) => all.findIndex((item) => item.id === photo.id) === index);
 }
 
 function collectWorkdayPhotos(jornada: FieldWorkday, tasks: FieldTask[]): TaskPhoto[] {

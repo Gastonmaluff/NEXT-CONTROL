@@ -8,12 +8,15 @@ import {
   convertirOportunidadEnObra,
   createCliente,
   createOportunidad,
+  getCheques,
   getClientes,
+  getFinancialWorks,
+  getMovementsByWork,
   getOportunidades,
   updateCliente,
   updateOportunidad
 } from "../lib/firestore";
-import type { Cliente, OportunidadCRM, PipelineStatus } from "../types";
+import type { Cheque, Cliente, FinancialMovement, Obra, OportunidadCRM, PipelineStatus } from "../types";
 import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
 import { toTitleCase } from "../utils/text";
 
@@ -51,8 +54,12 @@ const emptyClient = {
 export default function CrmPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [oportunidades, setOportunidades] = useState<OportunidadCRM[]>([]);
+  const [works, setWorks] = useState<Obra[]>([]);
+  const [movements, setMovements] = useState<FinancialMovement[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
   const [leadForm, setLeadForm] = useState(emptyLead);
   const [clientForm, setClientForm] = useState(emptyClient);
+  const [selectedClient, setSelectedClient] = useState<Cliente | null>(null);
   const [clientQuery, setClientQuery] = useState("");
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Cliente | null>(null);
@@ -68,12 +75,18 @@ export default function CrmPage() {
   async function load() {
     setLoading(true);
     try {
-      const [loadedClients, loadedOpportunities] = await Promise.all([
+      const [loadedClients, loadedOpportunities, loadedWorks, loadedCheques] = await Promise.all([
         getClientes(),
-        getOportunidades()
+        getOportunidades(),
+        getFinancialWorks(),
+        getCheques()
       ]);
+      const loadedMovements = (await Promise.all(loadedWorks.map((obra) => getMovementsByWork(obra.id)))).flat();
       setClientes(loadedClients);
       setOportunidades(loadedOpportunities);
+      setWorks(loadedWorks);
+      setMovements(loadedMovements);
+      setCheques(loadedCheques);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo cargar clientes.");
     } finally {
@@ -238,7 +251,7 @@ export default function CrmPage() {
         <input className="field" placeholder="Buscar cliente por nombre, RUC, telefono o email" value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} />
         <div className="grid gap-3 lg:grid-cols-2">
           {filteredClients.map((cliente) => (
-            <ClientCard key={cliente.id} cliente={cliente} onEdit={() => openEditClient(cliente)} />
+            <ClientCard key={cliente.id} cliente={cliente} onEdit={() => openEditClient(cliente)} onOpen={() => setSelectedClient(cliente)} />
           ))}
           {!filteredClients.length ? <EmptyState text="Todavia no hay clientes activos." /> : null}
         </div>
@@ -339,11 +352,25 @@ export default function CrmPage() {
           onSubmit={handleSaveClient}
         />
       ) : null}
+
+      {selectedClient ? (
+        <ClientDetailModal
+          cheques={cheques}
+          cliente={selectedClient}
+          movements={movements}
+          onClose={() => setSelectedClient(null)}
+          onEdit={() => {
+            setSelectedClient(null);
+            openEditClient(selectedClient);
+          }}
+          works={works}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ClientCard({ cliente, onEdit }: { cliente: Cliente; onEdit: () => void }) {
+function ClientCard({ cliente, onEdit, onOpen }: { cliente: Cliente; onEdit: () => void; onOpen: () => void }) {
   return (
     <article className="rounded-lg border border-slate-100 bg-next-bg p-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -359,10 +386,87 @@ function ClientCard({ cliente, onEdit }: { cliente: Cliente; onEdit: () => void 
         <div className="flex shrink-0 flex-wrap gap-2">
           {cliente.whatsapp ? <QuickLink href={`https://wa.me/${cleanPhone(cliente.whatsapp)}`} label="WhatsApp" icon="whatsapp" /> : null}
           {cliente.email ? <QuickLink href={`mailto:${cliente.email}`} label="Email" icon="email" /> : null}
+          <button className="h-9 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-next-blue" type="button" onClick={onOpen}>Ver ficha</button>
           <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={onEdit}>Editar</button>
         </div>
       </div>
     </article>
+  );
+}
+
+function ClientDetailModal({
+  cheques,
+  cliente,
+  movements,
+  onClose,
+  onEdit,
+  works
+}: {
+  cheques: Cheque[];
+  cliente: Cliente;
+  movements: FinancialMovement[];
+  onClose: () => void;
+  onEdit: () => void;
+  works: Obra[];
+}) {
+  const relatedWorks = works.filter((obra) =>
+    obra.clienteId === cliente.id
+    || obra.clienteNombre === cliente.nombre
+    || obra.cliente === cliente.nombre
+  );
+  const relatedWorkIds = new Set(relatedWorks.map((obra) => obra.id));
+  const relatedMovements = movements
+    .filter((movement) =>
+      relatedWorkIds.has(movement.obraId)
+      || movement.clienteId === cliente.id
+      || movement.pagadorId === cliente.id
+      || movement.clienteNombre === cliente.nombre
+      || movement.pagadorNombre === cliente.nombre
+    )
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const ingresos = relatedMovements.filter((movement) => movement.tipo === "ingreso");
+  const totalIngresado = ingresos.reduce((sum, movement) => sum + movement.monto, 0);
+  const pendingCheques = cheques.filter((cheque) =>
+    cheque.tipo === "recibido"
+    && !["cobrado", "anulado", "rechazado"].includes(cheque.estado)
+    && (cheque.terceroId === cliente.id || cheque.clienteId === cliente.id || cheque.pagadorId === cliente.id || cheque.terceroNombre === cliente.nombre)
+  );
+  const saldoPendiente = relatedWorks.reduce((sum, obra) => sum + (obra.saldoPendienteCobro ?? 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-5xl rounded-lg bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase text-next-blue">Ficha de cliente</p>
+            <h2 className="mt-1 break-words text-2xl font-black text-next-text">{cliente.nombre}</h2>
+            <p className="mt-1 text-sm font-semibold text-next-muted">
+              {[cliente.ruc, cliente.contactoPrincipal, cliente.ciudad].filter(Boolean).join(" | ") || "Sin datos secundarios"}
+            </p>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {cliente.whatsapp ? <QuickLink href={`https://wa.me/${cleanPhone(cliente.whatsapp)}`} label="WhatsApp" icon="whatsapp" /> : null}
+          {cliente.email ? <QuickLink href={`mailto:${cliente.email}`} label="Email" icon="email" /> : null}
+          <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={onEdit}>Editar cliente</button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailMetric label="Obras vinculadas" value={`${relatedWorks.length}`} />
+          <DetailMetric label="Total ingresado" value={formatCurrencyPYG(totalIngresado)} />
+          <DetailMetric label="Saldo pendiente" value={formatCurrencyPYG(saldoPendiente)} tone="orange" />
+          <DetailMetric label="Cheques pendientes" value={`${pendingCheques.length}`} tone="orange" />
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <DetailList title="Obras vinculadas" items={relatedWorks.map((obra) => `${obra.nombre} | ${obra.estado} | ${formatCurrencyPYG(obra.valorFinalContratado ?? obra.totalContratado ?? obra.montoAprobado ?? 0)}`)} empty="Sin obras vinculadas." />
+          <DetailList title="Cheques pendientes" items={pendingCheques.map((cheque) => `${cheque.numeroCheque} | ${cheque.bancoCheque ?? "Sin banco"} | ${formatCurrencyPYG(cheque.monto)} | ${formatDateShort(cheque.fechaCobroCheque)}`)} empty="Sin cheques pendientes." />
+          <DetailList title="Ultimos pagos" items={ingresos.slice(0, 5).map((movement) => `${formatDateShort(movement.fecha)} | ${movement.concepto} | ${formatCurrencyPYG(movement.monto)}`)} empty="Sin pagos cargados." />
+          <DetailList title="Ultimos movimientos" items={relatedMovements.slice(0, 5).map((movement) => `${formatDateShort(movement.fecha)} | ${movement.tipo} | ${movement.concepto}`)} empty="Sin movimientos relacionados." />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -415,6 +519,28 @@ function QuickLink({ href, icon, label }: { href: string; icon: "whatsapp" | "em
       <Icon className="h-4 w-4" aria-hidden="true" />
       {label}
     </a>
+  );
+}
+
+function DetailMetric({ label, tone = "blue", value }: { label: string; tone?: "blue" | "orange"; value: string }) {
+  return (
+    <div className="rounded-md bg-next-bg px-3 py-3">
+      <p className="text-xs font-bold uppercase text-next-muted">{label}</p>
+      <p className={`mt-1 text-sm font-black ${tone === "orange" ? "text-next-orange" : "text-next-blue"}`}>{value}</p>
+    </div>
+  );
+}
+
+function DetailList({ empty, items, title }: { empty: string; items: string[]; title: string }) {
+  return (
+    <div className="rounded-md border border-slate-100 p-3">
+      <p className="text-xs font-black uppercase text-next-blue">{title}</p>
+      <div className="mt-3 space-y-2">
+        {items.length ? items.map((item) => (
+          <p key={item} className="rounded-md bg-next-bg px-3 py-2 text-sm font-semibold text-next-text">{item}</p>
+        )) : <p className="text-sm font-semibold text-next-muted">{empty}</p>}
+      </div>
+    </div>
   );
 }
 

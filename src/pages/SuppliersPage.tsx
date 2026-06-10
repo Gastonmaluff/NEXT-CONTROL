@@ -2,12 +2,13 @@ import { Mail, MessageCircle, Plus, Save, X } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   createProveedor,
+  getCheques,
   getFinancialWorks,
   getMovementsByWork,
   getProveedores,
   updateProveedor
 } from "../lib/firestore";
-import type { FinancialMovement, Obra, Proveedor, SupplierCategory } from "../types";
+import type { Cheque, FinancialMovement, Obra, Proveedor, SupplierCategory } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { toTitleCase } from "../utils/text";
 
@@ -29,6 +30,7 @@ export default function SuppliersPage() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [obras, setObras] = useState<Obra[]>([]);
   const [movements, setMovements] = useState<FinancialMovement[]>([]);
+  const [cheques, setCheques] = useState<Cheque[]>([]);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Proveedor | null>(null);
@@ -45,14 +47,16 @@ export default function SuppliersPage() {
     setLoading(true);
     setError("");
     try {
-      const [loadedSuppliers, loadedWorks] = await Promise.all([
+      const [loadedSuppliers, loadedWorks, loadedCheques] = await Promise.all([
         getProveedores(),
-        getFinancialWorks()
+        getFinancialWorks(),
+        getCheques()
       ]);
       const loadedMovements = (await Promise.all(loadedWorks.map((obra) => getMovementsByWork(obra.id)))).flat();
       setProveedores(loadedSuppliers);
       setObras(loadedWorks);
       setMovements(loadedMovements);
+      setCheques(loadedCheques);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar proveedores.");
     } finally {
@@ -149,6 +153,7 @@ export default function SuppliersPage() {
         {filtered.map((proveedor) => (
           <SupplierCard
             key={proveedor.id}
+            cheques={getSupplierCheques(proveedor, cheques)}
             movements={getSupplierMovements(proveedor, movements)}
             obras={obras}
             proveedor={proveedor}
@@ -172,11 +177,13 @@ export default function SuppliersPage() {
 }
 
 function SupplierCard({
+  cheques,
   movements,
   obras,
   onEdit,
   proveedor
 }: {
+  cheques: Cheque[];
   movements: FinancialMovement[];
   obras: Obra[];
   onEdit: () => void;
@@ -184,7 +191,8 @@ function SupplierCard({
 }) {
   const compras = movements.filter((movement) => movement.tipo === "compra");
   const totalComprado = compras.reduce((sum, movement) => sum + movement.monto, 0);
-  const chequesPendientes = compras.filter((movement) => movement.metodoPago === "Cheque" && movement.fechaCobroCheque && movement.fechaCobroCheque >= new Date().toISOString().slice(0, 10));
+  const [chequesOpen, setChequesOpen] = useState(false);
+  const chequesPendientes = cheques.filter((cheque) => cheque.tipo === "emitido" && !["debitado", "anulado", "rechazado"].includes(cheque.estado));
   const lastMovement = compras[0];
   const relatedWorks = Array.from(new Set(compras.map((movement) => obras.find((obra) => obra.id === movement.obraId)?.nombre).filter(Boolean)));
 
@@ -203,7 +211,9 @@ function SupplierCard({
         </div>
         <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
           <Metric label="Total comprado" value={formatCurrencyPYG(totalComprado)} />
-          <Metric label="Cheques pendientes" value={`${chequesPendientes.length}`} tone="orange" />
+          <button className="text-left" type="button" onClick={() => setChequesOpen(true)}>
+            <Metric label="Cheques pendientes" value={`${chequesPendientes.length}`} tone="orange" />
+          </button>
           <Metric label="Ultimo movimiento" value={lastMovement ? formatDateShort(lastMovement.fecha) : "Sin compras"} />
         </div>
       </div>
@@ -211,7 +221,41 @@ function SupplierCard({
         <InfoBox title="Ultimas compras / movimientos" items={compras.slice(0, 4).map((movement) => `${formatDateShort(movement.fecha)} · ${movement.concepto} · ${formatCurrencyPYG(movement.monto)}`)} empty="Sin compras registradas." />
         <InfoBox title="Obras relacionadas" items={relatedWorks.slice(0, 4) as string[]} empty="Sin obras relacionadas." />
       </div>
+      {chequesOpen ? <SupplierChequesModal cheques={chequesPendientes} onClose={() => setChequesOpen(false)} proveedor={proveedor} /> : null}
     </article>
+  );
+}
+
+function SupplierChequesModal({ cheques, onClose, proveedor }: { cheques: Cheque[]; onClose: () => void; proveedor: Proveedor }) {
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-4xl rounded-lg bg-white p-5 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-next-blue">Cheques pendientes</p>
+            <h2 className="mt-1 text-2xl font-black text-next-text">{proveedor.nombre}</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="space-y-2">
+          {cheques.length ? cheques.map((cheque) => (
+            <div key={cheque.id} className="grid gap-2 rounded-md border border-slate-100 p-3 text-sm font-semibold text-next-muted md:grid-cols-6 md:items-center">
+              <span className="font-black text-next-text">Nro. {cheque.numeroCheque}</span>
+              <span>{cheque.bancoCheque ?? "Sin banco"}</span>
+              <span>{formatCurrencyPYG(cheque.monto)}</span>
+              <span>Emision {formatDateShort(cheque.fechaEmisionCheque)}</span>
+              <span>Cobro {formatDateShort(cheque.fechaCobroCheque || cheque.fechaVencimientoCheque || "")}</span>
+              <span>{cheque.obraNombre} | {cheque.estado}</span>
+            </div>
+          )) : <EmptyState text="No hay cheques pendientes para este proveedor." />}
+        </div>
+        <a className="mt-4 inline-flex h-10 items-center rounded-md bg-next-blue px-4 text-xs font-black text-white" href="/NEXT-CONTROL/cheques">
+          Ir a Cheques
+        </a>
+      </section>
+    </div>
   );
 }
 
@@ -286,6 +330,19 @@ function getSupplierMovements(proveedor: Proveedor, movements: FinancialMovement
       || movement.tercero === proveedor.nombre
     )
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+
+function getSupplierCheques(proveedor: Proveedor, cheques: Cheque[]) {
+  return cheques
+    .filter((cheque) =>
+      cheque.proveedorId === proveedor.id
+      || cheque.beneficiarioId === proveedor.id
+      || cheque.terceroId === proveedor.id
+      || cheque.proveedorNombre === proveedor.nombre
+      || cheque.beneficiarioNombre === proveedor.nombre
+      || cheque.terceroNombre === proveedor.nombre
+    )
+    .sort((a, b) => (a.fechaCobroCheque || a.fechaVencimientoCheque || "").localeCompare(b.fechaCobroCheque || b.fechaVencimientoCheque || ""));
 }
 
 function cleanPhone(value: string) {
