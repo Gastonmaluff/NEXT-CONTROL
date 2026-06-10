@@ -212,9 +212,15 @@ export type WorkBreakdownItem = {
   unidad: WorkBreakdownUnit;
   m2Unitario?: number;
   m2Total?: number;
+  unidadProduccion?: WorkBreakdownUnit;
+  metrosCuadradosPorUnidad?: number;
+  metrosCuadradosTotales?: number;
   fabricarEnTaller: boolean;
   estadoProduccion: ProductionItemStatus;
   cantidadProducida: number;
+  cantidadPendiente?: number;
+  metrosCuadradosProducidos?: number;
+  metrosCuadradosPendientes?: number;
   observacion?: string;
   updatedAt?: string;
   updatedBy?: string;

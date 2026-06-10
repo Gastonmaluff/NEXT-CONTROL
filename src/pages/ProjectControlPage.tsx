@@ -577,14 +577,14 @@ function ProgressDetail({
               const executed = calculateTotalExecuted(rubro.id, reports);
               const latest = getLatestRubricEntry(rubro.id, reports);
               const report = latest ? reports.find((item) => item.entries.some((entry) => entry.id === latest.id)) : null;
-              const produced = getProducedQuantity(rubro);
+              const productionSummary = getRubricProductionSummary(rubro);
               return (
                 <div key={rubro.id} className="rounded-lg border border-slate-100 p-3">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-next-text">{rubro.nombre}</p>
                       <p className="mt-1 text-xs font-semibold text-next-muted">
-                        Total previsto: {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} | Producido: {produced} / {rubro.cantidadTotalPrevista} | Instalado: {executed} / {rubro.cantidadTotalPrevista} | Peso {rubro.pesoOperativo}%
+                        Total previsto: {rubro.cantidadTotalPrevista} {formatUnitLabel(rubro.unidad, rubro.cantidadTotalPrevista)} | {productionSummary} | Instalado: {executed} / {rubro.cantidadTotalPrevista} | Peso {rubro.pesoOperativo}%
                       </p>
                     </div>
                     <span className="text-xl font-black text-next-blue">{progressLabel}%</span>
@@ -594,22 +594,24 @@ function ProgressDetail({
                     <div className="mt-3 space-y-2 rounded-md bg-next-bg p-3">
                       <p className="text-xs font-black uppercase text-next-blue">Desglose detallado</p>
                       {rubro.items.map((item) => {
-                        const unit = normalizeUnit(item.unidad) || "unidad";
+                        const unit = normalizeUnit(item.unidadProduccion ?? "unidad") || "unidad";
                         const m2Total = item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
+                        const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
                         const itemProduced = item.cantidadProducida ?? 0;
-                        const itemTotal = unit === "m2" ? m2Total : item.cantidad;
+                        const itemTotal = item.cantidad;
+                        const m2Produced = Math.round(itemProduced * m2Unit * 100) / 100;
                         return (
                           <div key={item.id} className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-100">
                             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                               <div className="min-w-0">
                                 <p className="text-sm font-black text-next-text">{item.descripcion}</p>
                                 <p className="mt-1 text-xs font-semibold text-next-muted">
-                                  {item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas"} | {item.cantidad} {formatUnitLabel(unit, item.cantidad)}
-                                  {unit === "m2" ? ` | ${item.m2Unitario ?? "-"} m2 unit. | ${m2Total} m2 total` : ""}
+                                  Medida: {item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas"} | Cantidad: {item.cantidad} {formatUnitLabel(unit, item.cantidad)} | m2 por unidad: {m2Unit || "-"} | m2 total: {m2Total || "-"}
                                 </p>
                               </div>
                               <div className="grid gap-1 text-xs font-black text-next-muted sm:min-w-44">
-                                <span>Producido: {itemProduced} / {itemTotal}</span>
+                                <span>Producido: {itemProduced} / {itemTotal} {formatUnitLabel(unit, itemTotal)}</span>
+                                <span>Equivale a: {m2Produced} / {m2Total} m2</span>
                                 <span>Instalado: se registra por reportes del rubro</span>
                               </div>
                             </div>
@@ -1114,7 +1116,7 @@ function ProductionPreview({ rubro }: { rubro: WorkProgressRubric }) {
               <div className="min-w-0">
                 <p className="text-sm font-black text-next-text">{row.descripcion}</p>
                 <p className="mt-1 text-xs font-semibold text-next-muted">
-                  {row.medida} | Total {row.total} {formatUnitLabel(row.unit, row.total)} | Pendiente {row.pending}
+                  Medida: {row.medida} | Cantidad: {row.total} {formatUnitLabel(row.unit, row.total)} | m2 unit.: {row.m2Unit || "-"} | m2 total: {row.m2Total || "-"}
                 </p>
               </div>
               <div className="min-w-36">
@@ -1122,6 +1124,11 @@ function ProductionPreview({ rubro }: { rubro: WorkProgressRubric }) {
                   <span>Producido</span>
                   <span>{row.produced}/{row.total}</span>
                 </div>
+                {row.m2Total ? (
+                  <p className="mt-1 text-xs font-semibold text-next-muted">
+                    Equivale a {row.m2Produced} / {row.m2Total} m2
+                  </p>
+                ) : null}
                 <ProgressBar value={productionProgress(row.produced, row.total)} />
               </div>
             </div>
@@ -1176,20 +1183,29 @@ function getMaterialsForWork(obraId: string, materials: ProgressMaterialReport[]
   return materials.filter((material) => material.obraId === obraId);
 }
 
-function getProducedQuantity(rubro: WorkProgressRubric) {
-  const itemProduction = (rubro.items ?? [])
-    .filter((item) => item.fabricarEnTaller)
-    .reduce((sum, item) => sum + Number(item.cantidadProducida ?? 0), 0);
-  if (itemProduction > 0) return Math.round(itemProduction * 100) / 100;
-  return Math.round(Number(rubro.cantidadProducida ?? 0) * 100) / 100;
+function getRubricProductionSummary(rubro: WorkProgressRubric) {
+  const productionItems = (rubro.items ?? []).filter((item) => item.fabricarEnTaller);
+  if (productionItems.length) {
+    const producedPieces = productionItems.reduce((sum, item) => sum + Number(item.cantidadProducida ?? 0), 0);
+    const totalPieces = productionItems.reduce((sum, item) => sum + Number(item.cantidad || 0), 0);
+    const producedM2 = productionItems.reduce((sum, item) => {
+      const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
+      return sum + Number(item.cantidadProducida ?? 0) * m2Unit;
+    }, 0);
+    const totalM2 = productionItems.reduce((sum, item) => sum + (item.metrosCuadradosTotales ?? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad)), 0);
+    return `Producido: ${roundLocal(producedPieces)} / ${roundLocal(totalPieces)} unidades | Eq. ${roundLocal(producedM2)} / ${roundLocal(totalM2)} m2`;
+  }
+  return `Producido: ${roundLocal(Number(rubro.cantidadProducida ?? 0))} / ${rubro.cantidadTotalPrevista}`;
 }
 
 function getProductionPreviewRows(rubro: WorkProgressRubric) {
   const itemRows = (rubro.items ?? [])
     .filter((item) => item.fabricarEnTaller)
     .map((item) => {
-      const unit = normalizeUnit(item.unidad) || "unidad";
-      const total = unit === "m2" ? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad) : item.cantidad;
+      const unit = normalizeUnit(item.unidadProduccion ?? "unidad") || "unidad";
+      const total = item.cantidad;
+      const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
+      const m2Total = item.metrosCuadradosTotales ?? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
       const produced = Number(item.cantidadProducida ?? 0);
       return {
         id: item.id,
@@ -1198,7 +1214,10 @@ function getProductionPreviewRows(rubro: WorkProgressRubric) {
         total,
         produced,
         pending: Math.max(total - produced, 0),
-        medida: item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas"
+        medida: item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas",
+        m2Unit,
+        m2Total,
+        m2Produced: roundLocal(produced * m2Unit)
       };
     });
 
@@ -1215,8 +1234,15 @@ function getProductionPreviewRows(rubro: WorkProgressRubric) {
     total,
     produced,
     pending: Math.max(total - produced, 0),
-    medida: "Carga simple"
+    medida: "Carga simple",
+    m2Unit: unit === "m2" ? 1 : 0,
+    m2Total: unit === "m2" ? total : 0,
+    m2Produced: unit === "m2" ? produced : 0
   }];
+}
+
+function roundLocal(value: number) {
+  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 }
 
 function getActiveCrew(obraId: string, cuadrillas: Cuadrilla[]) {

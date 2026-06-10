@@ -9,7 +9,14 @@ export type ProductionWorkRow = {
   descripcion: string;
   cantidadTotal: number;
   cantidadProducida: number;
+  cantidadPendiente: number;
   unidad: OperationalUnit;
+  esDetalle: boolean;
+  medida?: string;
+  metrosCuadradosPorUnidad?: number;
+  metrosCuadradosTotales?: number;
+  metrosCuadradosProducidos?: number;
+  metrosCuadradosPendientes?: number;
   estado: ProductionItemStatus;
   observacion?: string;
 };
@@ -58,12 +65,15 @@ export function getProductionRows(obras: Obra[], rubrics: WorkProgressRubric[]):
     const obra = worksById.get(rubro.obraId);
     if (!obra) return [];
 
-    const itemRows = (rubro.items ?? [])
+    const itemRows: ProductionWorkRow[] = (rubro.items ?? [])
       .filter((item) => item.fabricarEnTaller)
-      .map((item) => {
-        const unit = normalizeUnit(item.unidad) || "unidad";
-        const total = unit === "m2" ? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad) : item.cantidad;
+      .map((item): ProductionWorkRow => {
+        const unit = normalizeUnit(item.unidadProduccion ?? "unidad") || "unidad";
+        const total = Number(item.cantidad || 0);
         const produced = Number(item.cantidadProducida ?? 0);
+        const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Unitario(item.ancho, item.alto);
+        const m2Total = item.metrosCuadradosTotales ?? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
+        const pending = Math.max(total - produced, 0);
         return {
           id: `${rubro.id}:${item.id}`,
           obra,
@@ -72,7 +82,14 @@ export function getProductionRows(obras: Obra[], rubrics: WorkProgressRubric[]):
           descripcion: item.descripcion || rubro.nombre,
           cantidadTotal: total,
           cantidadProducida: produced,
+          cantidadPendiente: pending,
           unidad: unit,
+          esDetalle: true,
+          medida: item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : undefined,
+          metrosCuadradosPorUnidad: m2Unit,
+          metrosCuadradosTotales: m2Total,
+          metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
+          metrosCuadradosPendientes: roundMeasure(Math.max(m2Total - produced * m2Unit, 0)),
           estado: normalizeProductionStatus(item.estadoProduccion, produced, total),
           observacion: item.observacion
         };
@@ -96,7 +113,13 @@ export function getProductionRows(obras: Obra[], rubrics: WorkProgressRubric[]):
       descripcion: rubro.nombre,
       cantidadTotal: total,
       cantidadProducida: produced,
+      cantidadPendiente: Math.max(total - produced, 0),
       unidad: unit,
+      esDetalle: false,
+      metrosCuadradosPorUnidad: unit === "m2" ? 1 : undefined,
+      metrosCuadradosTotales: unit === "m2" ? total : undefined,
+      metrosCuadradosProducidos: unit === "m2" ? produced : undefined,
+      metrosCuadradosPendientes: unit === "m2" ? Math.max(total - produced, 0) : undefined,
       estado: normalizeProductionStatus(rubro.estadoProduccion, produced, total),
       observacion: rubro.observacionProduccion
     }];

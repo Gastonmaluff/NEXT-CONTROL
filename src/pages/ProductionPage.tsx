@@ -13,7 +13,7 @@ import {
 import type { Obra, ProductionItemStatus, WorkProgressRubric } from "../types";
 import { formatDateShort } from "../utils/formatters";
 import { formatUnitLabel } from "../utils/units";
-import { calculateM2Total, calculateM2Unitario, getProductionRows, productionProgress, type ProductionWorkRow } from "../utils/workBreakdown";
+import { calculateM2Total, calculateM2Unitario, getProductionRows, productionProgress, roundMeasure, type ProductionWorkRow } from "../utils/workBreakdown";
 
 const statusLabels: Record<ProductionItemStatus, string> = {
   pendiente: "Pendiente",
@@ -72,7 +72,7 @@ export default function ProductionPage() {
   function openUpdate(row: ProductionWorkRow) {
     setSelectedRow(row);
     setForm({
-      cantidadHoy: "",
+      cantidadHoy: String(row.cantidadProducida || ""),
       estado: row.estado === "pendiente" ? "en_proceso" : row.estado,
       observacion: row.observacion ?? ""
     });
@@ -80,22 +80,24 @@ export default function ProductionPage() {
 
   async function saveProduction() {
     if (!selectedRow || saving) return;
-    const quantityToday = Number(form.cantidadHoy || 0);
-    if (!Number.isFinite(quantityToday) || quantityToday < 0) {
-      setError("Carga una cantidad producida valida.");
+    const accumulatedQuantity = Number(form.cantidadHoy || 0);
+    if (!Number.isFinite(accumulatedQuantity) || accumulatedQuantity < 0) {
+      setError("Carga una cantidad producida acumulada valida.");
       return;
     }
 
     setSaving(true);
     setError("");
     try {
-      const produced = Math.min(selectedRow.cantidadTotal, selectedRow.cantidadProducida + quantityToday);
+      const produced = Math.min(selectedRow.cantidadTotal, accumulatedQuantity);
       const nextStatus: ProductionItemStatus = produced >= selectedRow.cantidadTotal
         ? "completado"
         : produced > 0
           ? "parcial"
           : form.estado;
       const timestamp = new Date().toISOString();
+      const m2Unit = selectedRow.metrosCuadradosPorUnidad ?? 0;
+      const m2Total = selectedRow.metrosCuadradosTotales ?? 0;
 
       if (selectedRow.item) {
         await updateProgressRubric(selectedRow.rubro.id, {
@@ -104,10 +106,16 @@ export default function ProductionPage() {
               ? {
                   ...item,
                   cantidadProducida: produced,
+                  cantidadPendiente: Math.max(selectedRow.cantidadTotal - produced, 0),
+                  metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
+                  metrosCuadradosPendientes: roundMeasure(Math.max(m2Total - produced * m2Unit, 0)),
+                  metrosCuadradosPorUnidad: m2Unit,
+                  metrosCuadradosTotales: m2Total,
+                  unidadProduccion: selectedRow.unidad,
                   estadoProduccion: nextStatus,
                   observacion: form.observacion.trim() || item.observacion,
                   updatedAt: timestamp,
-                  updatedBy: profile?.uid ?? "produccion"
+                  updatedBy: profile?.nombre ?? profile?.uid ?? "produccion"
                 }
               : item
           )
@@ -132,8 +140,11 @@ export default function ProductionPage() {
         newValue: {
           rubroId: selectedRow.rubro.id,
           itemId: selectedRow.item?.id,
-          cantidadProducidaHoy: quantityToday,
+          cantidadProducidaAnterior: selectedRow.cantidadProducida,
           cantidadProducidaAcumulada: produced,
+          cantidadPendiente: Math.max(selectedRow.cantidadTotal - produced, 0),
+          metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
+          metrosCuadradosTotales: m2Total,
           estado: nextStatus
         }
       });
@@ -210,10 +221,15 @@ export default function ProductionPage() {
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_140px] lg:items-center">
               <div className="rounded-md bg-next-bg px-3 py-2">
-                <p className="text-xs font-bold uppercase text-next-muted">Cantidad</p>
+                <p className="text-xs font-bold uppercase text-next-muted">Cantidad producida</p>
                 <p className="mt-1 text-sm font-black text-next-text">
                   {row.cantidadProducida} / {row.cantidadTotal} {formatUnitLabel(row.unidad, row.cantidadTotal)}
                 </p>
+                {row.esDetalle && row.metrosCuadradosTotales ? (
+                  <p className="mt-1 text-xs font-semibold text-next-muted">
+                    Equivale a {formatM2(row.metrosCuadradosProducidos)} / {formatM2(row.metrosCuadradosTotales)}
+                  </p>
+                ) : null}
               </div>
               <ProgressBar value={productionProgress(row.cantidadProducida, row.cantidadTotal)} />
               <p className="text-right text-2xl font-black text-next-blue">{productionProgress(row.cantidadProducida, row.cantidadTotal)}%</p>
@@ -222,11 +238,13 @@ export default function ProductionPage() {
               <InfoCell label="Medida" value={formatMeasureLabel(row)} />
               <InfoCell label="m2 unitario" value={formatM2Unit(row)} />
               <InfoCell label="m2 total" value={formatM2Total(row)} />
-              <InfoCell label="Pendiente" value={`${Math.max(row.cantidadTotal - row.cantidadProducida, 0)} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Cantidad total" value={`${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Producido" value={`${row.cantidadProducida} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Pendiente" value={`${row.cantidadPendiente} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Equivalencia producida" value={formatM2Equivalence(row)} />
               <InfoCell label="Ultima actualizacion" value={formatProductionUpdated(row)} />
               <InfoCell label="Responsable" value={formatProductionOwner(row)} />
               <InfoCell label="Rubro" value={row.rubro.nombre} />
-              <InfoCell label="Unidad" value={formatUnitLabel(row.unidad, 1)} />
             </div>
             {row.observacion ? (
               <p className="mt-3 rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">{row.observacion}</p>
@@ -247,9 +265,17 @@ export default function ProductionPage() {
             </div>
             <div className="mt-4 grid gap-3">
               <label className="text-xs font-black uppercase text-next-muted">
-                Cantidad producida hoy
+                Cantidad producida acumulada
                 <input className="field mt-1" min={0} step="0.01" type="number" value={form.cantidadHoy} onChange={(event) => setForm({ ...form, cantidadHoy: event.target.value })} />
               </label>
+              {selectedRow.esDetalle && selectedRow.metrosCuadradosTotales ? (
+                <div className="rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">
+                  <p className="font-black uppercase">Equivalencia estimada</p>
+                  <p className="mt-1">
+                    {formatM2(roundMeasure(Number(form.cantidadHoy || 0) * (selectedRow.metrosCuadradosPorUnidad ?? 0)))} / {formatM2(selectedRow.metrosCuadradosTotales)}
+                  </p>
+                </div>
+              ) : null}
               <label className="text-xs font-black uppercase text-next-muted">
                 Estado
                 <select className="field mt-1" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as ProductionItemStatus })}>
@@ -303,16 +329,31 @@ function formatMeasureLabel(row: ProductionWorkRow) {
 }
 
 function formatM2Unit(row: ProductionWorkRow) {
-  if (!row.item?.ancho || !row.item?.alto) return "-";
-  return `${calculateM2Unitario(row.item.ancho, row.item.alto)} m2`;
+  const value = row.metrosCuadradosPorUnidad ?? (row.item?.ancho && row.item?.alto ? calculateM2Unitario(row.item.ancho, row.item.alto) : 0);
+  return value ? formatM2(value) : "-";
 }
 
 function formatM2Total(row: ProductionWorkRow) {
-  if (row.item?.ancho && row.item?.alto) {
-    return `${row.item.m2Total ?? calculateM2Total(row.item.ancho, row.item.alto, row.item.cantidad)} m2`;
-  }
-  if (row.unidad === "m2") return `${row.cantidadTotal} m2`;
+  const value = row.metrosCuadradosTotales ?? (row.item?.ancho && row.item?.alto ? row.item.m2Total ?? calculateM2Total(row.item.ancho, row.item.alto, row.item.cantidad) : 0);
+  if (value) return formatM2(value);
+  if (row.unidad === "m2") return formatM2(row.cantidadTotal);
   return "-";
+}
+
+function formatM2Equivalence(row: ProductionWorkRow) {
+  if (!row.metrosCuadradosTotales) return "-";
+  return `${formatM2(row.metrosCuadradosProducidos)} / ${formatM2(row.metrosCuadradosTotales)}`;
+}
+
+function formatM2(value?: number) {
+  return `${formatMeasureValue(value ?? 0)} m2`;
+}
+
+function formatMeasureValue(value: number) {
+  return new Intl.NumberFormat("es-PY", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function formatProductionUpdated(row: ProductionWorkRow) {

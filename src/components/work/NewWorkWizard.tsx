@@ -276,6 +276,8 @@ export default function NewWorkWizard({
         const quantity = Number(item.cantidad || 0);
         const width = item.ancho === "" ? undefined : Number(item.ancho);
         const height = item.alto === "" ? undefined : Number(item.alto);
+        const m2Unitario = calculateM2Unitario(width, height);
+        const m2Total = calculateM2Total(width, height, quantity);
         return {
           id: item.id,
           descripcion: toTitleCase(item.descripcion),
@@ -283,11 +285,17 @@ export default function NewWorkWizard({
           alto: height,
           cantidad: quantity,
           unidad: unit,
-          m2Unitario: unit === "m2" ? calculateM2Unitario(width, height) : undefined,
-          m2Total: unit === "m2" ? calculateM2Total(width, height, quantity) : undefined,
+          m2Unitario,
+          m2Total,
+          unidadProduccion: "unidad" as const,
+          metrosCuadradosPorUnidad: m2Unitario,
+          metrosCuadradosTotales: m2Total,
           fabricarEnTaller: item.fabricarEnTaller,
           estadoProduccion: "pendiente" as const,
           cantidadProducida: 0,
+          cantidadPendiente: quantity,
+          metrosCuadradosProducidos: 0,
+          metrosCuadradosPendientes: m2Total,
           observacion: item.observacion.trim() || undefined
         };
       })
