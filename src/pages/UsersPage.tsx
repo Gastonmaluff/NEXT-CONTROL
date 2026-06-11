@@ -4,7 +4,7 @@ import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { getObras } from "../lib/firestore";
-import { canManageUsers } from "../lib/roles";
+import { canManageUsers, getOperationalUrlForUser } from "../lib/roles";
 import {
   assignWorksToUser,
   countAssignedWorks,
@@ -28,8 +28,11 @@ const roles: UserRole[] = [
   "fiscalizador",
   "encargado",
   "equipo_campo",
+  "campo",
   "produccion",
-  "instalador"
+  "taller",
+  "instalador",
+  "solo_lectura"
 ];
 
 const emptyForm = {
@@ -179,6 +182,21 @@ export default function UsersPage() {
     setMessage("Solicitud de recuperacion enviada si Firebase Functions esta disponible.");
   }
 
+  async function copyOperationalLink(user: SystemUser) {
+    const url = getOperationalUrlForUser(user);
+    if (!url) {
+      setError("El usuario no tiene un rol valido para generar link operativo.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage(`Link operativo copiado para ${user.nombre}.`);
+    } catch (copyError) {
+      console.error("No se pudo copiar link operativo.", copyError);
+      setError("No se pudo copiar el link operativo.");
+    }
+  }
+
   if (loading) return <StateCard text="Cargando usuarios..." />;
 
   return (
@@ -266,12 +284,17 @@ export default function UsersPage() {
                     </div>
                     <p className="mt-1 text-sm font-semibold text-next-muted">{user.email}</p>
                     <p className="mt-1 break-all text-xs font-semibold text-next-muted">UID: {user.uid}</p>
+                    <p className="mt-2 rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">
+                      Link operativo: {getOperationalUrlForUser(user) ?? "Perfil pendiente"}
+                    </p>
                     <p className="mt-1 text-xs font-semibold text-next-muted">
                       Obras asignadas: {countAssignedWorks(user, works)} · Ultimo acceso: {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Sin dato"}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => editUser(user)}>Editar</button>
+                    <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => void copyOperationalLink(user)}>Copiar link</button>
+                    <a className="inline-flex h-9 items-center rounded-md bg-next-blue px-3 text-xs font-black text-white" href={getOperationalUrlForUser(user) ?? "#"} target="_blank" rel="noreferrer">Abrir vista</a>
                     <button className="h-9 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={() => toggleActive(user)}>{user.active ? "Desactivar" : "Activar"}</button>
                     <button className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={() => resetPassword(user)}>
                       <KeyRound className="h-4 w-4" /> Reset

@@ -28,6 +28,7 @@ import {
   getPendingMaterialsByWork,
   getProgressReportsByWork,
   getProgressRubricsByWork,
+  registerInstallationForItem,
   updateFieldTask
 } from "../lib/firestore";
 import { canViewAllWorksForUser } from "../lib/roles";
@@ -44,6 +45,7 @@ import type {
 } from "../types";
 import { formatDateShort, formatDateTime } from "../utils/formatters";
 import { calculateWeightedProgressFromReports } from "../utils/progress";
+import { getProductionRows, type ProductionWorkRow } from "../utils/workBreakdown";
 
 const allowedRoles = ["admin", "gerencia", "fiscalizador", "supervisor"] as const;
 
@@ -67,6 +69,8 @@ export default function SupervisorPage() {
   const [tasks, setTasks] = useState<FieldTask[]>([]);
   const [workdays, setWorkdays] = useState<FieldWorkday[]>([]);
   const [selectedObra, setSelectedObra] = useState<Obra | null>(null);
+  const [selectedInstallItem, setSelectedInstallItem] = useState<ProductionWorkRow | null>(null);
+  const [installDraft, setInstallDraft] = useState({ cantidad: "", observacion: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -125,6 +129,44 @@ export default function SupervisorPage() {
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : "No se pudo actualizar la tarea.");
     }
+  }
+
+  async function handleRegisterInstallation(row: ProductionWorkRow) {
+    const quantity = Number(installDraft.cantidad || 0);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setError("Carga una cantidad instalada acumulada valida.");
+      return;
+    }
+    if (quantity > row.cantidadProducida && profile?.role !== "admin" && profile?.role !== "gerencia") {
+      setError("No se puede instalar mas cantidad que la producida disponible.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await registerInstallationForItem({
+        rubroId: row.rubro.id,
+        itemId: row.item?.id,
+        cantidadNueva: quantity,
+        observacion: installDraft.observacion.trim(),
+        origen: "fiscalizador",
+        allowOverProduced: profile?.role === "admin" || profile?.role === "gerencia"
+      });
+      setSelectedInstallItem(null);
+      setInstallDraft({ cantidad: "", observacion: "" });
+      setMessage("Instalacion registrada correctamente.");
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo registrar la instalacion.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openInstall(row: ProductionWorkRow) {
+    setSelectedInstallItem(row);
+    setInstallDraft({ cantidad: String(row.cantidadInstalada || ""), observacion: "" });
   }
 
   const pendingTasks = tasks.filter((task) => ["pendiente", "asignada", "en_proceso", "reportada", "observada"].includes(task.estado));
@@ -230,6 +272,10 @@ export default function SupervisorPage() {
             const pending = materials.filter((material) => material.obraId === obra.id && material.estado !== "Resuelto").length;
             const reported = obraTasks.filter((task) => task.estado === "reportada").length;
             const open = obraTasks.filter((task) => ["pendiente", "asignada", "en_proceso", "observada"].includes(task.estado)).length;
+            const productionRows = getProductionRows([obra], obraRubrics);
+            const produced = productionRows.reduce((sum, row) => sum + row.cantidadProducida, 0);
+            const installed = productionRows.reduce((sum, row) => sum + row.cantidadInstalada, 0);
+            const available = productionRows.reduce((sum, row) => sum + row.disponibleParaInstalar, 0);
 
             return (
               <article key={obra.id} className="overflow-hidden rounded-[1.5rem] bg-white shadow-soft ring-1 ring-slate-200">
@@ -264,6 +310,26 @@ export default function SupervisorPage() {
                     <Line icon={ClipboardCheck} label="Materiales pendientes" value={`${pending}`} />
                     <Line icon={Flag} label="Tareas" value={`${open} abiertas / ${reported} reportadas`} />
                   </div>
+                  {productionRows.length ? (
+                    <div className="mt-4 rounded-2xl bg-next-bg p-3">
+                      <p className="text-xs font-black uppercase text-next-blue">Produccion vs instalacion</p>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        <MiniMetric label="Producido" value={`${produced}`} />
+                        <MiniMetric label="Disponible" value={`${available}`} />
+                        <MiniMetric label="Instalado" value={`${installed}`} />
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {productionRows.slice(0, 3).map((row) => (
+                          <button key={row.id} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left" type="button" onClick={() => openInstall(row)}>
+                            <p className="text-xs font-black text-next-text">{row.descripcion}</p>
+                            <p className="mt-1 text-[11px] font-semibold text-next-muted">
+                              Producido {row.cantidadProducida}/{row.cantidadTotal} - Instalado {row.cantidadInstalada}/{row.cantidadTotal} - Disponible {row.disponibleParaInstalar}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-2 sm:grid-cols-3">
                     <button className="h-11 rounded-xl bg-next-blue px-4 text-sm font-black text-white sm:col-span-2" type="button" onClick={() => setSelectedObra(obra)}>
                       Registrar avance
@@ -315,6 +381,35 @@ export default function SupervisorPage() {
           onClose={() => setSelectedObra(null)}
           onSubmit={handleCreateReport}
         />
+      ) : null}
+      {selectedInstallItem ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+          <section className="mx-auto max-w-lg rounded-[1.35rem] bg-white p-4 shadow-2xl">
+            <div className="mb-4">
+              <p className="text-xs font-black uppercase text-next-blue">Registrar instalacion</p>
+              <h2 className="mt-1 text-xl font-black text-next-text">{selectedInstallItem.descripcion}</h2>
+              <p className="mt-1 text-sm font-semibold text-next-muted">Disponible: {selectedInstallItem.disponibleParaInstalar}</p>
+            </div>
+            <div className="space-y-3">
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Cantidad instalada acumulada</span>
+                <input className="field mt-1" min={0} max={selectedInstallItem.cantidadProducida} step="0.01" type="number" value={installDraft.cantidad} onChange={(event) => setInstallDraft({ ...installDraft, cantidad: event.target.value })} />
+              </label>
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Observacion</span>
+                <textarea className="field mt-1 min-h-24" value={installDraft.observacion} onChange={(event) => setInstallDraft({ ...installDraft, observacion: event.target.value })} />
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-black text-next-muted" type="button" onClick={() => setSelectedInstallItem(null)}>
+                  Cancelar
+                </button>
+                <button className="h-11 rounded-xl bg-next-blue px-4 text-sm font-black text-white disabled:opacity-60" type="button" disabled={loading} onClick={() => void handleRegisterInstallation(selectedInstallItem)}>
+                  {loading ? "Guardando..." : "Guardar instalacion"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       ) : null}
     </main>
   );

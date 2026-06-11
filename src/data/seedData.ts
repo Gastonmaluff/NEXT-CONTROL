@@ -998,5 +998,8 @@ export const seedData: StoredData = {
       createdAt: "2026-06-06T08:04:00.000Z",
       updatedAt: "2026-06-06T08:04:00.000Z"
     }
-  ]
+  ],
+  asignacionesCampo: [],
+  produccionEventos: [],
+  instalacionEventos: []
 };

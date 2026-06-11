@@ -68,6 +68,9 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     proveedores: data.proveedores ?? seedData.proveedores ?? [],
     cheques: data.cheques ?? seedData.cheques ?? [],
     tareas: data.tareas ?? seedData.tareas ?? [],
-    jornadasCampo: data.jornadasCampo ?? seedData.jornadasCampo ?? []
+    jornadasCampo: data.jornadasCampo ?? seedData.jornadasCampo ?? [],
+    asignacionesCampo: data.asignacionesCampo ?? seedData.asignacionesCampo ?? [],
+    produccionEventos: data.produccionEventos ?? seedData.produccionEventos ?? [],
+    instalacionEventos: data.instalacionEventos ?? seedData.instalacionEventos ?? []
   };
 }

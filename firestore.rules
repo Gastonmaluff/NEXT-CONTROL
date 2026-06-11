@@ -37,9 +37,13 @@ service cloud.firestore {
       return isActiveUser() && userRole() in ["admin", "gerencia", "administracion"];
     }
 
+    function canReadProduction() {
+      return isActiveUser() && userRole() in ["produccion", "taller"];
+    }
+
     function canWriteOperational() {
       return isActiveUser()
-        && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado", "equipo_campo", "instalador"];
+        && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado", "equipo_campo", "campo", "instalador", "produccion", "taller"];
     }
 
     function canManageTasks() {
@@ -73,7 +77,7 @@ service cloud.firestore {
         )
         || (
           isActiveUser()
-          && userRole() in ["equipo_campo", "instalador"]
+          && userRole() in ["equipo_campo", "campo", "instalador"]
           && (
             data.asignadoAId == request.auth.uid
             || isAssignedTeam(data.asignadoAId)
@@ -108,7 +112,7 @@ service cloud.firestore {
     }
 
     function canReadWork(workId) {
-      return isManagement() || canReadFinance() || isAssignedToWork(workId) || isWorkCreator(workId);
+      return isManagement() || canReadFinance() || canReadProduction() || isAssignedToWork(workId) || isWorkCreator(workId);
     }
 
     function canWriteWork(workId) {
@@ -116,11 +120,11 @@ service cloud.firestore {
     }
 
     function canReadOperationalRecord() {
-      return isManagement() || isAssignedToWork(resource.data.obraId) || isWorkCreator(resource.data.obraId);
+      return isManagement() || canReadProduction() || isAssignedToWork(resource.data.obraId) || isWorkCreator(resource.data.obraId);
     }
 
     function canCreateOperationalRecord() {
-      return isManagement() || isAssignedToWork(request.resource.data.obraId) || isWorkCreator(request.resource.data.obraId);
+      return isManagement() || canReadProduction() || isAssignedToWork(request.resource.data.obraId) || isWorkCreator(request.resource.data.obraId);
     }
 
     match /users/{uid} {
@@ -188,7 +192,7 @@ service cloud.firestore {
     match /cuadrillas/{id} {
       allow read: if isActiveUser();
       allow write: if isActiveUser()
-        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo"];
+        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo", "campo"];
     }
 
     match /tareasInstalacion/{id} {
@@ -200,7 +204,7 @@ service cloud.firestore {
     match /jornadasInstalacion/{id} {
       allow read: if isActiveUser();
       allow write: if isActiveUser()
-        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo"];
+        && userRole() in ["admin", "gerencia", "supervisor", "fiscalizador", "encargado", "instalador", "equipo_campo", "campo"];
     }
 
     match /tareas/{id} {
@@ -213,7 +217,7 @@ service cloud.firestore {
     match /jornadasCampo/{id} {
       allow read: if isActiveUser() && canReadWorkdayData(resource.data);
       allow create: if isActiveUser()
-        && userRole() in ["admin", "gerencia", "equipo_campo", "instalador"]
+        && userRole() in ["admin", "gerencia", "equipo_campo", "campo", "instalador"]
         && (request.resource.data.userId == request.auth.uid || isManagement());
       allow update: if isActiveUser()
         && (
@@ -223,6 +227,42 @@ service cloud.firestore {
           || isAssignedTeam(resource.data.equipoId)
         );
       allow delete: if isManagement();
+    }
+
+    match /asignacionesCampo/{id} {
+      allow read: if isActiveUser()
+        && (
+          isManagement()
+          || isAssignedToWork(resource.data.obraId)
+          || resource.data.usuarioResponsableId == request.auth.uid
+        );
+      allow create: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "fiscalizador", "supervisor"]
+        && (isManagement() || isAssignedToWork(request.resource.data.obraId));
+      allow update: if isActiveUser()
+        && (
+          isManagement()
+          || (
+            userRole() in ["fiscalizador", "supervisor"]
+            && isAssignedToWork(resource.data.obraId)
+          )
+          || resource.data.usuarioResponsableId == request.auth.uid
+        );
+      allow delete: if isManagement();
+    }
+
+    match /produccionEventos/{id} {
+      allow read: if canReadOperationalRecord();
+      allow create: if isActiveUser()
+        && userRole() in ["admin", "gerencia", "produccion", "taller"]
+        && (isManagement() || isAssignedToWork(request.resource.data.obraId) || userRole() in ["produccion", "taller"]);
+      allow update, delete: if isManagement();
+    }
+
+    match /instalacionEventos/{id} {
+      allow read: if canReadOperationalRecord();
+      allow create: if canWriteOperational() && canCreateOperationalRecord();
+      allow update, delete: if isManagement();
     }
 
     match /actividades/{id} {

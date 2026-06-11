@@ -63,7 +63,7 @@ import {
   validateRubricWeights
 } from "../utils/progress";
 import { formatUnitLabel, normalizeUnit } from "../utils/units";
-import { calculateM2Total, productionProgress } from "../utils/workBreakdown";
+import { calculateM2Total, getOperationalItemState, productionProgress } from "../utils/workBreakdown";
 
 const workStatuses: WorkStatus[] = [
   "Produccion",
@@ -595,11 +595,11 @@ function ProgressDetail({
                       <p className="text-xs font-black uppercase text-next-blue">Desglose detallado</p>
                       {rubro.items.map((item) => {
                         const unit = normalizeUnit(item.unidadProduccion ?? "unidad") || "unidad";
-                        const m2Total = item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
-                        const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
-                        const itemProduced = item.cantidadProducida ?? 0;
-                        const itemTotal = item.cantidad;
-                        const m2Produced = Math.round(itemProduced * m2Unit * 100) / 100;
+                        const state = getOperationalItemState(item);
+                        const m2Total = state.metrosCuadradosTotales;
+                        const m2Unit = state.metrosCuadradosPorUnidad;
+                        const itemProduced = state.producido;
+                        const itemTotal = state.totalRequerido;
                         return (
                           <div key={item.id} className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-100">
                             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
@@ -611,8 +611,11 @@ function ProgressDetail({
                               </div>
                               <div className="grid gap-1 text-xs font-black text-next-muted sm:min-w-44">
                                 <span>Producido: {itemProduced} / {itemTotal} {formatUnitLabel(unit, itemTotal)}</span>
-                                <span>Equivale a: {m2Produced} / {m2Total} m2</span>
-                                <span>Instalado: se registra por reportes del rubro</span>
+                                <span>Disponible: {state.disponibleParaInstalar} {formatUnitLabel(unit, state.disponibleParaInstalar)}</span>
+                                <span>Instalado: {state.instalado} / {itemTotal} {formatUnitLabel(unit, itemTotal)}</span>
+                                <span>Pend. producir: {state.pendienteDeProducir} | Pend. instalar: {state.pendienteDeInstalar}</span>
+                                <span>Equivale a: {state.metrosCuadradosProducidos} / {m2Total} m2 producidos</span>
+                                <span>Instalado eq.: {state.metrosCuadradosInstalados} / {m2Total} m2</span>
                               </div>
                             </div>
                           </div>
@@ -1129,6 +1132,14 @@ function ProductionPreview({ rubro }: { rubro: WorkProgressRubric }) {
                     Equivale a {row.m2Produced} / {row.m2Total} m2
                   </p>
                 ) : null}
+                <p className="mt-1 text-xs font-semibold text-next-muted">
+                  Disponible: {row.available} | Instalado: {row.installed}/{row.total} | Pend. instalar: {row.pendingInstall}
+                </p>
+                {row.m2Total ? (
+                  <p className="text-xs font-semibold text-next-muted">
+                    Instalado eq.: {row.m2Installed} / {row.m2Total} m2
+                  </p>
+                ) : null}
                 <ProgressBar value={productionProgress(row.produced, row.total)} />
               </div>
             </div>
@@ -1186,14 +1197,16 @@ function getMaterialsForWork(obraId: string, materials: ProgressMaterialReport[]
 function getRubricProductionSummary(rubro: WorkProgressRubric) {
   const productionItems = (rubro.items ?? []).filter((item) => item.fabricarEnTaller);
   if (productionItems.length) {
-    const producedPieces = productionItems.reduce((sum, item) => sum + Number(item.cantidadProducida ?? 0), 0);
-    const totalPieces = productionItems.reduce((sum, item) => sum + Number(item.cantidad || 0), 0);
+    const producedPieces = productionItems.reduce((sum, item) => sum + getOperationalItemState(item).producido, 0);
+    const totalPieces = productionItems.reduce((sum, item) => sum + getOperationalItemState(item).totalRequerido, 0);
+    const installedPieces = productionItems.reduce((sum, item) => sum + getOperationalItemState(item).instalado, 0);
+    const availablePieces = productionItems.reduce((sum, item) => sum + getOperationalItemState(item).disponibleParaInstalar, 0);
     const producedM2 = productionItems.reduce((sum, item) => {
-      const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
-      return sum + Number(item.cantidadProducida ?? 0) * m2Unit;
+      const state = getOperationalItemState(item);
+      return sum + state.metrosCuadradosProducidos;
     }, 0);
-    const totalM2 = productionItems.reduce((sum, item) => sum + (item.metrosCuadradosTotales ?? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad)), 0);
-    return `Producido: ${roundLocal(producedPieces)} / ${roundLocal(totalPieces)} unidades | Eq. ${roundLocal(producedM2)} / ${roundLocal(totalM2)} m2`;
+    const totalM2 = productionItems.reduce((sum, item) => sum + getOperationalItemState(item).metrosCuadradosTotales, 0);
+    return `Prod. ${roundLocal(producedPieces)}/${roundLocal(totalPieces)} | Disp. ${roundLocal(availablePieces)} | Inst. ${roundLocal(installedPieces)} | Eq. ${roundLocal(producedM2)}/${roundLocal(totalM2)} m2`;
   }
   return `Producido: ${roundLocal(Number(rubro.cantidadProducida ?? 0))} / ${rubro.cantidadTotalPrevista}`;
 }
@@ -1203,21 +1216,26 @@ function getProductionPreviewRows(rubro: WorkProgressRubric) {
     .filter((item) => item.fabricarEnTaller)
     .map((item) => {
       const unit = normalizeUnit(item.unidadProduccion ?? "unidad") || "unidad";
-      const total = item.cantidad;
-      const m2Unit = item.metrosCuadradosPorUnidad ?? item.m2Unitario ?? calculateM2Total(item.ancho, item.alto, 1);
-      const m2Total = item.metrosCuadradosTotales ?? item.m2Total ?? calculateM2Total(item.ancho, item.alto, item.cantidad);
-      const produced = Number(item.cantidadProducida ?? 0);
+      const state = getOperationalItemState(item);
+      const total = state.totalRequerido;
+      const m2Unit = state.metrosCuadradosPorUnidad;
+      const m2Total = state.metrosCuadradosTotales;
+      const produced = state.producido;
       return {
         id: item.id,
         descripcion: item.descripcion || rubro.nombre,
         unit,
         total,
         produced,
-        pending: Math.max(total - produced, 0),
+        installed: state.instalado,
+        available: state.disponibleParaInstalar,
+        pending: state.pendienteDeProducir,
+        pendingInstall: state.pendienteDeInstalar,
         medida: item.ancho && item.alto ? `${item.ancho} x ${item.alto}` : "Sin medidas",
         m2Unit,
         m2Total,
-        m2Produced: roundLocal(produced * m2Unit)
+        m2Produced: roundLocal(state.metrosCuadradosProducidos),
+        m2Installed: roundLocal(state.metrosCuadradosInstalados)
       };
     });
 
@@ -1233,11 +1251,15 @@ function getProductionPreviewRows(rubro: WorkProgressRubric) {
     unit,
     total,
     produced,
+    installed: Number(rubro.cantidadEjecutadaAcumulada ?? 0),
+    available: Math.max(produced - Number(rubro.cantidadEjecutadaAcumulada ?? 0), 0),
     pending: Math.max(total - produced, 0),
+    pendingInstall: Math.max(total - Number(rubro.cantidadEjecutadaAcumulada ?? 0), 0),
     medida: "Carga simple",
     m2Unit: unit === "m2" ? 1 : 0,
     m2Total: unit === "m2" ? total : 0,
-    m2Produced: unit === "m2" ? produced : 0
+    m2Produced: unit === "m2" ? produced : 0,
+    m2Installed: unit === "m2" ? Number(rubro.cantidadEjecutadaAcumulada ?? 0) : 0
   }];
 }
 

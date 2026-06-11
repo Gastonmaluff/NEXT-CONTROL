@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import BrandLogo from "../brand/BrandLogo";
 import { navigationItems } from "../../data/navigation";
 import { useAuth } from "../../context/AuthContext";
-import { canManageUsers } from "../../lib/roles";
+import { canManageUsers, canViewModule } from "../../lib/roles";
 
 type SidebarProps = {
   collapsed: boolean;
@@ -12,7 +12,10 @@ type SidebarProps = {
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { profile } = useAuth();
-  const items = navigationItems.filter((item) => !("adminOnly" in item) || !item.adminOnly || canManageUsers(profile));
+  const items = navigationItems.filter((item) =>
+    canViewModule(profile, item.moduleName) &&
+    (!item.adminOnly || canManageUsers(profile))
+  );
 
   return (
     <aside

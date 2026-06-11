@@ -5,10 +5,9 @@ import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import {
-  createProgressActivity,
   getObras,
   getProgressRubricsByWork,
-  updateProgressRubric
+  registerProductionForItem
 } from "../lib/firestore";
 import type { Obra, ProductionItemStatus, WorkProgressRubric } from "../types";
 import { formatDateShort } from "../utils/formatters";
@@ -90,63 +89,12 @@ export default function ProductionPage() {
     setError("");
     try {
       const produced = Math.min(selectedRow.cantidadTotal, accumulatedQuantity);
-      const nextStatus: ProductionItemStatus = produced >= selectedRow.cantidadTotal
-        ? "completado"
-        : produced > 0
-          ? "parcial"
-          : form.estado;
-      const timestamp = new Date().toISOString();
-      const m2Unit = selectedRow.metrosCuadradosPorUnidad ?? 0;
-      const m2Total = selectedRow.metrosCuadradosTotales ?? 0;
-
-      if (selectedRow.item) {
-        await updateProgressRubric(selectedRow.rubro.id, {
-          items: (selectedRow.rubro.items ?? []).map((item) =>
-            item.id === selectedRow.item?.id
-              ? {
-                  ...item,
-                  cantidadProducida: produced,
-                  cantidadPendiente: Math.max(selectedRow.cantidadTotal - produced, 0),
-                  metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
-                  metrosCuadradosPendientes: roundMeasure(Math.max(m2Total - produced * m2Unit, 0)),
-                  metrosCuadradosPorUnidad: m2Unit,
-                  metrosCuadradosTotales: m2Total,
-                  unidadProduccion: selectedRow.unidad,
-                  estadoProduccion: nextStatus,
-                  observacion: form.observacion.trim() || item.observacion,
-                  updatedAt: timestamp,
-                  updatedBy: profile?.nombre ?? profile?.uid ?? "produccion"
-                }
-              : item
-          )
-        });
-      } else {
-        await updateProgressRubric(selectedRow.rubro.id, {
-          cantidadProducida: produced,
-          estadoProduccion: nextStatus,
-          observacionProduccion: form.observacion.trim() || selectedRow.rubro.observacionProduccion,
-          fechaProduccionActualizada: timestamp,
-          responsableProduccion: profile?.nombre ?? "Produccion"
-        });
-      }
-
-      await createProgressActivity({
-        obraId: selectedRow.obra.id,
-        tipo: "produccion",
-        descripcion: `Produccion actualizada: ${selectedRow.descripcion}.`,
-        userId: profile?.uid ?? "produccion",
-        userName: profile?.nombre ?? "Produccion",
-        fechaHora: timestamp,
-        newValue: {
-          rubroId: selectedRow.rubro.id,
-          itemId: selectedRow.item?.id,
-          cantidadProducidaAnterior: selectedRow.cantidadProducida,
-          cantidadProducidaAcumulada: produced,
-          cantidadPendiente: Math.max(selectedRow.cantidadTotal - produced, 0),
-          metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
-          metrosCuadradosTotales: m2Total,
-          estado: nextStatus
-        }
+      await registerProductionForItem({
+        rubroId: selectedRow.rubro.id,
+        itemId: selectedRow.item?.id,
+        cantidadNueva: produced,
+        observacion: form.observacion.trim(),
+        allowOverTotal: profile?.role === "admin"
       });
 
       setMessage("Produccion actualizada correctamente.");
@@ -241,6 +189,8 @@ export default function ProductionPage() {
               <InfoCell label="Cantidad total" value={`${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
               <InfoCell label="Producido" value={`${row.cantidadProducida} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
               <InfoCell label="Pendiente" value={`${row.cantidadPendiente} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
+              <InfoCell label="Disponible para instalar" value={`${row.disponibleParaInstalar} ${formatUnitLabel(row.unidad, row.disponibleParaInstalar)}`} />
+              <InfoCell label="Instalado" value={`${row.cantidadInstalada} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
               <InfoCell label="Equivalencia producida" value={formatM2Equivalence(row)} />
               <InfoCell label="Ultima actualizacion" value={formatProductionUpdated(row)} />
               <InfoCell label="Responsable" value={formatProductionOwner(row)} />

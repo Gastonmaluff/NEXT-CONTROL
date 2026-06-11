@@ -7,7 +7,10 @@ export type UserRole =
   | "administracion"
   | "produccion"
   | "instalador"
-  | "equipo_campo";
+  | "equipo_campo"
+  | "campo"
+  | "taller"
+  | "solo_lectura";
 
 export type WorkStatus =
   | "Prospecto"
@@ -31,6 +34,7 @@ export type PipelineStatus =
 
 export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
 export type ProductionItemStatus = "pendiente" | "en_proceso" | "parcial" | "completado";
+export type InstallationItemStatus = "pendiente" | "en_proceso" | "parcial" | "completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
 export type ProgressMaterialStatus = "Pendiente" | "Solicitado" | "Recibido" | "Resuelto";
 export type ProgressCalculationMode = "cantidad" | "manual";
@@ -93,11 +97,49 @@ export type SystemUser = {
   teamName?: string;
   teamType?: "cuadrilla" | "equipo_campo";
   membersDescription?: string;
+  cargo?: string;
+  operationalPath?: string;
+  operationalUrl?: string;
+  modules?: Partial<Record<SystemModuleName, ModuleAccess>>;
+  permissions?: Partial<Record<SystemPermissionName, boolean>>;
   lastLoginAt?: string;
   createdAt: string;
   createdBy: string;
   updatedAt?: string;
 };
+
+export type ModuleAccess = {
+  view?: boolean;
+  create?: boolean;
+  edit?: boolean;
+  delete?: boolean;
+};
+
+export type SystemModuleName =
+  | "control"
+  | "avance_obras"
+  | "finanzas_obras"
+  | "clientes"
+  | "proveedores"
+  | "cheques"
+  | "tareas"
+  | "instalaciones"
+  | "presupuestos"
+  | "produccion"
+  | "taller"
+  | "inventario"
+  | "reportes"
+  | "configuracion"
+  | "usuarios";
+
+export type SystemPermissionName =
+  | "canAssignFieldWork"
+  | "canCreateTasks"
+  | "canValidateProgress"
+  | "canEditProgress"
+  | "canViewFinancials"
+  | "canManageUsers"
+  | "canUpdateProduction";
 
 export type CostCategoryName =
   | "Vidrios"
@@ -212,14 +254,23 @@ export type WorkBreakdownItem = {
   unidad: WorkBreakdownUnit;
   m2Unitario?: number;
   m2Total?: number;
+  cantidadTotal?: number;
   unidadProduccion?: WorkBreakdownUnit;
   metrosCuadradosPorUnidad?: number;
   metrosCuadradosTotales?: number;
   fabricarEnTaller: boolean;
   estadoProduccion: ProductionItemStatus;
   cantidadProducida: number;
+  producidoCantidad?: number;
+  instaladoCantidad?: number;
+  disponibleParaInstalar?: number;
+  pendienteDeProducir?: number;
+  pendienteDeInstalar?: number;
+  estadoInstalacion?: InstallationItemStatus;
   cantidadPendiente?: number;
   metrosCuadradosProducidos?: number;
+  metrosCuadradosInstalados?: number;
+  metrosCuadradosDisponibles?: number;
   metrosCuadradosPendientes?: number;
   observacion?: string;
   updatedAt?: string;
@@ -243,6 +294,7 @@ export type WorkProgressRubric = {
   requiereProduccion?: boolean;
   items?: WorkBreakdownItem[];
   cantidadProducida?: number;
+  cantidadEjecutadaAcumulada?: number;
   estadoProduccion?: ProductionItemStatus;
   observacionProduccion?: string;
   fechaProduccionActualizada?: string;
@@ -463,6 +515,9 @@ export type FieldTask = {
   descripcion?: string;
   rubroId?: string;
   rubroNombre?: string;
+  itemId?: string;
+  itemDescripcion?: string;
+  asignacionId?: string;
   cantidadPrevista?: number;
   unidad?: "m2" | "unidad";
   fechaAsignada?: string;
@@ -482,6 +537,35 @@ export type FieldTask = {
   jornadaId?: string;
   createdAt: string;
   createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
+export type FieldAssignmentStatus = "planificada" | "activa" | "finalizada" | "cancelada";
+
+export type FieldAssignment = {
+  id: string;
+  obraId: string;
+  obraNombre: string;
+  fecha: string;
+  equipoId?: string;
+  nombreEquipo: string;
+  usuarioResponsableId?: string;
+  usuarioResponsableNombre?: string;
+  usuariosAsignados?: string[];
+  tareasIds?: string[];
+  items?: Array<{
+    rubroId: string;
+    rubroNombre: string;
+    itemId?: string;
+    itemDescripcion?: string;
+    cantidadAsignada?: number;
+    unidad?: WorkBreakdownUnit;
+  }>;
+  observacion?: string;
+  estado: FieldAssignmentStatus;
+  createdBy?: string;
+  createdAt: string;
   updatedAt?: string;
   updatedBy?: string;
 };
@@ -520,6 +604,44 @@ export type FieldWorkday = {
   updatedAt?: string;
 };
 
+export type ProductionEvent = {
+  id: string;
+  obraId: string;
+  obraNombre?: string;
+  rubroId: string;
+  rubroNombre?: string;
+  itemId?: string;
+  itemDescripcion?: string;
+  usuarioId: string;
+  usuarioNombre: string;
+  cantidadAnterior: number;
+  cantidadNueva: number;
+  diferencia: number;
+  observacion?: string;
+  fotos?: TaskPhoto[];
+  createdAt: string;
+};
+
+export type InstallationEvent = {
+  id: string;
+  obraId: string;
+  obraNombre?: string;
+  rubroId: string;
+  rubroNombre?: string;
+  itemId?: string;
+  itemDescripcion?: string;
+  usuarioId: string;
+  usuarioNombre: string;
+  cantidadAnterior: number;
+  cantidadNueva: number;
+  diferencia: number;
+  fotos?: TaskPhoto[];
+  ubicacion?: FieldLocation;
+  observacion?: string;
+  origen: "admin" | "campo" | "fiscalizador";
+  createdAt: string;
+};
+
 export type StoredData = {
   obras: Obra[];
   oportunidades: OportunidadCRM[];
@@ -538,6 +660,9 @@ export type StoredData = {
   cheques: Cheque[];
   tareas: FieldTask[];
   jornadasCampo: FieldWorkday[];
+  asignacionesCampo: FieldAssignment[];
+  produccionEventos: ProductionEvent[];
+  instalacionEventos: InstallationEvent[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";

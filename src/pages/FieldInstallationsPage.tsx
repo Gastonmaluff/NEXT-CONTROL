@@ -20,10 +20,13 @@ import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import {
   appendTaskPhotos,
+  getFieldAssignments,
   createFieldWorkday,
   getFieldTasks,
   getFieldWorkdays,
   getObras,
+  getProgressRubricsByWork,
+  registerInstallationForItem,
   updateFieldTask,
   updateFieldWorkday
 } from "../lib/firestore";
@@ -34,9 +37,10 @@ import {
   buildWorkdayPhotoPath,
   uploadFile
 } from "../lib/storageUpload";
-import type { FieldLocation, FieldTask, FieldTaskStatus, FieldWorkday, Obra, TaskPhoto, UserRole } from "../types";
+import type { FieldAssignment, FieldLocation, FieldTask, FieldTaskStatus, FieldWorkday, Obra, TaskPhoto, UserRole, WorkProgressRubric } from "../types";
 import { formatDateShort } from "../utils/formatters";
 import { formatUnitLabel } from "../utils/units";
+import { getProductionRows, type ProductionWorkRow } from "../utils/workBreakdown";
 
 const statusLabels: Record<FieldTaskStatus, string> = {
   pendiente: "Pendiente",
@@ -51,13 +55,17 @@ const statusLabels: Record<FieldTaskStatus, string> = {
 export default function FieldInstallationsPage() {
   const { profile } = useAuth();
   const [tasks, setTasks] = useState<FieldTask[]>([]);
+  const [assignments, setAssignments] = useState<FieldAssignment[]>([]);
   const [workdays, setWorkdays] = useState<FieldWorkday[]>([]);
   const [works, setWorks] = useState<Obra[]>([]);
+  const [rubrics, setRubrics] = useState<WorkProgressRubric[]>([]);
   const [selectedTask, setSelectedTask] = useState<FieldTask | null>(null);
+  const [selectedInstallItem, setSelectedInstallItem] = useState<ProductionWorkRow | null>(null);
   const [startFiles, setStartFiles] = useState<File[]>([]);
   const [taskFiles, setTaskFiles] = useState<File[]>([]);
   const [finishFiles, setFinishFiles] = useState<File[]>([]);
   const [reportDraft, setReportDraft] = useState({ cantidad: "", observacion: "" });
+  const [installDraft, setInstallDraft] = useState({ cantidad: "", observacion: "" });
   const [message, setMessage] = useState("");
   const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
@@ -74,17 +82,26 @@ export default function FieldInstallationsPage() {
     setLoading(true);
     setError("");
     try {
-      const [loadedTasks, loadedWorkdays, loadedWorks] = await Promise.all([
+      const [loadedTasks, loadedWorkdays, loadedWorks, loadedAssignments] = await Promise.all([
         getFieldTasks(),
         getFieldWorkdays(),
         getObras().catch((workError) => {
           console.error("No se pudieron cargar obras para /campo.", workError);
           return [] as Obra[];
-        })
+        }),
+        getFieldAssignments().catch(() => [] as FieldAssignment[])
       ]);
       setTasks(loadedTasks);
+      setAssignments(loadedAssignments);
       setWorkdays(loadedWorkdays);
       setWorks(loadedWorks);
+      const visibleWorkIds = new Set(loadedTasks.map((task) => task.obraId));
+      loadedAssignments.forEach((assignment) => visibleWorkIds.add(assignment.obraId));
+      if (loadedWorkdays.length) {
+        loadedWorkdays.forEach((jornada) => visibleWorkIds.add(jornada.obraId));
+      }
+      const loadedRubrics = (await Promise.all(Array.from(visibleWorkIds).map((obraId) => getProgressRubricsByWork(obraId).catch(() => [])))).flat();
+      setRubrics(loadedRubrics);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo cargar instalaciones.");
     } finally {
@@ -108,9 +125,22 @@ export default function FieldInstallationsPage() {
       task.fiscalizadorId === profile.uid
     );
   }, [profile, tasks]);
+  const visibleAssignments = useMemo(() => {
+    if (!profile) return assignments;
+    if (["admin", "gerencia"].includes(profile.role)) return assignments;
+    const assignedWorks = profile.assignedWorkIds ?? [];
+    const name = (profile.teamName ?? profile.nombre).toLowerCase();
+    return assignments.filter((assignment) =>
+      assignedWorks.includes(assignment.obraId) ||
+      assignment.usuarioResponsableId === profile.uid ||
+      assignment.nombreEquipo.toLowerCase().includes(name) ||
+      assignment.usuarioResponsableNombre?.toLowerCase().includes(name)
+    );
+  }, [assignments, profile]);
 
   const today = new Date().toISOString().slice(0, 10);
   const todaysTasks = visibleTasks.filter((task) => !task.fechaAsignada || task.fechaAsignada <= today);
+  const todayAssignment = visibleAssignments.find((assignment) => assignment.fecha <= today && assignment.estado !== "finalizada" && assignment.estado !== "cancelada");
   const activeWorkday = workdays.find((jornada) =>
     jornada.estado === "activa" &&
     (jornada.userId === profile?.uid || jornada.equipoNombre === profile?.teamName || jornada.equipoNombre === profile?.nombre)
@@ -118,7 +148,7 @@ export default function FieldInstallationsPage() {
   const activeTask = activeWorkday
     ? visibleTasks.find((task) => activeWorkday.tareasIds.includes(task.id)) ?? visibleTasks.find((task) => task.obraId === activeWorkday.obraId)
     : todaysTasks.find((task) => !["completada", "cancelada"].includes(task.estado)) ?? todaysTasks[0];
-  const activeWork = works.find((work) => work.id === (activeWorkday?.obraId ?? activeTask?.obraId));
+  const activeWork = works.find((work) => work.id === (activeWorkday?.obraId ?? activeTask?.obraId ?? todayAssignment?.obraId));
   const completedToday = todaysTasks.filter((task) => task.estado === "completada").length;
   const progress = todaysTasks.length ? Math.round((completedToday / todaysTasks.length) * 100) : 0;
   const allPhotos = [
@@ -131,6 +161,11 @@ export default function FieldInstallationsPage() {
     .reverse()
     .find((task) => task.observacionCampo || task.observacionFiscalizador);
   const timelineItems = buildTimeline(activeWorkday, visibleTasks);
+  const installRows = useMemo(() => {
+    if (!activeWork) return [];
+    return getProductionRows([activeWork], rubrics.filter((rubro) => rubro.obraId === activeWork.id))
+      .filter((row) => row.disponibleParaInstalar > 0 || row.pendienteDeInstalar > 0);
+  }, [activeWork, rubrics]);
 
   async function requestLocation(): Promise<FieldLocation | null> {
     if (!navigator.geolocation) return null;
@@ -369,6 +404,44 @@ export default function FieldInstallationsPage() {
     }
   }
 
+  async function registerInstallation(row: ProductionWorkRow) {
+    const quantity = Number(installDraft.cantidad || 0);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setError("Carga una cantidad instalada acumulada valida.");
+      return;
+    }
+    if (quantity > row.cantidadProducida) {
+      setError("No se puede instalar mas cantidad que la producida disponible.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      await registerInstallationForItem({
+        rubroId: row.rubro.id,
+        itemId: row.item?.id,
+        cantidadNueva: quantity,
+        observacion: installDraft.observacion.trim(),
+        ubicacion: activeWorkday?.ubicacionInicio,
+        origen: "campo"
+      });
+      setSelectedInstallItem(null);
+      setInstallDraft({ cantidad: "", observacion: "" });
+      setMessage("Instalacion registrada correctamente.");
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo registrar la instalacion.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openInstall(row: ProductionWorkRow) {
+    setSelectedInstallItem(row);
+    setInstallDraft({ cantidad: String(row.cantidadInstalada || ""), observacion: "" });
+  }
+
   function openTaskReport(task: FieldTask) {
     setSelectedTask(task);
     setReportDraft({
@@ -526,6 +599,36 @@ export default function FieldInstallationsPage() {
         </section>
 
         <section className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="mb-4">
+            <p className="text-xs font-black uppercase text-next-blue">Disponible para instalar</p>
+            <h2 className="text-lg font-black text-next-text">{activeWork ? activeWork.nombre : "Sin obra activa"}</h2>
+          </div>
+          <div className="space-y-3">
+            {installRows.length ? installRows.map((row) => (
+              <article key={row.id} className="rounded-2xl border border-slate-200 bg-next-bg p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase text-next-blue">{row.rubro.nombre}</p>
+                    <h3 className="mt-1 text-base font-black text-next-text">{row.descripcion}</h3>
+                    <p className="mt-1 text-xs font-semibold text-next-muted">{row.medida ? `Medida ${row.medida}` : "Carga simple"}</p>
+                  </div>
+                  <StatusBadge label={row.estadoInstalacion} status={row.estadoInstalacion === "completado" ? "success" : row.estadoInstalacion === "parcial" ? "warning" : "info"} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <MiniMetric label="Producido" value={`${row.cantidadProducida}/${row.cantidadTotal}`} />
+                  <MiniMetric label="Disponible" value={`${row.disponibleParaInstalar}`} />
+                  <MiniMetric label="Instalado" value={`${row.cantidadInstalada}/${row.cantidadTotal}`} />
+                  <MiniMetric label="Pendiente" value={`${row.pendienteDeInstalar}`} />
+                </div>
+                <button className="mt-3 h-10 w-full rounded-xl bg-next-blue px-4 text-xs font-black text-white disabled:bg-slate-300" type="button" disabled={!activeWorkday} onClick={() => openInstall(row)}>
+                  Registrar instalacion
+                </button>
+              </article>
+            )) : <EmptyState text={activeWork ? "No hay items disponibles para instalar en esta obra." : "Inicia una jornada para ver items disponibles."} />}
+          </div>
+        </section>
+
+        <section className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-soft">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <p className="text-xs font-black uppercase text-next-blue">Fotos de avance</p>
@@ -616,6 +719,38 @@ export default function FieldInstallationsPage() {
                 </button>
                 <button className="h-11 rounded-xl bg-next-blue px-4 text-sm font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={() => void reportTask(selectedTask)}>
                   {saving ? "Guardando..." : "Reportar tarea"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {selectedInstallItem ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+          <section className="mx-auto max-w-lg rounded-[1.35rem] bg-white p-4 shadow-2xl">
+            <div className="mb-4">
+              <p className="text-xs font-black uppercase text-next-blue">Registrar instalacion</p>
+              <h2 className="mt-1 text-xl font-black text-next-text">{selectedInstallItem.descripcion}</h2>
+              <p className="mt-1 text-sm font-semibold text-next-muted">
+                Disponible: {selectedInstallItem.disponibleParaInstalar} {formatUnitLabel(selectedInstallItem.unidad, selectedInstallItem.disponibleParaInstalar)}
+              </p>
+            </div>
+            <div className="space-y-3">
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Cantidad instalada acumulada</span>
+                <input className="field mt-1" min={0} max={selectedInstallItem.cantidadProducida} step="0.01" type="number" value={installDraft.cantidad} onChange={(event) => setInstallDraft({ ...installDraft, cantidad: event.target.value })} />
+              </label>
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Observacion</span>
+                <textarea className="field mt-1 min-h-24" value={installDraft.observacion} onChange={(event) => setInstallDraft({ ...installDraft, observacion: event.target.value })} />
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-black text-next-muted" type="button" onClick={() => setSelectedInstallItem(null)}>
+                  Cancelar
+                </button>
+                <button className="h-11 rounded-xl bg-next-blue px-4 text-sm font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={() => void registerInstallation(selectedInstallItem)}>
+                  {saving ? "Guardando..." : "Guardar instalacion"}
                 </button>
               </div>
             </div>

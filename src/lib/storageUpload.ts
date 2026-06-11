@@ -9,6 +9,10 @@ export function buildProgressPhotoPath(obraId: string, file: File): string {
   return `obras/${obraId}/progress/${Date.now()}-${sanitizeStorageFileName(file.name || "avance.jpg")}`;
 }
 
+export function buildProductionPhotoPath(obraId: string, rubroId: string, itemId: string, file: File): string {
+  return `obras/${obraId}/produccion/${rubroId}/${itemId}/${Date.now()}-${sanitizeStorageFileName(file.name || "produccion.jpg")}`;
+}
+
 export function buildTaskPhotoPath(obraId: string, taskId: string, file: File): string {
   return `obras/${obraId}/tareas/${taskId}/${Date.now()}-${sanitizeStorageFileName(file.name || "tarea.jpg")}`;
 }

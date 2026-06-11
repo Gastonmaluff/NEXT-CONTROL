@@ -17,9 +17,12 @@ export type CreateSystemUserInput = {
   teamName?: string;
   teamType?: SystemUser["teamType"];
   membersDescription?: string;
+  cargo?: string;
+  modules?: SystemUser["modules"];
+  permissions?: SystemUser["permissions"];
 };
 
-export type UpdateSystemUserInput = Partial<Pick<SystemUser, "nombre" | "role" | "phone" | "active" | "assignedWorkIds" | "assignedTeamIds" | "teamName" | "teamType" | "membersDescription">>;
+export type UpdateSystemUserInput = Partial<Pick<SystemUser, "nombre" | "role" | "phone" | "active" | "assignedWorkIds" | "assignedTeamIds" | "teamName" | "teamType" | "membersDescription" | "cargo" | "modules" | "permissions" | "operationalPath">>;
 
 function shouldUseFirebaseUsers() {
   return isFirebaseConfigured() && Boolean(firebaseFunctions) && Boolean(firestoreDb) && !isDemoSession();
@@ -55,6 +58,10 @@ export async function createSystemUser(data: CreateSystemUserInput): Promise<Sys
     teamName: data.teamName,
     teamType: data.teamType,
     membersDescription: data.membersDescription,
+    cargo: data.cargo,
+    modules: data.modules,
+    permissions: data.permissions,
+    operationalPath: roleToOperationalPath(data.role),
     createdAt: now,
     createdBy: "demo-admin",
     updatedAt: now
@@ -64,17 +71,27 @@ export async function createSystemUser(data: CreateSystemUserInput): Promise<Sys
   return user;
 }
 
+function roleToOperationalPath(role: UserRole) {
+  if (role === "fiscalizador" || role === "supervisor") return "/fiscalizador";
+  if (role === "campo" || role === "equipo_campo" || role === "instalador") return "/campo";
+  if (role === "taller" || role === "produccion") return "/taller";
+  return "/control";
+}
+
 export async function updateSystemUser(uid: string, data: UpdateSystemUserInput): Promise<SystemUser> {
+  const normalizedData = data.role && !data.operationalPath
+    ? { ...data, operationalPath: roleToOperationalPath(data.role) }
+    : data;
   if (shouldUseFirebaseUsers() && firebaseFunctions) {
     const callable = httpsCallable<{ uid: string; data: UpdateSystemUserInput }, SystemUser>(firebaseFunctions, "updateSystemUser");
-    const result = await callable({ uid, data });
+    const result = await callable({ uid, data: normalizedData });
     return result.data;
   }
 
   const stored = getStoredData();
   const index = stored.users.findIndex((user) => user.uid === uid);
   if (index === -1) throw new Error("No se encontro el usuario.");
-  stored.users[index] = { ...stored.users[index], ...data, updatedAt: new Date().toISOString() };
+  stored.users[index] = { ...stored.users[index], ...normalizedData, updatedAt: new Date().toISOString() };
   saveStoredData(stored);
   return stored.users[index];
 }

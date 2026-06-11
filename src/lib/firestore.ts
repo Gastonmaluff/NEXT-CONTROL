@@ -19,17 +19,21 @@ import type {
   ChequeStatus,
   Cliente,
   Cuadrilla,
+  FieldAssignment,
   FieldTask,
   FieldWorkday,
   FinancialMovement,
+  InstallationEvent,
   Obra,
   OportunidadCRM,
+  ProductionEvent,
   Proveedor,
   ProgressActivityLog,
   ProgressMaterialReport,
   ProgressReport,
   TaskPhoto,
   TareaInstalacion,
+  WorkBreakdownItem,
   WorkProgressRubric
 } from "../types";
 import { calculateSaldoPendiente } from "../utils/finance";
@@ -39,6 +43,7 @@ import {
   calculateRubricProgress
 } from "../utils/progress";
 import { normalizeUnit } from "../utils/units";
+import { getOperationalItemState, normalizeInstallationStatus, normalizeProductionStatus, roundMeasure } from "../utils/workBreakdown";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { getCurrentUserProfile } from "./auth";
 import { canManageFinances, canViewAllTasks, canViewAllWorks } from "./roles";
@@ -64,7 +69,10 @@ const collections = {
   proveedores: "proveedores",
   cheques: "cheques",
   tareas: "tareas",
-  jornadasCampo: "jornadasCampo"
+  jornadasCampo: "jornadasCampo",
+  asignacionesCampo: "asignacionesCampo",
+  produccionEventos: "produccionEventos",
+  instalacionEventos: "instalacionEventos"
 } as const;
 
 function shouldUseFirebase() {
@@ -350,6 +358,9 @@ export async function deleteObra(id: string): Promise<void> {
     stored.actividadesAvance = stored.actividadesAvance.filter((activity) => activity.obraId !== id);
     stored.tareas = stored.tareas.filter((tarea) => tarea.obraId !== id);
     stored.jornadasCampo = stored.jornadasCampo.filter((jornada) => jornada.obraId !== id);
+    stored.asignacionesCampo = stored.asignacionesCampo.filter((assignment) => assignment.obraId !== id);
+    stored.produccionEventos = stored.produccionEventos.filter((event) => event.obraId !== id);
+    stored.instalacionEventos = stored.instalacionEventos.filter((event) => event.obraId !== id);
     saveStoredData(stored);
     return;
   }
@@ -669,6 +680,316 @@ export async function updateFieldWorkday(
 
 export function appendTaskPhotos(task: FieldTask, photos: TaskPhoto[]): TaskPhoto[] {
   return [...(task.fotos ?? []), ...photos];
+}
+
+export async function getFieldAssignments(): Promise<FieldAssignment[]> {
+  if (!shouldUseFirebase() || !firestoreDb) {
+    return (getStoredData().asignacionesCampo ?? [])
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+
+  try {
+    const profile = await getActiveProfile();
+    if (canViewAllTasks(profile)) {
+      return (await getCollection<FieldAssignment>("asignacionesCampo"))
+        .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    }
+
+    const db = firestoreDb;
+    const assignmentsById = new Map<string, FieldAssignment>();
+    const ownSnapshot = await getDocs(query(collection(db, collections.asignacionesCampo), where("usuarioResponsableId", "==", profile.uid)));
+    ownSnapshot.docs.forEach((item) => assignmentsById.set(item.id, { id: item.id, ...item.data() } as FieldAssignment));
+
+    for (const obraId of profile.assignedWorkIds ?? []) {
+      const workSnapshot = await getDocs(query(collection(db, collections.asignacionesCampo), where("obraId", "==", obraId)));
+      workSnapshot.docs.forEach((item) => assignmentsById.set(item.id, { id: item.id, ...item.data() } as FieldAssignment));
+    }
+
+    return Array.from(assignmentsById.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  } catch (error) {
+    throw withError(error, "No se pudieron cargar las asignaciones de campo.");
+  }
+}
+
+export async function getFieldAssignmentsByWork(obraId: string): Promise<FieldAssignment[]> {
+  return (await getCollectionByWork<FieldAssignment>("asignacionesCampo", obraId))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+
+export async function createFieldAssignment(
+  data: Omit<FieldAssignment, "id" | "createdAt" | "updatedAt">
+): Promise<FieldAssignment> {
+  const profile = await getCurrentUserProfile();
+  const assignment = await createDocument<FieldAssignment>("asignacionesCampo", {
+    ...data,
+    createdAt: now(),
+    createdBy: data.createdBy ?? profile?.uid ?? "system"
+  });
+
+  await createProgressActivity({
+    obraId: assignment.obraId,
+    tipo: "asignacion_campo",
+    descripcion: `Asignacion de campo creada para ${assignment.nombreEquipo}.`,
+    userId: profile?.uid ?? "system",
+    userName: profile?.nombre ?? "Sistema",
+    fechaHora: now(),
+    newValue: assignment
+  });
+
+  return assignment;
+}
+
+export async function updateFieldAssignment(id: string, data: Partial<FieldAssignment>): Promise<FieldAssignment> {
+  const profile = await getCurrentUserProfile();
+  return updateDocument<FieldAssignment>("asignacionesCampo", id, {
+    ...data,
+    updatedAt: now(),
+    updatedBy: profile?.uid ?? "system"
+  });
+}
+
+export async function getProductionEventsByWork(obraId: string): Promise<ProductionEvent[]> {
+  return (await getCollectionByWork<ProductionEvent>("produccionEventos", obraId))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getInstallationEventsByWork(obraId: string): Promise<InstallationEvent[]> {
+  return (await getCollectionByWork<InstallationEvent>("instalacionEventos", obraId))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function registerProductionForItem(input: {
+  rubroId: string;
+  itemId?: string;
+  cantidadNueva: number;
+  observacion?: string;
+  fotos?: TaskPhoto[];
+  allowOverTotal?: boolean;
+}): Promise<WorkProgressRubric> {
+  const profile = await getCurrentUserProfile();
+  const rubro = (await getCollection<WorkProgressRubric>("rubrosAvanceConfigurados")).find((item) => item.id === input.rubroId);
+  if (!rubro) throw new Error("No se encontro el rubro de produccion.");
+
+  const timestamp = now();
+  let previousQuantity = Number(rubro.cantidadProducida ?? 0);
+  let nextQuantity = input.cantidadNueva;
+  let updatedData: Partial<WorkProgressRubric>;
+
+  if (input.itemId) {
+    const items = rubro.items ?? [];
+    const target = items.find((item) => item.id === input.itemId);
+    if (!target) throw new Error("No se encontro el item de produccion.");
+
+    const state = getOperationalItemState(target);
+    previousQuantity = state.producido;
+    nextQuantity = clampOperationalQuantity(input.cantidadNueva, state.totalRequerido, Boolean(input.allowOverTotal));
+    const nextItem = buildProductionItemUpdate(target, nextQuantity, input.observacion, profile?.nombre ?? profile?.uid ?? "produccion", timestamp);
+
+    updatedData = {
+      items: items.map((item) => item.id === input.itemId ? nextItem : item),
+      updatedAt: timestamp
+    };
+  } else {
+    const total = Number(rubro.cantidadTotalPrevista ?? 0);
+    nextQuantity = clampOperationalQuantity(input.cantidadNueva, total, Boolean(input.allowOverTotal));
+    updatedData = {
+      cantidadProducida: nextQuantity,
+      estadoProduccion: normalizeProductionStatus(undefined, nextQuantity, total),
+      observacionProduccion: input.observacion || rubro.observacionProduccion,
+      fechaProduccionActualizada: timestamp,
+      responsableProduccion: profile?.nombre ?? "Produccion",
+      updatedAt: timestamp
+    };
+  }
+
+  const updated = await updateProgressRubric(rubro.id, updatedData);
+  const event = await createDocument<ProductionEvent>("produccionEventos", {
+    obraId: rubro.obraId,
+    rubroId: rubro.id,
+    rubroNombre: rubro.nombre,
+    itemId: input.itemId,
+    itemDescripcion: input.itemId ? rubro.items?.find((item) => item.id === input.itemId)?.descripcion : rubro.nombre,
+    usuarioId: profile?.uid ?? "produccion",
+    usuarioNombre: profile?.nombre ?? "Produccion",
+    cantidadAnterior: previousQuantity,
+    cantidadNueva: nextQuantity,
+    diferencia: roundMeasure(nextQuantity - previousQuantity),
+    observacion: input.observacion,
+    fotos: input.fotos ?? [],
+    createdAt: timestamp
+  });
+
+  await createProgressActivity({
+    obraId: rubro.obraId,
+    tipo: "produccion",
+    descripcion: `Produccion actualizada: ${event.itemDescripcion ?? rubro.nombre}.`,
+    userId: event.usuarioId,
+    userName: event.usuarioNombre,
+    fechaHora: timestamp,
+    newValue: event
+  });
+
+  return updated;
+}
+
+export async function registerInstallationForItem(input: {
+  rubroId: string;
+  itemId?: string;
+  cantidadNueva: number;
+  observacion?: string;
+  fotos?: TaskPhoto[];
+  ubicacion?: InstallationEvent["ubicacion"];
+  origen: InstallationEvent["origen"];
+  allowOverProduced?: boolean;
+}): Promise<WorkProgressRubric> {
+  const profile = await getCurrentUserProfile();
+  const rubro = (await getCollection<WorkProgressRubric>("rubrosAvanceConfigurados")).find((item) => item.id === input.rubroId);
+  if (!rubro) throw new Error("No se encontro el rubro de instalacion.");
+
+  const timestamp = now();
+  let previousQuantity = Number(rubro.cantidadEjecutadaAcumulada ?? 0);
+  let nextQuantity = input.cantidadNueva;
+  let itemDescription = rubro.nombre;
+  let updatedData: Partial<WorkProgressRubric>;
+
+  if (input.itemId) {
+    const items = rubro.items ?? [];
+    const target = items.find((item) => item.id === input.itemId);
+    if (!target) throw new Error("No se encontro el item de instalacion.");
+
+    const state = getOperationalItemState(target);
+    previousQuantity = state.instalado;
+    if (!input.allowOverProduced && input.cantidadNueva > state.producido) {
+      throw new Error("No se puede instalar mas cantidad que la producida disponible.");
+    }
+    nextQuantity = clampOperationalQuantity(input.cantidadNueva, state.totalRequerido, Boolean(input.allowOverProduced));
+    itemDescription = target.descripcion;
+    const nextItem = buildInstallationItemUpdate(target, nextQuantity, input.observacion, profile?.nombre ?? profile?.uid ?? input.origen, timestamp);
+
+    updatedData = {
+      items: items.map((item) => item.id === input.itemId ? nextItem : item),
+      updatedAt: timestamp
+    };
+  } else {
+    const total = Number(rubro.cantidadTotalPrevista ?? 0);
+    const produced = Number(rubro.cantidadProducida ?? total);
+    if (!input.allowOverProduced && input.cantidadNueva > produced) {
+      throw new Error("No se puede instalar mas cantidad que la producida disponible.");
+    }
+    nextQuantity = clampOperationalQuantity(input.cantidadNueva, total, Boolean(input.allowOverProduced));
+    updatedData = {
+      cantidadEjecutadaAcumulada: nextQuantity,
+      updatedAt: timestamp
+    };
+  }
+
+  const updated = await updateProgressRubric(rubro.id, updatedData);
+  const event = await createDocument<InstallationEvent>("instalacionEventos", {
+    obraId: rubro.obraId,
+    rubroId: rubro.id,
+    rubroNombre: rubro.nombre,
+    itemId: input.itemId,
+    itemDescripcion: itemDescription,
+    usuarioId: profile?.uid ?? input.origen,
+    usuarioNombre: profile?.nombre ?? input.origen,
+    cantidadAnterior: previousQuantity,
+    cantidadNueva: nextQuantity,
+    diferencia: roundMeasure(nextQuantity - previousQuantity),
+    fotos: input.fotos ?? [],
+    ubicacion: input.ubicacion,
+    observacion: input.observacion,
+    origen: input.origen,
+    createdAt: timestamp
+  });
+
+  await createProgressActivity({
+    obraId: rubro.obraId,
+    tipo: "instalacion",
+    descripcion: `Instalacion registrada: ${itemDescription}.`,
+    userId: event.usuarioId,
+    userName: event.usuarioNombre,
+    fechaHora: timestamp,
+    newValue: event
+  });
+
+  return updated;
+}
+
+function buildProductionItemUpdate(
+  item: WorkBreakdownItem,
+  producedQuantity: number,
+  observacion: string | undefined,
+  updatedBy: string,
+  updatedAt: string
+): WorkBreakdownItem {
+  const base = getOperationalItemState(item);
+  const produced = clampOperationalQuantity(producedQuantity, base.totalRequerido, false);
+  const installed = Math.min(base.instalado, produced);
+  const m2Unit = base.metrosCuadradosPorUnidad;
+  const next = {
+    ...item,
+    cantidadTotal: base.totalRequerido,
+    cantidadProducida: produced,
+    producidoCantidad: produced,
+    instaladoCantidad: installed,
+    disponibleParaInstalar: Math.max(produced - installed, 0),
+    pendienteDeProducir: Math.max(base.totalRequerido - produced, 0),
+    pendienteDeInstalar: Math.max(base.totalRequerido - installed, 0),
+    cantidadPendiente: Math.max(base.totalRequerido - produced, 0),
+    metrosCuadradosPorUnidad: m2Unit,
+    metrosCuadradosTotales: base.metrosCuadradosTotales,
+    metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
+    metrosCuadradosInstalados: roundMeasure(installed * m2Unit),
+    metrosCuadradosDisponibles: roundMeasure(Math.max(produced - installed, 0) * m2Unit),
+    metrosCuadradosPendientes: roundMeasure(Math.max(base.metrosCuadradosTotales - produced * m2Unit, 0)),
+    unidadProduccion: item.unidadProduccion ?? "unidad",
+    estadoProduccion: normalizeProductionStatus(undefined, produced, base.totalRequerido),
+    estadoInstalacion: normalizeInstallationStatus(item.estadoInstalacion, installed, base.totalRequerido),
+    observacion: observacion || item.observacion,
+    updatedAt,
+    updatedBy
+  };
+  return next;
+}
+
+function buildInstallationItemUpdate(
+  item: WorkBreakdownItem,
+  installedQuantity: number,
+  observacion: string | undefined,
+  updatedBy: string,
+  updatedAt: string
+): WorkBreakdownItem {
+  const base = getOperationalItemState(item);
+  const installed = clampOperationalQuantity(installedQuantity, base.totalRequerido, false);
+  const produced = base.producido;
+  const m2Unit = base.metrosCuadradosPorUnidad;
+  return {
+    ...item,
+    cantidadTotal: base.totalRequerido,
+    cantidadProducida: produced,
+    producidoCantidad: produced,
+    instaladoCantidad: installed,
+    disponibleParaInstalar: Math.max(produced - installed, 0),
+    pendienteDeProducir: Math.max(base.totalRequerido - produced, 0),
+    pendienteDeInstalar: Math.max(base.totalRequerido - installed, 0),
+    metrosCuadradosPorUnidad: m2Unit,
+    metrosCuadradosTotales: base.metrosCuadradosTotales,
+    metrosCuadradosProducidos: roundMeasure(produced * m2Unit),
+    metrosCuadradosInstalados: roundMeasure(installed * m2Unit),
+    metrosCuadradosDisponibles: roundMeasure(Math.max(produced - installed, 0) * m2Unit),
+    estadoProduccion: normalizeProductionStatus(item.estadoProduccion, produced, base.totalRequerido),
+    estadoInstalacion: normalizeInstallationStatus(undefined, installed, base.totalRequerido),
+    observacion: observacion || item.observacion,
+    updatedAt,
+    updatedBy
+  };
+}
+
+function clampOperationalQuantity(value: number, total: number, allowOverTotal: boolean): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return 0;
+  if (!allowOverTotal && total > 0) return Math.min(numeric, total);
+  return numeric;
 }
 
 export async function getFinancialWorks(): Promise<Obra[]> {

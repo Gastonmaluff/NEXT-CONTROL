@@ -1,22 +1,36 @@
-import { Camera, CheckCircle2, Clock3, ExternalLink, MapPin, UsersRound } from "lucide-react";
+import { Camera, CheckCircle2, Clock3, ExternalLink, MapPin, Plus, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import {
   getFieldTasks,
   getFieldWorkdays,
-  getObras
+  getObras,
+  getFieldAssignments,
+  createFieldAssignment,
+  createFieldTask
 } from "../lib/firestore";
-import type { FieldTask, FieldWorkday, Obra, TaskPhoto } from "../types";
+import type { FieldAssignment, FieldTask, FieldWorkday, Obra, TaskPhoto } from "../types";
 import { formatDateShort } from "../utils/formatters";
 
 export default function AdminInstallationsPage() {
   const [workdays, setWorkdays] = useState<FieldWorkday[]>([]);
   const [tasks, setTasks] = useState<FieldTask[]>([]);
+  const [assignments, setAssignments] = useState<FieldAssignment[]>([]);
   const [works, setWorks] = useState<Obra[]>([]);
   const [selected, setSelected] = useState<FieldWorkday | null>(null);
+  const [showAssignment, setShowAssignment] = useState(false);
+  const [assignmentDraft, setAssignmentDraft] = useState({
+    obraId: "",
+    fecha: new Date().toISOString().slice(0, 10),
+    nombreEquipo: "",
+    usuarioResponsableNombre: "",
+    observacion: ""
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void load();
@@ -26,14 +40,16 @@ export default function AdminInstallationsPage() {
     setLoading(true);
     setError("");
     try {
-      const [loadedWorkdays, loadedTasks, loadedWorks] = await Promise.all([
+      const [loadedWorkdays, loadedTasks, loadedWorks, loadedAssignments] = await Promise.all([
         getFieldWorkdays(),
         getFieldTasks(),
-        getObras()
+        getObras(),
+        getFieldAssignments()
       ]);
       setWorkdays(loadedWorkdays);
       setTasks(loadedTasks);
       setWorks(loadedWorks);
+      setAssignments(loadedAssignments);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar instalaciones.");
     } finally {
@@ -45,6 +61,7 @@ export default function AdminInstallationsPage() {
   const todayWorkdays = workdays.filter((jornada) => jornada.fecha === today);
   const activeWorkdays = todayWorkdays.filter((jornada) => jornada.estado === "activa");
   const todayTasks = tasks.filter((task) => task.fechaAsignada === today || task.updatedAt?.slice(0, 10) === today);
+  const todayAssignments = assignments.filter((assignment) => assignment.fecha === today && assignment.estado !== "cancelada");
   const todayPhotos = todayWorkdays.reduce((sum, jornada) =>
     sum + (jornada.fotosInicio?.length ?? 0) + (jornada.fotosAvance?.length ?? 0) + (jornada.fotosFin?.length ?? 0), 0)
     + tasks.reduce((sum, task) => sum + (task.updatedAt?.slice(0, 10) === today ? task.fotos?.length ?? 0 : 0), 0);
@@ -60,6 +77,57 @@ export default function AdminInstallationsPage() {
 
   const workById = useMemo(() => new Map(works.map((obra) => [obra.id, obra])), [works]);
 
+  async function saveAssignment() {
+    const obra = works.find((item) => item.id === assignmentDraft.obraId);
+    if (!obra) {
+      setError("Selecciona una obra para la asignacion.");
+      return;
+    }
+    if (!assignmentDraft.nombreEquipo.trim()) {
+      setError("Carga el equipo o cuadrilla asignada.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const assignment = await createFieldAssignment({
+        obraId: obra.id,
+        obraNombre: obra.nombre,
+        fecha: assignmentDraft.fecha,
+        nombreEquipo: assignmentDraft.nombreEquipo.trim(),
+        usuarioResponsableNombre: assignmentDraft.usuarioResponsableNombre.trim(),
+        observacion: assignmentDraft.observacion.trim(),
+        estado: "planificada",
+        tareasIds: [],
+        items: []
+      });
+      await createFieldTask({
+        obraId: obra.id,
+        obraNombre: obra.nombre,
+        titulo: `Trabajo de instalacion - ${assignment.nombreEquipo}`,
+        descripcion: assignment.observacion ?? "",
+        fechaAsignada: assignment.fecha,
+        asignadoAType: "equipo_campo",
+        asignadoAId: assignment.equipoId,
+        asignadoANombre: assignment.nombreEquipo,
+        estado: "asignada",
+        requiereFotos: true,
+        requiereValidacion: true,
+        asignacionId: assignment.id,
+        createdBy: assignment.createdBy
+      });
+      setMessage("Asignacion de campo creada correctamente.");
+      setShowAssignment(false);
+      setAssignmentDraft({ obraId: "", fecha: today, nombreEquipo: "", usuarioResponsableNombre: "", observacion: "" });
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo crear la asignacion.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return <StateCard text="Cargando instalaciones..." />;
   }
@@ -73,8 +141,15 @@ export default function AdminInstallationsPage() {
           Seguimiento administrativo de cuadrillas, jornadas, ubicaciones, fotos y tareas ejecutadas en obra.
         </p>
       </div>
+      <div className="flex justify-end">
+        <button className="inline-flex h-10 items-center gap-2 rounded-md bg-next-blue px-4 text-xs font-black text-white" type="button" onClick={() => setShowAssignment(true)}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Nueva asignacion de campo
+        </button>
+      </div>
 
       {error ? <Notice text={error} /> : null}
+      {message ? <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-next-green">{message}</div> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {stats.map((item) => (
@@ -94,6 +169,12 @@ export default function AdminInstallationsPage() {
           <ContentList
             empty="No hay cuadrillas activas ahora."
             items={activeWorkdays.map((jornada) => `${jornada.equipoNombre || jornada.userName} - ${jornada.obraNombre} - Inicio ${jornada.horaInicio}`)}
+          />
+        </DataCard>
+        <DataCard title="Asignaciones planificadas">
+          <ContentList
+            empty="No hay asignaciones planificadas para hoy."
+            items={todayAssignments.map((assignment) => `${assignment.nombreEquipo} - ${assignment.obraNombre} - ${assignment.estado}`)}
           />
         </DataCard>
         <DataCard title="Jornadas pendientes de cierre">
@@ -190,6 +271,50 @@ export default function AdminInstallationsPage() {
             <DataCard title="Fotos de jornada" className="mt-4">
               <PhotoGrid photos={collectWorkdayPhotos(selected, tasks.filter((task) => selected.tareasIds.includes(task.id) || task.jornadaId === selected.id))} />
             </DataCard>
+          </section>
+        </div>
+      ) : null}
+      {showAssignment ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+          <section className="mx-auto max-w-xl rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase text-next-blue">Nueva asignacion</p>
+                <h2 className="mt-1 text-2xl font-black text-next-text">Asignacion de campo</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setShowAssignment(false)}>x</button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className="text-xs font-black uppercase text-next-muted">Obra</span>
+                <select className="field mt-1" value={assignmentDraft.obraId} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, obraId: event.target.value })}>
+                  <option value="">Seleccionar obra</option>
+                  {works.map((obra) => <option key={obra.id} value={obra.id}>{obra.nombre}</option>)}
+                </select>
+              </label>
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Fecha</span>
+                <input className="field mt-1" type="date" value={assignmentDraft.fecha} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, fecha: event.target.value })} />
+              </label>
+              <label>
+                <span className="text-xs font-black uppercase text-next-muted">Equipo / cuadrilla</span>
+                <input className="field mt-1" value={assignmentDraft.nombreEquipo} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, nombreEquipo: event.target.value })} />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="text-xs font-black uppercase text-next-muted">Responsable</span>
+                <input className="field mt-1" value={assignmentDraft.usuarioResponsableNombre} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, usuarioResponsableNombre: event.target.value })} />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="text-xs font-black uppercase text-next-muted">Observacion</span>
+                <textarea className="field mt-1 min-h-24" value={assignmentDraft.observacion} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, observacion: event.target.value })} />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={() => setShowAssignment(false)}>Cancelar</button>
+              <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={() => void saveAssignment()}>
+                {saving ? "Guardando..." : "Crear asignacion"}
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
