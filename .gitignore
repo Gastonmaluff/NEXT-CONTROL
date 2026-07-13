@@ -8,3 +8,8 @@ dev-server*.log
 Thumbs.db
 serviceAccount*.json
 firebase-service-account*.json
+firebase-admin*.json
+admin-service-account*.json
+*.service-account.json
+backups/
+reset-backups/

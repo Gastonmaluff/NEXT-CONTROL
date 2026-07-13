@@ -440,7 +440,13 @@ export default function ChequesPage() {
           ))}
         </div>
 
-        {!filtered.length ? <EmptyState text="No hay cheques con esos filtros." /> : null}
+        {!filtered.length ? (
+          <EmptyState
+            text={tabCheques.length
+              ? "No hay cheques con esos filtros."
+              : "No hay cheques registrados todavia. Los cheques emitidos y recibidos apareceran aqui a medida que se registren movimientos financieros."}
+          />
+        ) : null}
 
         <div className="flex flex-col justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs font-semibold text-next-muted sm:flex-row sm:items-center">
           <span>Cantidad: {filtered.length} · Suma total: {formatCurrencyPYG(totalFiltered)}</span>

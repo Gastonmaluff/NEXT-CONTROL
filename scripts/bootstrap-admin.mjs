@@ -1,4 +1,6 @@
-import admin from "firebase-admin";
+import { applicationDefault, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 const {
   GOOGLE_APPLICATION_CREDENTIALS,
@@ -20,13 +22,13 @@ if (!ADMIN_UID && !ADMIN_EMAIL) {
   throw new Error("Define ADMIN_UID o ADMIN_EMAIL.");
 }
 
-admin.initializeApp({
-  credential: admin.credential.applicationDefault(),
+initializeApp({
+  credential: applicationDefault(),
   projectId: FIREBASE_PROJECT_ID
 });
 
-const auth = admin.auth();
-const db = admin.firestore();
+const auth = getAuth();
+const db = getFirestore();
 
 const user = ADMIN_UID
   ? await auth.getUser(ADMIN_UID)

@@ -28,15 +28,17 @@ export function getStoredData(): StoredData {
   const stored = localStorage.getItem(STORAGE_KEY);
 
   if (!stored) {
-    saveStoredData(seedData);
-    return structuredClone(seedData);
+    const initialData = shouldSeedDemoData() ? seedData : createEmptyStoredData();
+    saveStoredData(initialData);
+    return structuredClone(initialData);
   }
 
   try {
     return normalizeStoredData(JSON.parse(stored) as Partial<StoredData>);
   } catch {
-    saveStoredData(seedData);
-    return structuredClone(seedData);
+    const initialData = shouldSeedDemoData() ? seedData : createEmptyStoredData();
+    saveStoredData(initialData);
+    return structuredClone(initialData);
   }
 }
 
@@ -51,6 +53,8 @@ export function resetDemoData(): StoredData {
 }
 
 function normalizeStoredData(data: Partial<StoredData>): StoredData {
+  const fallback = shouldSeedDemoData() ? seedData : createEmptyStoredData();
+
   return {
     obras: data.obras ?? [],
     oportunidades: data.oportunidades ?? [],
@@ -58,19 +62,48 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     actividades: data.actividades ?? [],
     cuadrillas: data.cuadrillas ?? [],
     tareasInstalacion: data.tareasInstalacion ?? [],
-    movimientosFinancieros: data.movimientosFinancieros ?? seedData.movimientosFinancieros,
-    rubrosAvanceConfigurados: data.rubrosAvanceConfigurados ?? seedData.rubrosAvanceConfigurados,
-    reportesAvance: data.reportesAvance ?? seedData.reportesAvance,
-    materialesPendientes: data.materialesPendientes ?? seedData.materialesPendientes,
-    actividadesAvance: data.actividadesAvance ?? seedData.actividadesAvance,
-    users: data.users ?? seedData.users,
-    clientes: data.clientes ?? seedData.clientes ?? [],
-    proveedores: data.proveedores ?? seedData.proveedores ?? [],
-    cheques: data.cheques ?? seedData.cheques ?? [],
-    tareas: data.tareas ?? seedData.tareas ?? [],
-    jornadasCampo: data.jornadasCampo ?? seedData.jornadasCampo ?? [],
-    asignacionesCampo: data.asignacionesCampo ?? seedData.asignacionesCampo ?? [],
-    produccionEventos: data.produccionEventos ?? seedData.produccionEventos ?? [],
-    instalacionEventos: data.instalacionEventos ?? seedData.instalacionEventos ?? []
+    movimientosFinancieros: data.movimientosFinancieros ?? fallback.movimientosFinancieros,
+    rubrosAvanceConfigurados: data.rubrosAvanceConfigurados ?? fallback.rubrosAvanceConfigurados,
+    reportesAvance: data.reportesAvance ?? fallback.reportesAvance,
+    materialesPendientes: data.materialesPendientes ?? fallback.materialesPendientes,
+    actividadesAvance: data.actividadesAvance ?? fallback.actividadesAvance,
+    users: data.users ?? fallback.users,
+    clientes: data.clientes ?? fallback.clientes,
+    proveedores: data.proveedores ?? fallback.proveedores,
+    cheques: data.cheques ?? fallback.cheques,
+    tareas: data.tareas ?? fallback.tareas,
+    jornadasCampo: data.jornadasCampo ?? fallback.jornadasCampo,
+    asignacionesCampo: data.asignacionesCampo ?? fallback.asignacionesCampo,
+    produccionEventos: data.produccionEventos ?? fallback.produccionEventos,
+    instalacionEventos: data.instalacionEventos ?? fallback.instalacionEventos
+  };
+}
+
+function shouldSeedDemoData(): boolean {
+  return !hasFirebaseConfig() || isDemoSession();
+}
+
+function createEmptyStoredData(): StoredData {
+  return {
+    obras: [],
+    oportunidades: [],
+    cobros: [],
+    actividades: [],
+    cuadrillas: [],
+    tareasInstalacion: [],
+    movimientosFinancieros: [],
+    rubrosAvanceConfigurados: [],
+    reportesAvance: [],
+    materialesPendientes: [],
+    actividadesAvance: [],
+    users: [],
+    clientes: [],
+    proveedores: [],
+    cheques: [],
+    tareas: [],
+    jornadasCampo: [],
+    asignacionesCampo: [],
+    produccionEventos: [],
+    instalacionEventos: []
   };
 }
