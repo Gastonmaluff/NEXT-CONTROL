@@ -1,96 +1,214 @@
-import { Download, Eye, FileSpreadsheet, Search, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, Eye, FileSpreadsheet, MoreHorizontal, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import {
-  getCheques,
-  syncChequesFromMovements,
-  updateCheque
-} from "../lib/firestore";
-import type { Cheque, ChequeStatus } from "../types";
+import { getCheques, syncChequesFromMovements, updateCheque } from "../lib/firestore";
+import type { Cheque, ChequeKind, ChequeStatus } from "../types";
 import { exportWorkbookToExcel } from "../utils/excel";
-import { formatCurrencyPYG, formatDateShort, getTodayInputDate } from "../utils/formatters";
+import { formatCurrencyPYG } from "../utils/formatters";
 
-const receivedStatuses: ChequeStatus[] = ["recibido", "depositado", "cobrado", "rechazado", "anulado"];
-const issuedStatuses: ChequeStatus[] = ["emitido", "entregado", "debitado", "rechazado", "anulado"];
-const closedReceived = ["cobrado", "rechazado", "anulado"];
-const closedIssued = ["debitado", "rechazado", "anulado"];
+type ActiveTab = "emitido" | "recibido";
+type QuickFilter = "todos" | "hoy" | "proximos7" | "mes" | "vencidos";
+type Density = "compacta" | "comoda";
+type SortKey =
+  | "fechaEmision"
+  | "numero"
+  | "fechaVencimiento"
+  | "faltan"
+  | "dia"
+  | "monto"
+  | "tercero"
+  | "estado"
+  | "obra"
+  | "banco";
+type SortDirection = "asc" | "desc";
 
-type QuickFilter = "todos" | "hoy" | "semana" | "mes" | "vencidos";
+type ConfirmAction = {
+  cheque: Cheque;
+  nextStatus: ChequeStatus;
+  title: string;
+  text: string;
+  dateLabel: string;
+  dateValue: string;
+} | null;
+
+const pendingIssuedStatuses: ChequeStatus[] = ["emitido", "entregado"];
+const paidIssuedStatuses: ChequeStatus[] = ["debitado"];
+const closedIssuedStatuses: ChequeStatus[] = ["debitado", "rechazado", "anulado"];
+const pendingReceivedStatuses: ChequeStatus[] = ["recibido", "depositado"];
+const closedReceivedStatuses: ChequeStatus[] = ["cobrado", "rechazado", "anulado"];
+
+const statusOptionsByTab: Record<ActiveTab, Array<{ value: string; label: string }>> = {
+  emitido: [
+    { value: "todos", label: "Todos los estados" },
+    { value: "pendiente", label: "Pendiente" },
+    { value: "pagado", label: "Pagado" },
+    { value: "rechazado", label: "Rechazado" },
+    { value: "anulado", label: "Anulado" }
+  ],
+  recibido: [
+    { value: "todos", label: "Todos los estados" },
+    { value: "pendiente", label: "Pendiente" },
+    { value: "cobrado", label: "Cobrado" },
+    { value: "rechazado", label: "Rechazado" },
+    { value: "anulado", label: "Anulado" }
+  ]
+};
 
 export default function ChequesPage() {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const [cheques, setCheques] = useState<Cheque[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("emitido");
+  const [density, setDensity] = useState<Density>("compacta");
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const [partyFilter, setPartyFilter] = useState("");
+  const [workFilter, setWorkFilter] = useState("");
+  const [bankFilter, setBankFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todos");
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: "fechaVencimiento", direction: "asc" });
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Cheque | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void load();
   }, []);
 
+  useEffect(() => {
+    setPage(1);
+    setStatusFilter("todos");
+    setPartyFilter("");
+    setWorkFilter("");
+    setBankFilter("");
+    setQuery("");
+    setFromDate("");
+    setToDate("");
+    setQuickFilter("todos");
+  }, [activeTab]);
+
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const synced = await syncChequesFromMovements();
-      setCheques(synced);
-    } catch (loadError) {
-      console.error("No se pudieron sincronizar cheques.", loadError);
+      setCheques(await syncChequesFromMovements());
+    } catch (syncError) {
+      console.error("No se pudieron sincronizar cheques.", syncError);
       try {
         setCheques(await getCheques());
-      } catch (fallbackError) {
-        setError(fallbackError instanceof Error ? fallbackError.message : "No se pudieron cargar los cheques.");
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los cheques.");
       }
     } finally {
       setLoading(false);
     }
   }
 
+  const tabCheques = useMemo(
+    () => cheques.filter((cheque) => cheque.tipo === activeTab),
+    [activeTab, cheques]
+  );
+
+  const options = useMemo(() => buildFilterOptions(tabCheques), [tabCheques]);
+
   const filtered = useMemo(() => {
-    return cheques.filter((cheque) => {
+    const rows = tabCheques.filter((cheque) => {
       const dueDate = getChequeDueDate(cheque);
-      const text = [
-        cheque.terceroNombre,
-        cheque.obraNombre,
+      const haystack = [
         cheque.numeroCheque,
         cheque.bancoCheque,
-        cheque.observacion
+        cheque.terceroNombre,
+        cheque.obraNombre,
+        getChequeDescription(cheque),
+        cheque.monto
       ].join(" ").toLowerCase();
-      const matchesQuery = text.includes(query.toLowerCase());
-      const matchesType = typeFilter === "todos" || cheque.tipo === typeFilter;
-      const matchesStatus = statusFilter === "todos" || cheque.estado === statusFilter;
-      const matchesFrom = !fromDate || dueDate >= fromDate;
-      const matchesTo = !toDate || dueDate <= toDate;
-      const matchesQuick = matchesQuickDate(cheque, quickFilter);
-      return matchesQuery && matchesType && matchesStatus && matchesFrom && matchesTo && matchesQuick;
+
+      return haystack.includes(query.trim().toLowerCase())
+        && matchesStatusFilter(cheque, activeTab, statusFilter)
+        && (!partyFilter || cheque.terceroNombre === partyFilter)
+        && (!workFilter || cheque.obraNombre === workFilter)
+        && (!bankFilter || (cheque.bancoCheque ?? "") === bankFilter)
+        && (!fromDate || dueDate >= fromDate)
+        && (!toDate || dueDate <= toDate)
+        && matchesQuickFilter(cheque, quickFilter);
     });
-  }, [cheques, fromDate, query, quickFilter, statusFilter, toDate, typeFilter]);
 
-  const metrics = useMemo(() => getChequeMetrics(cheques), [cheques]);
+    return sortCheques(rows, sort);
+  }, [activeTab, bankFilter, fromDate, partyFilter, query, quickFilter, sort, statusFilter, tabCheques, toDate, workFilter]);
 
-  async function changeStatus(cheque: Cheque, estado: ChequeStatus) {
+  const totalFiltered = useMemo(() => sumCheques(filtered), [filtered]);
+  const averageFiltered = filtered.length ? totalFiltered / filtered.length : 0;
+  const metrics = useMemo(() => getTabMetrics(tabCheques, activeTab), [activeTab, tabCheques]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const visibleRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  function setQuick(next: QuickFilter) {
+    setQuickFilter(next);
+    setPage(1);
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter("todos");
+    setPartyFilter("");
+    setWorkFilter("");
+    setBankFilter("");
+    setFromDate("");
+    setToDate("");
+    setQuickFilter("todos");
+    setPage(1);
+  }
+
+  function toggleSort(key: SortKey) {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc"
+    }));
+  }
+
+  function requestStatusChange(cheque: Cheque, nextStatus: ChequeStatus) {
+    const isPaid = nextStatus === "debitado" || nextStatus === "cobrado";
+    setConfirmAction({
+      cheque,
+      nextStatus,
+      title: statusChangeTitle(cheque, nextStatus),
+      text: isPaid
+        ? "Se registrara el cambio de estado y quedara auditado en el historial del cheque."
+        : "Esta accion actualizara el estado del cheque y guardara quien hizo el cambio.",
+      dateLabel: cheque.tipo === "emitido" ? "Fecha real de pago" : "Fecha real de cobro",
+      dateValue: getTodayLocal()
+    });
+  }
+
+  async function confirmStatusChange() {
+    if (!confirmAction || saving) return;
+    setSaving(true);
     setError("");
     try {
-      const updated = await updateCheque(cheque.id, {
-        estado,
-        updatedBy: profile?.uid ?? "unknown"
+      const note = statusChangeTitle(confirmAction.cheque, confirmAction.nextStatus);
+      const updated = await updateCheque(confirmAction.cheque.id, {
+        estado: confirmAction.nextStatus,
+        updatedBy: profile?.uid ?? "unknown",
+        observacion: mergeObservation(confirmAction.cheque.observacion, `${note}: ${formatDisplayDate(confirmAction.dateValue)}`)
       });
       setCheques((current) => current.map((item) => item.id === updated.id ? updated : item));
       setSelected((current) => current?.id === updated.id ? updated : current);
+      setConfirmAction(null);
       setMessage("Estado del cheque actualizado.");
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "No se pudo actualizar el cheque.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -109,27 +227,32 @@ export default function ChequesPage() {
     }
   }
 
-  function exportExcel() {
-    if (!filtered.length) {
+  function exportFilteredExcel(exportAll = false) {
+    const rowsToExport = exportAll ? sortCheques(tabCheques, sort) : filtered;
+    if (!rowsToExport.length) {
       setMessage("No hay cheques para exportar con estos filtros.");
       return;
     }
 
-    const rows = filtered.map((cheque) => ({
-      "Fecha vencimiento/cobro": getChequeDueDate(cheque),
-      Tipo: cheque.tipo === "recibido" ? "Recibido" : "Emitido",
-      Estado: formatChequeStatus(cheque.estado),
-      "Cliente/Proveedor": cheque.terceroNombre,
-      Obra: cheque.obraNombre,
-      Banco: cheque.bancoCheque ?? "",
-      "Nº cheque": cheque.numeroCheque,
-      Monto: cheque.monto,
-      "Fecha emisión": cheque.fechaEmisionCheque,
-      Observación: cheque.observacion ?? ""
-    }));
+    const rows = rowsToExport.map((cheque) => buildExportRow(cheque, activeTab));
+    rows.push({
+      "Fecha expedicion": "",
+      Numero: "",
+      "Fecha vencimiento": "",
+      Faltan: "",
+      Dia: "",
+      Monto: sumCheques(rowsToExport),
+      [activeTab === "emitido" ? "Beneficiario" : "Cliente / Pagador"]: "TOTAL",
+      Descripcion: "",
+      Estado: "",
+      Obra: "",
+      Banco: "",
+      Tipo: activeTab === "emitido" ? "Emitido" : "Recibido"
+    });
+
     exportWorkbookToExcel({
-      fileName: `cheques-next-control-${getTodayInputDate()}.xlsx`,
-      sheets: [{ name: "Cheques", rows }]
+      fileName: `${activeTab === "emitido" ? "Cheques_a_pagar" : "Cheques_a_cobrar"}_${getTodayLocal()}.xlsx`,
+      sheets: [{ name: activeTab === "emitido" ? "A pagar" : "A cobrar", rows }]
     });
     setMessage("Exportacion generada correctamente.");
   }
@@ -139,160 +262,331 @@ export default function ChequesPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 space-y-5">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
           <p className="text-sm font-black uppercase text-next-blue">Agenda financiera</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">CHEQUES</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
-            Cheques recibidos y emitidos vinculados a ingresos, compras, egresos, clientes, proveedores y obras.
+            Control de cheques diferidos emitidos y recibidos.
           </p>
         </div>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={exportExcel}>
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Exportar Excel
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => exportFilteredExcel(false)}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Exportar Excel
+          </button>
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-next-blue px-4 text-sm font-black text-next-blue" type="button" onClick={() => exportFilteredExcel(true)}>
+            Exportar todos
+          </button>
+        </div>
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
+      <section className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-soft">
+        <TabButton active={activeTab === "emitido"} onClick={() => setActiveTab("emitido")}>A pagar</TabButton>
+        <TabButton active={activeTab === "recibido"} onClick={() => setActiveTab("recibido")}>A cobrar</TabButton>
+      </section>
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Cheques a cobrar hoy" value={formatCurrencyPYG(metrics.toCollectToday)} tone="green" />
-        <MetricCard label="Cheques a pagar hoy" value={formatCurrencyPYG(metrics.toPayToday)} tone="red" />
-        <MetricCard label="A cobrar esta semana" value={formatCurrencyPYG(metrics.toCollectWeek)} tone="green" />
-        <MetricCard label="A pagar esta semana" value={formatCurrencyPYG(metrics.toPayWeek)} tone="orange" />
-        <MetricCard label="Recibidos pendientes" value={formatCurrencyPYG(metrics.receivedPending)} tone="green" />
-        <MetricCard label="Emitidos pendientes" value={formatCurrencyPYG(metrics.issuedPending)} tone="red" />
-        <MetricCard label="Saldo proyectado" value={formatCurrencyPYG(metrics.projectedBalance)} tone={metrics.projectedBalance >= 0 ? "green" : "red"} />
-        <MetricCard label="Cheques vencidos" value={`${metrics.overdueCount}`} tone="critical" />
+        <MetricCard
+          label={activeTab === "emitido" ? "A pagar hoy" : "A cobrar hoy"}
+          value={formatCurrencyPYG(metrics.today)}
+          tone={activeTab === "emitido" ? "red" : "green"}
+          onClick={() => setQuick("hoy")}
+        />
+        <MetricCard
+          label={activeTab === "emitido" ? "A pagar proximos 7 dias" : "A cobrar proximos 7 dias"}
+          value={formatCurrencyPYG(metrics.next7)}
+          tone="orange"
+          onClick={() => setQuick("proximos7")}
+        />
+        <MetricCard
+          label="Total pendiente"
+          value={formatCurrencyPYG(metrics.pending)}
+          tone={activeTab === "emitido" ? "red" : "green"}
+          onClick={() => setQuick("todos")}
+        />
+        <MetricCard
+          label="Vencidos"
+          value={`${metrics.overdueCount} - ${formatCurrencyPYG(metrics.overdueAmount)}`}
+          tone="critical"
+          onClick={() => setQuick("vencidos")}
+        />
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_150px_160px_140px_140px]">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-next-muted" aria-hidden="true" />
-            <input className="field pl-9" placeholder="Buscar por cliente, proveedor, obra o Nº cheque" value={query} onChange={(event) => setQuery(event.target.value)} />
-          </label>
-          <select className="field" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-            <option value="todos">Todos</option>
-            <option value="recibido">Recibidos</option>
-            <option value="emitido">Emitidos</option>
-          </select>
-          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="todos">Todos los estados</option>
-            {Array.from(new Set([...receivedStatuses, ...issuedStatuses])).map((status) => <option key={status} value={status}>{formatChequeStatus(status)}</option>)}
-          </select>
-          <input className="field" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-          <input className="field" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
+        <div className="grid gap-2 xl:grid-cols-[130px_130px_150px_minmax(180px,1fr)_minmax(160px,1fr)_150px_minmax(220px,1.2fr)]">
+          <Field label="Desde"><input className="field" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></Field>
+          <Field label="Hasta"><input className="field" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></Field>
+          <Field label="Estado">
+            <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              {statusOptionsByTab[activeTab].map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </Field>
+          <Field label={activeTab === "emitido" ? "Beneficiario" : "Cliente / Pagador"}>
+            <select className="field" value={partyFilter} onChange={(event) => setPartyFilter(event.target.value)}>
+              <option value="">Todos</option>
+              {options.parties.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </Field>
+          <Field label="Obra">
+            <select className="field" value={workFilter} onChange={(event) => setWorkFilter(event.target.value)}>
+              <option value="">Todas</option>
+              {options.works.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </Field>
+          <Field label="Banco">
+            <select className="field" value={bankFilter} onChange={(event) => setBankFilter(event.target.value)}>
+              <option value="">Todos</option>
+              {options.banks.map((value) => <option key={value} value={value}>{value || "Sin banco"}</option>)}
+            </select>
+          </Field>
+          <Field label="Buscar">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-next-muted" aria-hidden="true" />
+              <input className="field pl-9" placeholder="Nro, obra, banco, texto" value={query} onChange={(event) => setQuery(event.target.value)} />
+            </label>
+          </Field>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(["todos", "hoy", "semana", "mes", "vencidos"] as QuickFilter[]).map((filter) => (
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {(["todos", "hoy", "proximos7", "mes", "vencidos"] as QuickFilter[]).map((filter) => (
             <button
               key={filter}
               className={`h-9 rounded-md px-3 text-xs font-black ${quickFilter === filter ? "bg-next-blue text-white" : "border border-slate-200 text-next-muted"}`}
               type="button"
-              onClick={() => setQuickFilter(filter)}
+              onClick={() => setQuick(filter)}
             >
               {quickLabel(filter)}
             </button>
           ))}
+          <button className="h-9 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={clearFilters}>
+            Limpiar filtros
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <select className="field h-9 w-36 py-1 text-xs" value={density} onChange={(event) => setDensity(event.target.value as Density)}>
+              <option value="compacta">Vista compacta</option>
+              <option value="comoda">Vista comoda</option>
+            </select>
+            <select className="field h-9 w-24 py-1 text-xs" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-        <div className="hidden overflow-x-auto lg:block">
-          <div className="grid min-w-[1180px] grid-cols-[110px_82px_106px_minmax(150px,1fr)_minmax(150px,1fr)_100px_100px_120px_110px_minmax(150px,1fr)_160px] gap-2 border-b border-slate-100 pb-2 text-[11px] font-black uppercase text-next-muted">
-            <span>Vencimiento / cobro</span>
-            <span>Tipo</span>
-            <span>Estado</span>
-            <span>Cliente / Proveedor</span>
-            <span>Obra</span>
-            <span>Banco</span>
-            <span>Nº cheque</span>
-            <span className="text-right">Monto</span>
-            <span>Emision</span>
-            <span>Observacion</span>
-            <span>Acciones</span>
+      <section className="rounded-lg border border-slate-200 bg-white shadow-soft">
+        <div className="flex flex-col justify-between gap-2 border-b border-slate-100 px-4 py-3 md:flex-row md:items-center">
+          <div>
+            <p className="text-sm font-black text-next-text">{filtered.length} cheques encontrados</p>
+            <p className="text-xs font-semibold text-next-muted">Total filtrado: <span className="font-black text-next-blue">{formatCurrencyPYG(totalFiltered)}</span></p>
           </div>
-          <div className="divide-y divide-slate-100">
-            {filtered.map((cheque) => (
-              <ChequeRow
-                key={cheque.id}
-                cheque={cheque}
-                onDetail={() => setSelected(cheque)}
-                onStatus={(estado) => void changeStatus(cheque, estado)}
-              />
-            ))}
+          <p className="text-xs font-semibold text-next-muted">
+            Promedio: {formatCurrencyPYG(averageFiltered)} · Pagina {page} de {totalPages}
+          </p>
+        </div>
+
+        <div className="hidden overflow-x-auto lg:block">
+          <div className="max-h-[64vh] min-w-[1380px] overflow-auto">
+            <table className={`w-full border-collapse text-xs ${density === "compacta" ? "cheque-table-compact" : "cheque-table-comfy"}`}>
+              <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase text-next-muted shadow-[0_1px_0_rgba(148,163,184,0.35)]">
+                <tr>
+                  <SortableTh label={activeTab === "emitido" ? "Fecha expedicion" : "Fecha recepcion / expedicion"} sortKey="fechaEmision" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Nro de cheque" sortKey="numero" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label={activeTab === "emitido" ? "Fecha vencimiento" : "Fecha cobro"} sortKey="fechaVencimiento" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Faltan" sortKey="faltan" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Dia" sortKey="dia" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Monto" sortKey="monto" activeSort={sort} onSort={toggleSort} align="right" />
+                  <SortableTh label={activeTab === "emitido" ? "Beneficiario" : "Cliente / Pagador"} sortKey="tercero" activeSort={sort} onSort={toggleSort} />
+                  <th>Descripcion</th>
+                  <SortableTh label="Estado" sortKey="estado" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Obra" sortKey="obra" activeSort={sort} onSort={toggleSort} />
+                  <SortableTh label="Banco" sortKey="banco" activeSort={sort} onSort={toggleSort} />
+                  <th className="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((cheque) => (
+                  <ChequeRow
+                    key={cheque.id}
+                    activeTab={activeTab}
+                    cheque={cheque}
+                    density={density}
+                    onDetail={() => setSelected(cheque)}
+                    onNavigate={navigate}
+                    onRequestStatus={requestStatusChange}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="space-y-3 lg:hidden">
-          {filtered.map((cheque) => (
-            <ChequeCard key={cheque.id} cheque={cheque} onDetail={() => setSelected(cheque)} onStatus={(estado) => void changeStatus(cheque, estado)} />
+        <div className="space-y-3 p-3 lg:hidden">
+          {visibleRows.map((cheque) => (
+            <ChequeCard
+              key={cheque.id}
+              activeTab={activeTab}
+              cheque={cheque}
+              onDetail={() => setSelected(cheque)}
+              onNavigate={navigate}
+              onRequestStatus={requestStatusChange}
+            />
           ))}
         </div>
+
         {!filtered.length ? <EmptyState text="No hay cheques con esos filtros." /> : null}
+
+        <div className="flex flex-col justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs font-semibold text-next-muted sm:flex-row sm:items-center">
+          <span>Cantidad: {filtered.length} · Suma total: {formatCurrencyPYG(totalFiltered)}</span>
+          <div className="flex items-center gap-2">
+            <button className="h-8 rounded-md border border-slate-200 px-3 font-black disabled:opacity-50" type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Anterior</button>
+            <button className="h-8 rounded-md border border-slate-200 px-3 font-black disabled:opacity-50" type="button" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Siguiente</button>
+          </div>
+        </div>
       </section>
 
       {selected ? (
         <ChequeDetailModal
+          allCheques={cheques}
           cheque={selected}
           onClose={() => setSelected(null)}
           onGoParty={(cheque) => navigate(cheque.terceroTipo === "proveedor" ? "/proveedores" : "/clientes")}
           onGoWork={(cheque) => navigate(`/finanzas-obras/${cheque.obraId}`)}
           onSave={(data) => void saveChequeDetails(selected, data)}
-          onStatus={(estado) => void changeStatus(selected, estado)}
+          onStatus={requestStatusChange}
         />
       ) : null}
+
+      {confirmAction ? (
+        <ConfirmStatusModal
+          action={confirmAction}
+          saving={saving}
+          onCancel={() => setConfirmAction(null)}
+          onChangeDate={(dateValue) => setConfirmAction((current) => current ? { ...current, dateValue } : current)}
+          onConfirm={() => void confirmStatusChange()}
+        />
+      ) : null}
+
+      <style>{`
+        .cheque-table-compact th,
+        .cheque-table-compact td { padding: 0.42rem 0.55rem; }
+        .cheque-table-comfy th,
+        .cheque-table-comfy td { padding: 0.72rem 0.65rem; }
+        @media (prefers-reduced-motion: no-preference) {
+          .cheque-pulse { animation: chequePulse 1.8s ease-in-out infinite; }
+          @keyframes chequePulse {
+            0%, 100% { opacity: 0.55; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.08); }
+          }
+        }
+      `}</style>
     </div>
   );
 }
 
-function ChequeRow({ cheque, onDetail, onStatus }: { cheque: Cheque; onDetail: () => void; onStatus: (status: ChequeStatus) => void }) {
+function ChequeRow({
+  activeTab,
+  cheque,
+  density,
+  onDetail,
+  onNavigate,
+  onRequestStatus
+}: {
+  activeTab: ActiveTab;
+  cheque: Cheque;
+  density: Density;
+  onDetail: () => void;
+  onNavigate: (path: string) => void;
+  onRequestStatus: (cheque: Cheque, nextStatus: ChequeStatus) => void;
+}) {
   return (
-    <div className={`grid min-w-[1180px] grid-cols-[110px_82px_106px_minmax(150px,1fr)_minmax(150px,1fr)_100px_100px_120px_110px_minmax(150px,1fr)_160px] items-center gap-2 py-2 text-xs ${rowTone(cheque)}`}>
-      <span className="font-bold text-next-text">{formatDateShort(getChequeDueDate(cheque))}</span>
-      <span className="font-black uppercase">{cheque.tipo === "recibido" ? "Recibido" : "Emitido"}</span>
-      <StatusBadge label={formatChequeStatus(cheque.estado)} status={statusBadge(cheque)} />
-      <span className="truncate font-semibold" title={cheque.terceroNombre}>{cheque.terceroNombre}</span>
-      <span className="truncate" title={cheque.obraNombre}>{cheque.obraNombre}</span>
-      <span className="truncate">{cheque.bancoCheque || "-"}</span>
-      <span className="font-black text-next-text">{cheque.numeroCheque}</span>
-      <span className="text-right font-black">{formatCurrencyPYG(cheque.monto)}</span>
-      <span>{formatDateShort(cheque.fechaEmisionCheque)}</span>
-      <span className="truncate" title={cheque.observacion}>{cheque.observacion || "-"}</span>
-      <ChequeActions cheque={cheque} onDetail={onDetail} onStatus={onStatus} compact />
-    </div>
+    <tr className={`${rowTone(cheque)} border-b border-slate-100 text-next-text`}>
+      <td className="whitespace-nowrap font-bold">{formatDisplayDate(cheque.fechaEmisionCheque)}</td>
+      <td className="whitespace-nowrap font-black">{cheque.numeroCheque}</td>
+      <td className="whitespace-nowrap font-bold">{formatDisplayDate(getChequeDueDate(cheque))}</td>
+      <td className="min-w-32">
+        <DueLabel cheque={cheque} />
+      </td>
+      <td className="whitespace-nowrap capitalize">{getWeekdayName(getChequeDueDate(cheque))}</td>
+      <td className="whitespace-nowrap text-right font-black">{formatCurrencyPYG(cheque.monto)}</td>
+      <td className="max-w-56 truncate font-semibold" title={cheque.terceroNombre}>{cheque.terceroNombre}</td>
+      <td className="max-w-64 truncate text-next-muted" title={getChequeDescription(cheque)}>{getChequeDescription(cheque)}</td>
+      <td><StatusBadge label={displayState(cheque)} status={statusBadge(cheque)} /></td>
+      <td className="max-w-52 truncate" title={cheque.obraNombre}>{cheque.obraNombre}</td>
+      <td className="max-w-36 truncate" title={cheque.bancoCheque}>{cheque.bancoCheque || ""}</td>
+      <td>
+        <ChequeActions
+          activeTab={activeTab}
+          cheque={cheque}
+          compact={density === "compacta"}
+          onDetail={onDetail}
+          onNavigate={onNavigate}
+          onRequestStatus={onRequestStatus}
+        />
+      </td>
+    </tr>
   );
 }
 
-function ChequeCard({ cheque, onDetail, onStatus }: { cheque: Cheque; onDetail: () => void; onStatus: (status: ChequeStatus) => void }) {
+function ChequeCard({
+  activeTab,
+  cheque,
+  onDetail,
+  onNavigate,
+  onRequestStatus
+}: {
+  activeTab: ActiveTab;
+  cheque: Cheque;
+  onDetail: () => void;
+  onNavigate: (path: string) => void;
+  onRequestStatus: (cheque: Cheque, nextStatus: ChequeStatus) => void;
+}) {
   return (
-    <article className={`rounded-lg border p-4 ${cheque.tipo === "recibido" ? "border-green-100 bg-green-50" : "border-orange-100 bg-orange-50"}`}>
+    <article className={`rounded-lg border p-4 ${mobileTone(cheque)}`}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase text-next-muted">{cheque.tipo === "recibido" ? "Cheque recibido" : "Cheque emitido"}</p>
-          <h3 className="mt-1 text-base font-black text-next-text">{cheque.terceroNombre}</h3>
-          <p className="mt-1 text-sm font-semibold text-next-muted">{cheque.obraNombre}</p>
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase text-next-muted">{activeTab === "emitido" ? "A pagar" : "A cobrar"}</p>
+          <h3 className="mt-1 truncate text-base font-black text-next-text">{cheque.terceroNombre}</h3>
+          <p className="mt-1 text-sm font-semibold text-next-muted">{formatDisplayDate(getChequeDueDate(cheque))} · {getWeekdayName(getChequeDueDate(cheque))}</p>
         </div>
-        <p className={`text-right text-lg font-black ${cheque.tipo === "recibido" ? "text-next-green" : "text-next-red"}`}>{formatCurrencyPYG(cheque.monto)}</p>
+        <p className={`whitespace-nowrap text-right text-lg font-black ${activeTab === "emitido" ? "text-next-red" : "text-next-green"}`}>{formatCurrencyPYG(cheque.monto)}</p>
       </div>
-      <div className="mt-3 grid gap-2 text-sm text-next-muted">
-        <RowLabel label="Nº cheque" value={cheque.numeroCheque} />
-        <RowLabel label="Banco" value={cheque.bancoCheque || "-"} />
-        <RowLabel label="Cobro/vencimiento" value={formatDateShort(getChequeDueDate(cheque))} />
-        <RowLabel label="Estado" value={formatChequeStatus(cheque.estado)} />
+      <div className="mt-3 grid gap-2 text-sm">
+        <MobileLine label="Faltan" value={<DueLabel cheque={cheque} />} />
+        <MobileLine label="Nro cheque" value={cheque.numeroCheque} />
+        <MobileLine label="Estado" value={displayState(cheque)} />
+        <MobileLine label="Obra" value={cheque.obraNombre} />
+        <MobileLine label="Banco" value={cheque.bancoCheque || ""} />
       </div>
       <div className="mt-3">
-        <ChequeActions cheque={cheque} onDetail={onDetail} onStatus={onStatus} />
+        <ChequeActions activeTab={activeTab} cheque={cheque} onDetail={onDetail} onNavigate={onNavigate} onRequestStatus={onRequestStatus} />
       </div>
     </article>
   );
 }
 
-function ChequeActions({ cheque, compact = false, onDetail, onStatus }: { cheque: Cheque; compact?: boolean; onDetail: () => void; onStatus: (status: ChequeStatus) => void }) {
-  const finalStatus = cheque.tipo === "recibido" ? "cobrado" : "debitado";
+function ChequeActions({
+  activeTab,
+  cheque,
+  compact = false,
+  onDetail,
+  onNavigate,
+  onRequestStatus
+}: {
+  activeTab: ActiveTab;
+  cheque: Cheque;
+  compact?: boolean;
+  onDetail: () => void;
+  onNavigate: (path: string) => void;
+  onRequestStatus: (cheque: Cheque, nextStatus: ChequeStatus) => void;
+}) {
+  const finalStatus: ChequeStatus = activeTab === "emitido" ? "debitado" : "cobrado";
   return (
     <div className={`flex flex-wrap gap-1 ${compact ? "justify-end" : ""}`}>
       <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-blue" type="button" onClick={onDetail}>
@@ -301,22 +595,26 @@ function ChequeActions({ cheque, compact = false, onDetail, onStatus }: { cheque
       </button>
       {!isChequeClosed(cheque) ? (
         <>
-          <button className="h-8 rounded-md bg-next-blue px-2 text-[11px] font-black text-white" type="button" onClick={() => onStatus(finalStatus)}>
-            {cheque.tipo === "recibido" ? "Cobrado" : "Debitado"}
+          <button className="h-8 rounded-md bg-next-blue px-2 text-[11px] font-black text-white" type="button" onClick={() => onRequestStatus(cheque, finalStatus)}>
+            {activeTab === "emitido" ? "Pagado" : "Cobrado"}
           </button>
-          <button className="h-8 rounded-md border border-red-100 bg-white px-2 text-[11px] font-black text-next-red" type="button" onClick={() => onStatus("rechazado")}>
-            Rechazar
-          </button>
-          <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onStatus("anulado")}>
+          <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onRequestStatus(cheque, "anulado")}>
             Anular
           </button>
         </>
       ) : null}
+      <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onNavigate(`/finanzas-obras/${cheque.obraId}`)}>
+        Obra
+      </button>
+      <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onNavigate(cheque.terceroTipo === "proveedor" ? "/proveedores" : "/clientes")}>
+        {compact ? <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" /> : "Cliente/proveedor"}
+      </button>
     </div>
   );
 }
 
 function ChequeDetailModal({
+  allCheques,
   cheque,
   onClose,
   onGoParty,
@@ -324,23 +622,25 @@ function ChequeDetailModal({
   onSave,
   onStatus
 }: {
+  allCheques: Cheque[];
   cheque: Cheque;
   onClose: () => void;
   onGoParty: (cheque: Cheque) => void;
   onGoWork: (cheque: Cheque) => void;
   onSave: (data: Partial<Cheque>) => void;
-  onStatus: (status: ChequeStatus) => void;
+  onStatus: (cheque: Cheque, status: ChequeStatus) => void;
 }) {
-  const statuses = cheque.tipo === "recibido" ? receivedStatuses : issuedStatuses;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     numeroCheque: cheque.numeroCheque,
     bancoCheque: cheque.bancoCheque ?? "",
     fechaEmisionCheque: cheque.fechaEmisionCheque,
-    fechaCobroCheque: cheque.fechaCobroCheque,
+    fechaCobroCheque: getChequeDueDate(cheque),
     monto: String(cheque.monto),
     observacion: cheque.observacion ?? ""
   });
+  const duplicate = findPossibleDuplicate(allCheques, cheque, draft);
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
       <section className="mx-auto max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
@@ -348,41 +648,50 @@ function ChequeDetailModal({
           <div>
             <p className="text-xs font-black uppercase text-next-blue">Detalle de cheque</p>
             <h2 className="mt-1 text-xl font-black text-next-text">{cheque.numeroCheque}</h2>
+            <p className="mt-1 text-sm font-semibold text-next-muted">{cheque.tipo === "emitido" ? "Emitido" : "Recibido"} · {displayState(cheque)}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose}>
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <DetailItem label="Tipo" value={cheque.tipo === "recibido" ? "Recibido" : "Emitido"} />
-          <DetailItem label="Estado" value={formatChequeStatus(cheque.estado)} />
           <DetailItem label="Monto" value={formatCurrencyPYG(cheque.monto)} />
-          <DetailItem label="Banco" value={cheque.bancoCheque || "-"} />
-          <DetailItem label="Fecha emision" value={formatDateShort(cheque.fechaEmisionCheque)} />
-          <DetailItem label="Fecha cobro/vencimiento" value={formatDateShort(getChequeDueDate(cheque))} />
+          <DetailItem label="Faltan" value={getDueAlert(cheque).text} />
+          <DetailItem label="Fecha expedicion" value={formatDisplayDate(cheque.fechaEmisionCheque)} />
+          <DetailItem label="Fecha vencimiento/cobro" value={formatDisplayDate(getChequeDueDate(cheque))} />
+          <DetailItem label="Banco" value={cheque.bancoCheque || ""} />
+          <DetailItem label={cheque.tipo === "emitido" ? "Beneficiario" : "Cliente / Pagador"} value={cheque.terceroNombre} />
           <DetailItem label="Obra" value={cheque.obraNombre} />
-          <DetailItem label="Cliente / proveedor" value={cheque.terceroNombre} />
-          <DetailItem label="Origen" value={cheque.origen} />
-          <DetailItem label="Observacion" value={cheque.observacion || "-"} />
+          <DetailItem label="Descripcion" value={getChequeDescription(cheque)} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => onGoWork(cheque)}>Ver obra</button>
           <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => onGoParty(cheque)}>Ver cliente/proveedor</button>
-          <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => setEditing((current) => !current)}>Editar cheque</button>
-          <select className="field h-9 max-w-48" value={cheque.estado} onChange={(event) => onStatus(event.target.value as ChequeStatus)}>
-            {statuses.map((status) => <option key={status} value={status}>{formatChequeStatus(status)}</option>)}
-          </select>
+          <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => setEditing((current) => !current)}>Editar</button>
+          {!isChequeClosed(cheque) ? (
+            <>
+              <button className="h-9 rounded-md bg-next-blue px-3 text-xs font-black text-white" type="button" onClick={() => onStatus(cheque, cheque.tipo === "emitido" ? "debitado" : "cobrado")}>
+                {cheque.tipo === "emitido" ? "Marcar pagado" : "Marcar cobrado"}
+              </button>
+              <button className="h-9 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={() => onStatus(cheque, "anulado")}>Anular</button>
+            </>
+          ) : null}
         </div>
         {editing ? (
           <div className="mt-5 rounded-lg border border-slate-200 bg-next-bg p-3">
             <p className="text-xs font-black uppercase text-next-blue">Editar cheque</p>
+            {duplicate ? (
+              <div className="mt-3 rounded-md border border-orange-100 bg-orange-50 px-3 py-2 text-xs font-semibold text-next-orange">
+                Posible duplicado: existe otro cheque similar con mismo numero, banco, monto y tercero.
+              </div>
+            ) : null}
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="Nº cheque"><input className="field" value={draft.numeroCheque} onChange={(event) => setDraft({ ...draft, numeroCheque: event.target.value })} /></Field>
+              <Field label="Nro cheque"><input className="field" value={draft.numeroCheque} onChange={(event) => setDraft({ ...draft, numeroCheque: event.target.value })} /></Field>
               <Field label="Banco"><input className="field" value={draft.bancoCheque} onChange={(event) => setDraft({ ...draft, bancoCheque: event.target.value })} /></Field>
-              <Field label="Fecha emision"><input className="field" type="date" value={draft.fechaEmisionCheque} onChange={(event) => setDraft({ ...draft, fechaEmisionCheque: event.target.value })} /></Field>
-              <Field label="Fecha cobro/vencimiento"><input className="field" type="date" value={draft.fechaCobroCheque} onChange={(event) => setDraft({ ...draft, fechaCobroCheque: event.target.value })} /></Field>
+              <Field label="Fecha expedicion"><input className="field" type="date" value={draft.fechaEmisionCheque} onChange={(event) => setDraft({ ...draft, fechaEmisionCheque: event.target.value })} /></Field>
+              <Field label="Fecha vencimiento/cobro"><input className="field" type="date" value={draft.fechaCobroCheque} onChange={(event) => setDraft({ ...draft, fechaCobroCheque: event.target.value })} /></Field>
               <Field label="Monto"><input className="field" min={0} type="number" value={draft.monto} onChange={(event) => setDraft({ ...draft, monto: event.target.value })} /></Field>
-              <Field label="Observacion"><input className="field" value={draft.observacion} onChange={(event) => setDraft({ ...draft, observacion: event.target.value })} /></Field>
+              <Field label="Descripcion"><input className="field" value={draft.observacion} onChange={(event) => setDraft({ ...draft, observacion: event.target.value })} /></Field>
             </div>
             <button
               className="mt-3 h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white"
@@ -409,7 +718,7 @@ function ChequeDetailModal({
           <div className="mt-2 space-y-2">
             {(cheque.historial ?? []).length ? cheque.historial!.map((item, index) => (
               <p key={`${item.fecha}-${index}`} className="text-sm font-semibold text-next-text">
-                {formatDateShort(item.fecha.slice(0, 10))} · {formatChequeStatus(item.estado)} · {item.usuario ?? "Sistema"}
+                {formatDisplayDate(item.fecha.slice(0, 10))} · {displayStatusFromRaw(cheque.tipo, item.estado)} · {item.usuario ?? "Sistema"}
               </p>
             )) : <p className="text-sm font-semibold text-next-muted">Sin historial registrado.</p>}
           </div>
@@ -419,19 +728,121 @@ function ChequeDetailModal({
   );
 }
 
-function MetricCard({ label, tone, value }: { label: string; tone: "green" | "red" | "orange" | "critical"; value: string }) {
+function ConfirmStatusModal({
+  action,
+  onCancel,
+  onChangeDate,
+  onConfirm,
+  saving
+}: {
+  action: NonNullable<ConfirmAction>;
+  onCancel: () => void;
+  onChangeDate: (value: string) => void;
+  onConfirm: () => void;
+  saving: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 px-3">
+      <section className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-next-light text-next-blue">
+            <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-lg font-black text-next-text">{action.title}</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-next-muted">{action.text}</p>
+          </div>
+        </div>
+        <label className="mt-4 block text-xs font-black uppercase text-next-muted">
+          {action.dateLabel}
+          <input className="field mt-1" type="date" value={action.dateValue} onChange={(event) => onChangeDate(event.target.value)} />
+        </label>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={onCancel}>Cancelar</button>
+          <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={onConfirm}>
+            {saving ? "Guardando..." : "Confirmar"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SortableTh({
+  activeSort,
+  align,
+  label,
+  onSort,
+  sortKey
+}: {
+  activeSort: { key: SortKey; direction: SortDirection };
+  align?: "right";
+  label: string;
+  onSort: (key: SortKey) => void;
+  sortKey: SortKey;
+}) {
+  const active = activeSort.key === sortKey;
+  return (
+    <th className={align === "right" ? "text-right" : ""}>
+      <button className={`inline-flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`} type="button" onClick={() => onSort(sortKey)}>
+        {label}
+        {active ? activeSort.direction === "asc" ? <ArrowUp className="h-3 w-3" aria-hidden="true" /> : <ArrowDown className="h-3 w-3" aria-hidden="true" /> : null}
+      </button>
+    </th>
+  );
+}
+
+function DueLabel({ cheque }: { cheque: Cheque }) {
+  const alert = getDueAlert(cheque);
+  const tone = {
+    overdue: "bg-red-50 text-next-red ring-red-100",
+    today: "bg-orange-50 text-next-orange ring-orange-100",
+    soon: "bg-amber-50 text-amber-700 ring-amber-100",
+    normal: "bg-slate-50 text-next-muted ring-slate-100",
+    closed: "bg-green-50 text-next-green ring-green-100",
+    void: "bg-slate-100 text-next-muted ring-slate-200"
+  }[alert.level];
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-black ring-1 ${tone}`}>
+      {alert.level === "overdue" || alert.level === "today" ? <AlertTriangle className="cheque-pulse h-3 w-3" aria-hidden="true" /> : null}
+      {alert.text}
+    </span>
+  );
+}
+
+function MetricCard({ label, onClick, tone, value }: { label: string; onClick: () => void; tone: "green" | "red" | "orange" | "critical"; value: string }) {
   const classes = {
-    green: "text-next-green",
-    red: "text-next-red",
-    orange: "text-next-orange",
-    critical: "text-next-red"
+    green: "text-next-green bg-green-50",
+    red: "text-next-red bg-red-50",
+    orange: "text-next-orange bg-orange-50",
+    critical: "text-next-red bg-red-50"
   };
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-      <FileSpreadsheet className={`h-5 w-5 ${classes[tone]}`} aria-hidden="true" />
-      <p className="mt-3 text-xs font-black uppercase text-next-muted">{label}</p>
-      <p className={`mt-1 whitespace-nowrap text-xl font-black ${classes[tone]}`}>{value}</p>
-    </article>
+    <button className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-soft transition hover:-translate-y-0.5 hover:shadow-lg" type="button" onClick={onClick}>
+      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${classes[tone]}`}>
+        <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <p className="mt-2 text-[11px] font-black uppercase text-next-muted">{label}</p>
+      <p className={`mt-1 whitespace-nowrap text-lg font-black ${classes[tone].split(" ")[0]}`}>{value}</p>
+    </button>
+  );
+}
+
+function TabButton({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
+  return (
+    <button className={`h-10 rounded-md px-5 text-sm font-black ${active ? "bg-next-blue text-white shadow-soft" : "text-next-muted"}`} type="button" onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function Field({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="block text-[11px] font-black uppercase text-next-muted">
+      {label}
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }
 
@@ -444,21 +855,12 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RowLabel({ label, value }: { label: string; value: string }) {
+function MobileLine({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="font-semibold text-next-muted">{label}</span>
       <span className="text-right font-black text-next-text">{value}</span>
     </div>
-  );
-}
-
-function Field({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <label className="block text-xs font-black uppercase text-next-muted">
-      {label}
-      <div className="mt-1">{children}</div>
-    </label>
   );
 }
 
@@ -472,102 +874,264 @@ function StateCard({ text }: { text: string }) {
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed border-slate-200 bg-next-bg px-4 py-8 text-center text-sm font-semibold text-next-muted">{text}</div>;
+  return <div className="p-8 text-center text-sm font-semibold text-next-muted">{text}</div>;
 }
 
-function getChequeMetrics(cheques: Cheque[]) {
-  const today = getTodayInputDate();
-  const week = getWeekRange(today);
-  const pendingReceived = cheques.filter((cheque) => cheque.tipo === "recibido" && !closedReceived.includes(cheque.estado));
-  const pendingIssued = cheques.filter((cheque) => cheque.tipo === "emitido" && !closedIssued.includes(cheque.estado));
-  const toCollectToday = sumCheques(pendingReceived.filter((cheque) => getChequeDueDate(cheque) === today));
-  const toPayToday = sumCheques(pendingIssued.filter((cheque) => getChequeDueDate(cheque) === today));
-  const toCollectWeek = sumCheques(pendingReceived.filter((cheque) => inRange(getChequeDueDate(cheque), week.start, week.end)));
-  const toPayWeek = sumCheques(pendingIssued.filter((cheque) => inRange(getChequeDueDate(cheque), week.start, week.end)));
-  const receivedPending = sumCheques(pendingReceived);
-  const issuedPending = sumCheques(pendingIssued);
-  const overdueCount = [...pendingReceived, ...pendingIssued].filter((cheque) => getChequeDueDate(cheque) < today).length;
+function buildFilterOptions(cheques: Cheque[]) {
   return {
-    toCollectToday,
-    toPayToday,
-    toCollectWeek,
-    toPayWeek,
-    receivedPending,
-    issuedPending,
-    projectedBalance: receivedPending - issuedPending,
-    overdueCount
+    parties: uniqueSorted(cheques.map((cheque) => cheque.terceroNombre).filter(Boolean)),
+    works: uniqueSorted(cheques.map((cheque) => cheque.obraNombre).filter(Boolean)),
+    banks: uniqueSorted(cheques.map((cheque) => cheque.bancoCheque ?? "").filter((value) => value !== ""))
   };
 }
 
-function matchesQuickDate(cheque: Cheque, filter: QuickFilter) {
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function getTabMetrics(cheques: Cheque[], tab: ActiveTab) {
+  const pending = cheques.filter((cheque) => !isChequeClosed(cheque));
+  const today = getTodayLocal();
+  const next7End = addDaysInput(today, 7);
+  const todayAmount = sumCheques(pending.filter((cheque) => getChequeDueDate(cheque) === today));
+  const next7 = sumCheques(pending.filter((cheque) => inRange(getChequeDueDate(cheque), today, next7End)));
+  const overdue = pending.filter((cheque) => getChequeDueDate(cheque) < today);
+  return {
+    today: todayAmount,
+    next7,
+    pending: sumCheques(pending),
+    overdueCount: overdue.length,
+    overdueAmount: sumCheques(overdue),
+    tab
+  };
+}
+
+function matchesStatusFilter(cheque: Cheque, tab: ActiveTab, filter: string) {
+  if (filter === "todos") return true;
+  const normalized = normalizedDisplayState(cheque);
+  if (filter === "pendiente") return normalized === "pendiente";
+  if (filter === "pagado") return tab === "emitido" && normalized === "pagado";
+  if (filter === "cobrado") return tab === "recibido" && normalized === "cobrado";
+  return cheque.estado === filter;
+}
+
+function matchesQuickFilter(cheque: Cheque, filter: QuickFilter) {
   if (filter === "todos") return true;
   const dueDate = getChequeDueDate(cheque);
-  const today = getTodayInputDate();
+  const today = getTodayLocal();
   if (filter === "hoy") return dueDate === today;
   if (filter === "vencidos") return dueDate < today && !isChequeClosed(cheque);
-  if (filter === "semana") {
-    const week = getWeekRange(today);
-    return inRange(dueDate, week.start, week.end);
-  }
-  const month = today.slice(0, 7);
-  return dueDate.startsWith(month);
+  if (filter === "proximos7") return inRange(dueDate, today, addDaysInput(today, 7));
+  return dueDate.startsWith(today.slice(0, 7));
 }
 
-function getWeekRange(today: string) {
-  const date = new Date(`${today}T00:00:00`);
-  const day = date.getDay() || 7;
-  const start = new Date(date);
-  start.setDate(date.getDate() - day + 1);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { start: toInputDate(start), end: toInputDate(end) };
+function sortCheques(rows: Cheque[], sort: { key: SortKey; direction: SortDirection }) {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const priorityDiff = defaultPriority(a) - defaultPriority(b);
+    if (sort.key === "fechaVencimiento" && priorityDiff !== 0) return priorityDiff;
+    const diff = compareValues(sortValue(a, sort.key), sortValue(b, sort.key));
+    if (diff !== 0) return diff * direction;
+    return compareValues(getChequeDueDate(a), getChequeDueDate(b));
+  });
 }
 
-function toInputDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+function defaultPriority(cheque: Cheque) {
+  if (isChequeClosed(cheque)) return 2;
+  if (getChequeDueDate(cheque) < getTodayLocal()) return 0;
+  return 1;
 }
 
-function inRange(value: string, start: string, end: string) {
-  return value >= start && value <= end;
+function sortValue(cheque: Cheque, key: SortKey) {
+  if (key === "fechaEmision") return cheque.fechaEmisionCheque;
+  if (key === "numero") return cheque.numeroCheque;
+  if (key === "fechaVencimiento") return getChequeDueDate(cheque);
+  if (key === "faltan") return getDaysDiff(getChequeDueDate(cheque));
+  if (key === "dia") return getWeekdayName(getChequeDueDate(cheque));
+  if (key === "monto") return cheque.monto;
+  if (key === "tercero") return cheque.terceroNombre;
+  if (key === "estado") return displayState(cheque);
+  if (key === "obra") return cheque.obraNombre;
+  return cheque.bancoCheque ?? "";
 }
 
-function sumCheques(cheques: Cheque[]) {
-  return cheques.reduce((sum, cheque) => sum + cheque.monto, 0);
+function compareValues(a: string | number, b: string | number) {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b), "es", { numeric: true });
 }
 
 function getChequeDueDate(cheque: Cheque) {
-  return cheque.fechaCobroCheque || cheque.fechaVencimientoCheque || cheque.fechaEmisionCheque;
+  return cheque.fechaCobroCheque || cheque.fechaVencimientoCheque || cheque.fechaEmisionCheque || getTodayLocal();
+}
+
+function getChequeDescription(cheque: Cheque) {
+  return cheque.observacion || cheque.origen || "";
+}
+
+function getDueAlert(cheque: Cheque): { level: "overdue" | "today" | "soon" | "normal" | "closed" | "void"; text: string } {
+  if (cheque.estado === "anulado") return { level: "void", text: "Anulado" };
+  if (isChequeClosed(cheque)) return { level: "closed", text: displayState(cheque) };
+  const diff = getDaysDiff(getChequeDueDate(cheque));
+  if (diff < 0) return { level: "overdue", text: `Vencido hace ${Math.abs(diff)} dia${Math.abs(diff) === 1 ? "" : "s"}` };
+  if (diff === 0) return { level: "today", text: "Vence hoy" };
+  if (diff === 1) return { level: "soon", text: "Manana" };
+  if (diff <= 7) return { level: "soon", text: `${diff} dias` };
+  return { level: "normal", text: `${diff} dias` };
+}
+
+function getDaysDiff(dateValue: string) {
+  const today = parseInputDate(getTodayLocal()).getTime();
+  const target = parseInputDate(dateValue).getTime();
+  return Math.round((target - today) / 86400000);
 }
 
 function isChequeClosed(cheque: Cheque) {
-  return cheque.tipo === "recibido" ? closedReceived.includes(cheque.estado) : closedIssued.includes(cheque.estado);
+  return cheque.tipo === "recibido" ? closedReceivedStatuses.includes(cheque.estado) : closedIssuedStatuses.includes(cheque.estado);
+}
+
+function normalizedDisplayState(cheque: Cheque) {
+  if (cheque.estado === "anulado") return "anulado";
+  if (cheque.estado === "rechazado") return "rechazado";
+  if (cheque.tipo === "emitido" && paidIssuedStatuses.includes(cheque.estado)) return "pagado";
+  if (cheque.tipo === "recibido" && cheque.estado === "cobrado") return "cobrado";
+  if (cheque.tipo === "emitido" && pendingIssuedStatuses.includes(cheque.estado)) return "pendiente";
+  if (cheque.tipo === "recibido" && pendingReceivedStatuses.includes(cheque.estado)) return "pendiente";
+  return "pendiente";
+}
+
+function displayState(cheque: Cheque) {
+  const normalized = normalizedDisplayState(cheque);
+  if (normalized === "pagado") return "Pagado";
+  if (normalized === "cobrado") return "Cobrado";
+  if (normalized === "anulado") return "Anulado";
+  if (normalized === "rechazado") return "Rechazado";
+  return "Pendiente";
+}
+
+function displayStatusFromRaw(type: ChequeKind, status: ChequeStatus) {
+  return displayState({ tipo: type, estado: status } as Cheque);
 }
 
 function statusBadge(cheque: Cheque): BadgeStatus {
-  if (cheque.estado === "rechazado") return "critical";
-  if (cheque.estado === "anulado") return "neutral";
-  if (cheque.estado === "cobrado" || cheque.estado === "debitado") return "success";
-  if (getChequeDueDate(cheque) < getTodayInputDate() && !isChequeClosed(cheque)) return "critical";
+  const state = normalizedDisplayState(cheque);
+  if (state === "anulado") return "neutral";
+  if (state === "rechazado") return "critical";
+  if (state === "pagado" || state === "cobrado") return "success";
+  if (getChequeDueDate(cheque) < getTodayLocal()) return "critical";
   return cheque.tipo === "recibido" ? "info" : "warning";
 }
 
 function rowTone(cheque: Cheque) {
-  if (cheque.estado === "anulado") return "bg-slate-50 text-next-muted";
-  if (cheque.estado === "rechazado" || (getChequeDueDate(cheque) < getTodayInputDate() && !isChequeClosed(cheque))) return "bg-red-50 text-next-red";
-  return cheque.tipo === "recibido" ? "bg-green-50/40 text-next-text" : "bg-orange-50/40 text-next-text";
+  const alert = getDueAlert(cheque);
+  if (alert.level === "void") return "bg-slate-50 text-next-muted opacity-75";
+  if (alert.level === "closed") return "bg-green-50/35";
+  if (alert.level === "overdue") return "border-l-4 border-l-next-red bg-red-50/80";
+  if (alert.level === "today") return "border-l-4 border-l-next-orange bg-orange-50/80";
+  if (alert.level === "soon") return "border-l-4 border-l-amber-400 bg-amber-50/50";
+  return "bg-white hover:bg-slate-50";
 }
 
-function formatChequeStatus(status: ChequeStatus) {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+function mobileTone(cheque: Cheque) {
+  const alert = getDueAlert(cheque);
+  if (alert.level === "overdue") return "border-red-100 bg-red-50";
+  if (alert.level === "today") return "border-orange-100 bg-orange-50";
+  if (alert.level === "soon") return "border-amber-100 bg-amber-50";
+  if (alert.level === "void") return "border-slate-200 bg-slate-50 opacity-75";
+  return cheque.tipo === "recibido" ? "border-green-100 bg-green-50/50" : "border-slate-200 bg-white";
 }
 
 function quickLabel(filter: QuickFilter) {
   const labels: Record<QuickFilter, string> = {
     todos: "Todos",
     hoy: "Hoy",
-    semana: "Esta semana",
+    proximos7: "Proximos 7 dias",
     mes: "Este mes",
     vencidos: "Vencidos"
   };
   return labels[filter];
+}
+
+function statusChangeTitle(cheque: Cheque, nextStatus: ChequeStatus) {
+  if (nextStatus === "debitado") return `Marcar cheque ${cheque.numeroCheque} como pagado`;
+  if (nextStatus === "cobrado") return `Marcar cheque ${cheque.numeroCheque} como cobrado`;
+  if (nextStatus === "anulado") return `Anular cheque ${cheque.numeroCheque}`;
+  return `Actualizar cheque ${cheque.numeroCheque}`;
+}
+
+function mergeObservation(current: string | undefined, next: string) {
+  if (!current) return next;
+  if (current.includes(next)) return current;
+  return `${current}\n${next}`;
+}
+
+function findPossibleDuplicate(allCheques: Cheque[], cheque: Cheque, draft: { numeroCheque: string; bancoCheque: string; monto: string }) {
+  return allCheques.find((item) =>
+    item.id !== cheque.id &&
+    item.numeroCheque.trim().toLowerCase() === draft.numeroCheque.trim().toLowerCase() &&
+    (item.bancoCheque ?? "").trim().toLowerCase() === draft.bancoCheque.trim().toLowerCase() &&
+    Number(item.monto) === Number(draft.monto || 0) &&
+    item.terceroNombre.trim().toLowerCase() === cheque.terceroNombre.trim().toLowerCase()
+  );
+}
+
+function buildExportRow(cheque: Cheque, tab: ActiveTab): Record<string, string | number> {
+  return {
+    "Fecha expedicion": formatDisplayDate(cheque.fechaEmisionCheque),
+    Numero: cheque.numeroCheque,
+    "Fecha vencimiento": formatDisplayDate(getChequeDueDate(cheque)),
+    Faltan: getDueAlert(cheque).text,
+    Dia: getWeekdayName(getChequeDueDate(cheque)),
+    Monto: cheque.monto,
+    [tab === "emitido" ? "Beneficiario" : "Cliente / Pagador"]: cheque.terceroNombre,
+    Descripcion: getChequeDescription(cheque),
+    Estado: displayState(cheque),
+    Obra: cheque.obraNombre,
+    Banco: cheque.bancoCheque ?? "",
+    Tipo: cheque.tipo === "emitido" ? "Emitido" : "Recibido"
+  };
+}
+
+function sumCheques(cheques: Cheque[]) {
+  return cheques.reduce((sum, cheque) => sum + Number(cheque.monto || 0), 0);
+}
+
+function inRange(value: string, start: string, end: string) {
+  return value >= start && value <= end;
+}
+
+function getTodayLocal() {
+  const date = new Date();
+  return toInputDate(date);
+}
+
+function addDaysInput(input: string, days: number) {
+  const date = parseInputDate(input);
+  date.setDate(date.getDate() + days);
+  return toInputDate(date);
+}
+
+function parseInputDate(input: string) {
+  const [year, month, day] = input.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0);
+}
+
+function toInputDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(input: string) {
+  if (!input) return "";
+  const date = parseInputDate(input.slice(0, 10));
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = date.toLocaleDateString("es-PY", { month: "short" }).replace(".", "").toLowerCase();
+  const year = String(date.getFullYear()).slice(2);
+  return `${day}-${month}-${year}`;
+}
+
+function getWeekdayName(input: string) {
+  if (!input) return "";
+  return parseInputDate(input.slice(0, 10)).toLocaleDateString("es-PY", { weekday: "long" }).toLowerCase();
 }
