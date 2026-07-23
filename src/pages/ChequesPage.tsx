@@ -1,13 +1,15 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, Eye, FileSpreadsheet, MoreHorizontal, Search, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, Eye, FileSpreadsheet, MoreHorizontal, PlusCircle, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import CurrencyInput from "../components/ui/CurrencyInput";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { getCheques, syncChequesFromMovements, updateCheque } from "../lib/firestore";
-import type { Cheque, ChequeKind, ChequeStatus } from "../types";
+import { createCheque, getCheques, syncChequesFromMovements, updateCheque } from "../lib/firestore";
+import type { Cheque, ChequeKind, ChequeStatus, ChequeThirdPartyType } from "../types";
 import { exportWorkbookToExcel } from "../utils/excel";
 import { formatCurrencyPYG } from "../utils/formatters";
+import { toTitleCase } from "../utils/text";
 
 type ActiveTab = "emitido" | "recibido";
 type QuickFilter = "todos" | "hoy" | "proximos7" | "mes" | "vencidos";
@@ -33,6 +35,20 @@ type ConfirmAction = {
   dateLabel: string;
   dateValue: string;
 } | null;
+
+type ManualChequeForm = {
+  tipo: ChequeKind;
+  terceroTipo: ChequeThirdPartyType;
+  terceroNombre: string;
+  monto: number;
+  numeroCheque: string;
+  bancoCheque: string;
+  fechaEmisionCheque: string;
+  fechaCobroCheque: string;
+  estado: ChequeStatus;
+  obraNombre: string;
+  observacion: string;
+};
 
 const pendingIssuedStatuses: ChequeStatus[] = ["emitido", "entregado"];
 const paidIssuedStatuses: ChequeStatus[] = ["debitado"];
@@ -76,6 +92,7 @@ export default function ChequesPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Cheque | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -227,6 +244,46 @@ export default function ChequesPage() {
     }
   }
 
+  async function saveManualCheque(form: ManualChequeForm) {
+    setSaving(true);
+    setError("");
+    try {
+      const terceroNombre = toTitleCase(form.terceroNombre.trim());
+      const obraNombre = form.obraNombre.trim() ? toTitleCase(form.obraNombre.trim()) : "";
+      const created = await createCheque({
+        tipo: form.tipo,
+        estado: form.estado,
+        obraId: "",
+        obraNombre,
+        movimientoId: `manual-${Date.now()}`,
+        origen: "manual",
+        terceroNombre,
+        terceroTipo: form.terceroTipo,
+        clienteNombre: form.tipo === "recibido" && form.terceroTipo === "cliente" ? terceroNombre : undefined,
+        pagadorNombre: form.tipo === "recibido" ? terceroNombre : undefined,
+        proveedorNombre: form.tipo === "emitido" && form.terceroTipo === "proveedor" ? terceroNombre : undefined,
+        beneficiarioNombre: form.tipo === "emitido" ? terceroNombre : undefined,
+        monto: form.monto,
+        numeroCheque: form.numeroCheque.trim(),
+        bancoCheque: form.bancoCheque.trim() || undefined,
+        fechaEmisionCheque: form.fechaEmisionCheque,
+        fechaCobroCheque: form.fechaCobroCheque,
+        fechaVencimientoCheque: form.fechaCobroCheque,
+        observacion: form.observacion.trim() || undefined,
+        updatedBy: profile?.uid ?? "unknown"
+      });
+      setCheques((current) => [created, ...current]);
+      setActiveTab(created.tipo);
+      setShowCreateModal(false);
+      setMessage("Cheque registrado correctamente.");
+    } catch (createError) {
+      console.error("No se pudo registrar el cheque.", createError);
+      setError(createError instanceof Error ? createError.message : "No se pudo registrar el cheque.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function exportFilteredExcel(exportAll = false) {
     const rowsToExport = exportAll ? sortCheques(tabCheques, sort) : filtered;
     if (!rowsToExport.length) {
@@ -272,6 +329,10 @@ export default function ChequesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white shadow-soft" type="button" onClick={() => setShowCreateModal(true)}>
+            <PlusCircle className="h-4 w-4" aria-hidden="true" />
+            Registrar cheque
+          </button>
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => exportFilteredExcel(false)}>
             <Download className="h-4 w-4" aria-hidden="true" />
             Exportar Excel
@@ -479,6 +540,14 @@ export default function ChequesPage() {
         />
       ) : null}
 
+      {showCreateModal ? (
+        <ManualChequeModal
+          saving={saving}
+          onClose={() => setShowCreateModal(false)}
+          onSave={(form) => void saveManualCheque(form)}
+        />
+      ) : null}
+
       <style>{`
         .cheque-table-compact th,
         .cheque-table-compact td { padding: 0.42rem 0.55rem; }
@@ -609,9 +678,11 @@ function ChequeActions({
           </button>
         </>
       ) : null}
-      <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onNavigate(`/finanzas-obras/${cheque.obraId}`)}>
-        Obra
-      </button>
+      {cheque.obraId ? (
+        <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onNavigate(`/finanzas-obras/${cheque.obraId}`)}>
+          Obra
+        </button>
+      ) : null}
       <button className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-black text-next-muted" type="button" onClick={() => onNavigate(cheque.terceroTipo === "proveedor" ? "/proveedores" : "/clientes")}>
         {compact ? <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" /> : "Cliente/proveedor"}
       </button>
@@ -619,6 +690,161 @@ function ChequeActions({
   );
 }
 
+function ManualChequeModal({
+  onClose,
+  onSave,
+  saving
+}: {
+  onClose: () => void;
+  onSave: (form: ManualChequeForm) => void;
+  saving: boolean;
+}) {
+  const today = getTodayLocal();
+  const [form, setForm] = useState<ManualChequeForm>({
+    tipo: "emitido",
+    terceroTipo: "proveedor",
+    terceroNombre: "",
+    monto: 0,
+    numeroCheque: "",
+    bancoCheque: "",
+    fechaEmisionCheque: today,
+    fechaCobroCheque: today,
+    estado: "emitido",
+    obraNombre: "",
+    observacion: ""
+  });
+  const [formError, setFormError] = useState("");
+
+  function updateType(tipo: ChequeKind) {
+    setForm((current) => ({
+      ...current,
+      tipo,
+      terceroTipo: tipo === "recibido" ? "cliente" : "proveedor",
+      estado: tipo === "recibido" ? "recibido" : "emitido"
+    }));
+  }
+
+  function submit() {
+    const terceroNombre = form.terceroNombre.trim();
+    const numeroCheque = form.numeroCheque.trim();
+    if (!terceroNombre) {
+      setFormError(form.tipo === "recibido" ? "Carga el cliente o pagador." : "Carga el proveedor o beneficiario.");
+      return;
+    }
+    if (!numeroCheque) {
+      setFormError("Carga el numero de cheque.");
+      return;
+    }
+    if (form.monto <= 0) {
+      setFormError("Carga un monto mayor a cero.");
+      return;
+    }
+    if (!form.fechaEmisionCheque || !form.fechaCobroCheque) {
+      setFormError("Carga las fechas de emision y cobro/vencimiento.");
+      return;
+    }
+    if (form.fechaCobroCheque < form.fechaEmisionCheque) {
+      setFormError("La fecha de cobro/vencimiento no puede ser anterior a la emision.");
+      return;
+    }
+    setFormError("");
+    onSave({
+      ...form,
+      terceroNombre: toTitleCase(terceroNombre),
+      numeroCheque,
+      bancoCheque: toTitleCase(form.bancoCheque),
+      obraNombre: form.obraNombre ? toTitleCase(form.obraNombre) : ""
+    });
+  }
+
+  const statusOptions = form.tipo === "recibido"
+    ? [
+        { value: "recibido", label: "Recibido" },
+        { value: "depositado", label: "Depositado" },
+        { value: "cobrado", label: "Cobrado" },
+        { value: "rechazado", label: "Rechazado" },
+        { value: "anulado", label: "Anulado" }
+      ]
+    : [
+        { value: "emitido", label: "Emitido" },
+        { value: "entregado", label: "Entregado" },
+        { value: "debitado", label: "Pagado / debitado" },
+        { value: "rechazado", label: "Rechazado" },
+        { value: "anulado", label: "Anulado" }
+      ];
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase text-next-blue">Carga manual</p>
+            <h2 className="mt-1 text-xl font-black text-next-text">Registrar cheque</h2>
+            <p className="mt-1 text-sm font-semibold text-next-muted">La obra es opcional para esta primera fase de prueba.</p>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        {formError ? <Notice tone="error" text={formError} /> : null}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Tipo">
+            <select className="field" value={form.tipo} onChange={(event) => updateType(event.target.value as ChequeKind)}>
+              <option value="emitido">Cheque emitido / pago</option>
+              <option value="recibido">Cheque recibido / ingreso</option>
+            </select>
+          </Field>
+          <Field label="Estado inicial">
+            <select className="field" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as ChequeStatus })}>
+              {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </Field>
+          <Field label={form.tipo === "recibido" ? "Cliente / pagador" : "Proveedor / beneficiario"}>
+            <input className="field" value={form.terceroNombre} onBlur={() => setForm({ ...form, terceroNombre: toTitleCase(form.terceroNombre) })} onChange={(event) => setForm({ ...form, terceroNombre: event.target.value })} />
+          </Field>
+          <Field label="Tipo de tercero">
+            <select className="field" value={form.terceroTipo} onChange={(event) => setForm({ ...form, terceroTipo: event.target.value as ChequeThirdPartyType })}>
+              <option value="cliente">Cliente</option>
+              <option value="proveedor">Proveedor</option>
+              <option value="persona">Persona</option>
+            </select>
+          </Field>
+          <Field label="Monto">
+            <CurrencyInput value={form.monto} onValueChange={(value) => setForm({ ...form, monto: value })} />
+          </Field>
+          <Field label="Nro de cheque">
+            <input className="field" value={form.numeroCheque} onChange={(event) => setForm({ ...form, numeroCheque: event.target.value })} />
+          </Field>
+          <Field label="Banco">
+            <input className="field" value={form.bancoCheque} onBlur={() => setForm({ ...form, bancoCheque: toTitleCase(form.bancoCheque) })} onChange={(event) => setForm({ ...form, bancoCheque: event.target.value })} />
+          </Field>
+          <Field label="Obra vinculada opcional">
+            <input className="field" placeholder="Sin obra por ahora" value={form.obraNombre} onBlur={() => setForm({ ...form, obraNombre: toTitleCase(form.obraNombre) })} onChange={(event) => setForm({ ...form, obraNombre: event.target.value })} />
+          </Field>
+          <Field label="Fecha de emision">
+            <input className="field" type="date" value={form.fechaEmisionCheque} onChange={(event) => setForm({ ...form, fechaEmisionCheque: event.target.value })} />
+          </Field>
+          <Field label="Fecha de cobro / vencimiento">
+            <input className="field" type="date" value={form.fechaCobroCheque} onChange={(event) => setForm({ ...form, fechaCobroCheque: event.target.value })} />
+          </Field>
+          <label className="block text-[11px] font-black uppercase text-next-muted sm:col-span-2">
+            observacion
+            <textarea className="field mt-1 min-h-24" value={form.observacion} onChange={(event) => setForm({ ...form, observacion: event.target.value })} />
+          </label>
+        </div>
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={onClose}>Cancelar</button>
+          <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={submit}>
+            {saving ? "Guardando..." : "Registrar cheque"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
 function ChequeDetailModal({
   allCheques,
   cheque,
@@ -667,11 +893,11 @@ function ChequeDetailModal({
           <DetailItem label="Fecha vencimiento/cobro" value={formatDisplayDate(getChequeDueDate(cheque))} />
           <DetailItem label="Banco" value={cheque.bancoCheque || ""} />
           <DetailItem label={cheque.tipo === "emitido" ? "Beneficiario" : "Cliente / Pagador"} value={cheque.terceroNombre} />
-          <DetailItem label="Obra" value={cheque.obraNombre} />
+          <DetailItem label="Obra" value={cheque.obraNombre || "Sin obra vinculada"} />
           <DetailItem label="Descripcion" value={getChequeDescription(cheque)} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => onGoWork(cheque)}>Ver obra</button>
+          {cheque.obraId ? <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => onGoWork(cheque)}>Ver obra</button> : null}
           <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => onGoParty(cheque)}>Ver cliente/proveedor</button>
           <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => setEditing((current) => !current)}>Editar</button>
           {!isChequeClosed(cheque) ? (
@@ -957,7 +1183,7 @@ function sortValue(cheque: Cheque, key: SortKey) {
   if (key === "monto") return cheque.monto;
   if (key === "tercero") return cheque.terceroNombre;
   if (key === "estado") return displayState(cheque);
-  if (key === "obra") return cheque.obraNombre;
+  if (key === "obra") return cheque.obraNombre || "";
   return cheque.bancoCheque ?? "";
 }
 
@@ -971,7 +1197,7 @@ function getChequeDueDate(cheque: Cheque) {
 }
 
 function getChequeDescription(cheque: Cheque) {
-  return cheque.observacion || cheque.origen || "";
+  return cheque.observacion || (cheque.origen === "manual" ? "Cheque manual" : cheque.origen) || "";
 }
 
 function getDueAlert(cheque: Cheque): { level: "overdue" | "today" | "soon" | "normal" | "closed" | "void"; text: string } {

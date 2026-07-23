@@ -1058,6 +1058,23 @@ export async function getCheques(): Promise<Cheque[]> {
     .sort((a, b) => getChequeDueDate(b).localeCompare(getChequeDueDate(a)));
 }
 
+export async function createCheque(data: Omit<Cheque, "id" | "createdAt" | "updatedAt">): Promise<Cheque> {
+  const profile = await getCurrentUserProfile();
+  return createDocument<Cheque>("cheques", {
+    ...data,
+    historial: data.historial ?? [
+      {
+        estado: data.estado,
+        fecha: now(),
+        usuario: profile?.nombre ?? profile?.email ?? "Sistema",
+        observacion: data.origen === "manual" ? "Cheque registrado manualmente desde agenda de cheques." : data.observacion
+      }
+    ],
+    createdAt: now(),
+    createdBy: profile?.uid ?? "unknown"
+  });
+}
+
 export async function updateCheque(id: string, data: Partial<Cheque>): Promise<Cheque> {
   const profile = await getCurrentUserProfile();
   const previous = (await getCheques()).find((cheque) => cheque.id === id);

@@ -192,7 +192,7 @@ export type FinancialMovement = {
 };
 
 export type ChequeKind = "recibido" | "emitido";
-export type ChequeOrigin = "ingreso" | "compra" | "egreso";
+export type ChequeOrigin = "ingreso" | "compra" | "egreso" | "manual";
 export type ChequeThirdPartyType = "cliente" | "proveedor" | "persona";
 export type ReceivedChequeStatus = "recibido" | "depositado" | "cobrado" | "rechazado" | "anulado";
 export type IssuedChequeStatus = "emitido" | "entregado" | "debitado" | "rechazado" | "anulado";
