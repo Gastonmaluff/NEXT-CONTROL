@@ -458,9 +458,14 @@ export default function NewWorkWizard({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
-      <section className="mx-auto max-w-5xl rounded-lg bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 sm:p-5">
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/55 sm:items-start sm:justify-center sm:px-3 sm:py-4">
+      <section
+        className="mx-auto flex max-h-[100dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-lg"
+        role="dialog"
+        aria-label="Nueva obra"
+        aria-modal="true"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 p-4 sm:p-5">
           <div>
             <p className="text-xs font-black uppercase text-next-blue">Obra unica compartida</p>
             <h2 className="mt-1 text-xl font-black text-next-text">Nueva obra</h2>
@@ -473,12 +478,12 @@ export default function NewWorkWizard({
           </button>
         </div>
 
-        <form className="space-y-5 p-4 sm:p-5" onSubmit={(event) => event.preventDefault()}>
-          <ol className="grid gap-2 md:grid-cols-5">
+        <form className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 pb-0 sm:p-5 sm:pb-0" onSubmit={(event) => event.preventDefault()}>
+          <ol className="no-scrollbar flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-5 md:overflow-visible md:pb-0">
             {steps.map((label, index) => (
               <li
                 key={label}
-                className={`rounded-md px-3 py-2 text-xs font-black ${
+                className={`shrink-0 rounded-md px-3 py-2 text-xs font-black ${
                   index === step
                     ? "bg-next-blue text-white"
                     : index < step
@@ -770,7 +775,7 @@ export default function NewWorkWizard({
             </Section>
           ) : null}
 
-          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="sticky bottom-0 z-10 -mx-4 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white px-4 pb-4 pt-3 shadow-[0_-12px_24px_rgba(15,23,42,0.08)] sm:-mx-5 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:pb-5">
             <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-slate-200 px-4 text-sm font-black text-next-muted" type="button" onClick={step === 0 ? closeSafely : () => setStep((current) => current - 1)}>
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               {step === 0 ? "Cancelar" : "Anterior"}

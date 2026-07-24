@@ -51,20 +51,20 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-next-navy px-4 py-8 text-next-text">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center justify-center">
+    <main className="min-h-screen bg-next-navy px-4 py-4 text-next-text sm:py-8">
+      <section className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl items-center justify-center sm:min-h-[calc(100vh-4rem)]">
         <div className="grid w-full overflow-hidden rounded-lg bg-white shadow-2xl lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="bg-next-navy p-8 text-white sm:p-10">
+          <div className="bg-next-navy p-5 text-white sm:p-10">
             <BrandLogo variant="login" />
-            <div className="mt-12 text-center lg:text-left">
-              <h1 className="text-4xl font-black tracking-normal">NEXT CONTROL</h1>
-              <p className="mt-4 max-w-md text-sm font-semibold leading-6 text-white/72">
+            <div className="mt-2 text-center sm:mt-8 lg:mt-12 lg:text-left">
+              <h1 className="text-2xl font-black tracking-normal sm:text-4xl">NEXT CONTROL</h1>
+              <p className="mt-3 hidden max-w-md text-sm font-semibold leading-6 text-white/72 sm:block">
                 Plataforma de gestion y control integral para obras, finanzas, produccion e instalacion.
               </p>
             </div>
           </div>
 
-          <form className="space-y-5 p-8 sm:p-10" onSubmit={handleSubmit}>
+          <form className="space-y-4 p-5 sm:space-y-5 sm:p-10" onSubmit={handleSubmit}>
             <div>
               <p className="text-sm font-black uppercase text-next-blue">Acceso</p>
               <h2 className="mt-1 text-2xl font-black">Iniciar sesion</h2>

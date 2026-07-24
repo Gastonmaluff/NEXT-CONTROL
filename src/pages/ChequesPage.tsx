@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, Eye, FileSpreadsheet, MoreHorizontal, PlusCircle, Search, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Download, Eye, FileSpreadsheet, MoreHorizontal, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -92,6 +92,7 @@ export default function ChequesPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Cheque | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -168,6 +169,16 @@ export default function ChequesPage() {
   const metrics = useMemo(() => getTabMetrics(tabCheques, activeTab), [activeTab, tabCheques]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visibleRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const activeFilterCount = [
+    fromDate,
+    toDate,
+    statusFilter !== "todos" ? statusFilter : "",
+    partyFilter,
+    workFilter,
+    bankFilter,
+    query,
+    quickFilter !== "todos" ? quickFilter : ""
+  ].filter(Boolean).length;
 
   function setQuick(next: QuickFilter) {
     setQuickFilter(next);
@@ -328,8 +339,8 @@ export default function ChequesPage() {
             Control de cheques diferidos emitidos y recibidos.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white shadow-soft" type="button" onClick={() => setShowCreateModal(true)}>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <button className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white shadow-soft sm:col-span-1" type="button" onClick={() => setShowCreateModal(true)}>
             <PlusCircle className="h-4 w-4" aria-hidden="true" />
             Registrar cheque
           </button>
@@ -351,7 +362,7 @@ export default function ChequesPage() {
         <TabButton active={activeTab === "recibido"} onClick={() => setActiveTab("recibido")}>A cobrar</TabButton>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard
           label={activeTab === "emitido" ? "A pagar hoy" : "A cobrar hoy"}
           value={formatCurrencyPYG(metrics.today)}
@@ -379,7 +390,22 @@ export default function ChequesPage() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-        <div className="grid gap-2 xl:grid-cols-[130px_130px_150px_minmax(180px,1fr)_minmax(160px,1fr)_150px_minmax(220px,1.2fr)]">
+        <button
+          className="flex w-full items-center justify-between rounded-lg bg-next-bg px-3 text-sm font-black text-next-text xl:hidden"
+          type="button"
+          onClick={() => setFiltersOpen((current) => !current)}
+          aria-expanded={filtersOpen}
+        >
+          <span className="inline-flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-next-blue" aria-hidden="true" />
+            Filtros
+          </span>
+          <span className="rounded-full bg-white px-2 py-1 text-xs text-next-blue">
+            {activeFilterCount ? `${activeFilterCount} activos` : filtersOpen ? "Ocultar" : "Mostrar"}
+          </span>
+        </button>
+
+        <div className={`${filtersOpen ? "mt-3 grid" : "hidden"} gap-2 xl:grid xl:grid-cols-[130px_130px_150px_minmax(180px,1fr)_minmax(160px,1fr)_150px_minmax(220px,1.2fr)]`}>
           <Field label="Desde"><input className="field" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></Field>
           <Field label="Hasta"><input className="field" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></Field>
           <Field label="Estado">
@@ -413,21 +439,21 @@ export default function ChequesPage() {
           </Field>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="no-scrollbar mt-3 flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
           {(["todos", "hoy", "proximos7", "mes", "vencidos"] as QuickFilter[]).map((filter) => (
             <button
               key={filter}
-              className={`h-9 rounded-md px-3 text-xs font-black ${quickFilter === filter ? "bg-next-blue text-white" : "border border-slate-200 text-next-muted"}`}
+              className={`h-9 shrink-0 rounded-md px-3 text-xs font-black ${quickFilter === filter ? "bg-next-blue text-white" : "border border-slate-200 text-next-muted"}`}
               type="button"
               onClick={() => setQuick(filter)}
             >
               {quickLabel(filter)}
             </button>
           ))}
-          <button className="h-9 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={clearFilters}>
+          <button className="h-9 shrink-0 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={clearFilters}>
             Limpiar filtros
           </button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto hidden items-center gap-2 sm:flex">
             <select className="field h-9 w-36 py-1 text-xs" value={density} onChange={(event) => setDensity(event.target.value as Density)}>
               <option value="compacta">Vista compacta</option>
               <option value="comoda">Vista comoda</option>
@@ -774,9 +800,14 @@ function ManualChequeModal({
       ];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
-      <section className="mx-auto max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
-        <div className="mb-5 flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/55 sm:items-start sm:overflow-y-auto sm:px-3 sm:py-4">
+      <section
+        className="mx-auto flex max-h-[100dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-none sm:rounded-lg"
+        role="dialog"
+        aria-label="Registrar cheque"
+        aria-modal="true"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 sm:pt-5">
           <div>
             <p className="text-xs font-black uppercase text-next-blue">Carga manual</p>
             <h2 className="mt-1 text-xl font-black text-next-text">Registrar cheque</h2>
@@ -787,55 +818,57 @@ function ManualChequeModal({
           </button>
         </div>
 
-        {formError ? <Notice tone="error" text={formError} /> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:overflow-visible sm:px-5">
+          {formError ? <div className="pt-4"><Notice tone="error" text={formError} /></div> : null}
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Tipo">
-            <select className="field" value={form.tipo} onChange={(event) => updateType(event.target.value as ChequeKind)}>
-              <option value="emitido">Cheque emitido / pago</option>
-              <option value="recibido">Cheque recibido / ingreso</option>
-            </select>
-          </Field>
-          <Field label="Estado inicial">
-            <select className="field" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as ChequeStatus })}>
-              {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </Field>
-          <Field label={form.tipo === "recibido" ? "Cliente / pagador" : "Proveedor / beneficiario"}>
-            <input className="field" value={form.terceroNombre} onBlur={() => setForm({ ...form, terceroNombre: toTitleCase(form.terceroNombre) })} onChange={(event) => setForm({ ...form, terceroNombre: event.target.value })} />
-          </Field>
-          <Field label="Tipo de tercero">
-            <select className="field" value={form.terceroTipo} onChange={(event) => setForm({ ...form, terceroTipo: event.target.value as ChequeThirdPartyType })}>
-              <option value="cliente">Cliente</option>
-              <option value="proveedor">Proveedor</option>
-              <option value="persona">Persona</option>
-            </select>
-          </Field>
-          <Field label="Monto">
-            <CurrencyInput value={form.monto} onValueChange={(value) => setForm({ ...form, monto: value })} />
-          </Field>
-          <Field label="Nro de cheque">
-            <input className="field" value={form.numeroCheque} onChange={(event) => setForm({ ...form, numeroCheque: event.target.value })} />
-          </Field>
-          <Field label="Banco">
-            <input className="field" value={form.bancoCheque} onBlur={() => setForm({ ...form, bancoCheque: toTitleCase(form.bancoCheque) })} onChange={(event) => setForm({ ...form, bancoCheque: event.target.value })} />
-          </Field>
-          <Field label="Obra vinculada opcional">
-            <input className="field" placeholder="Sin obra por ahora" value={form.obraNombre} onBlur={() => setForm({ ...form, obraNombre: toTitleCase(form.obraNombre) })} onChange={(event) => setForm({ ...form, obraNombre: event.target.value })} />
-          </Field>
-          <Field label="Fecha de emision">
-            <input className="field" type="date" value={form.fechaEmisionCheque} onChange={(event) => setForm({ ...form, fechaEmisionCheque: event.target.value })} />
-          </Field>
-          <Field label="Fecha de cobro / vencimiento">
-            <input className="field" type="date" value={form.fechaCobroCheque} onChange={(event) => setForm({ ...form, fechaCobroCheque: event.target.value })} />
-          </Field>
-          <label className="block text-[11px] font-black uppercase text-next-muted sm:col-span-2">
-            observacion
-            <textarea className="field mt-1 min-h-24" value={form.observacion} onChange={(event) => setForm({ ...form, observacion: event.target.value })} />
-          </label>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Field label="Tipo">
+              <select className="field" value={form.tipo} onChange={(event) => updateType(event.target.value as ChequeKind)}>
+                <option value="emitido">Cheque emitido / pago</option>
+                <option value="recibido">Cheque recibido / ingreso</option>
+              </select>
+            </Field>
+            <Field label="Estado inicial">
+              <select className="field" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as ChequeStatus })}>
+                {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </Field>
+            <Field label={form.tipo === "recibido" ? "Cliente / pagador" : "Proveedor / beneficiario"}>
+              <input className="field" value={form.terceroNombre} onBlur={() => setForm({ ...form, terceroNombre: toTitleCase(form.terceroNombre) })} onChange={(event) => setForm({ ...form, terceroNombre: event.target.value })} />
+            </Field>
+            <Field label="Tipo de tercero">
+              <select className="field" value={form.terceroTipo} onChange={(event) => setForm({ ...form, terceroTipo: event.target.value as ChequeThirdPartyType })}>
+                <option value="cliente">Cliente</option>
+                <option value="proveedor">Proveedor</option>
+                <option value="persona">Persona</option>
+              </select>
+            </Field>
+            <Field label="Monto">
+              <CurrencyInput value={form.monto} onValueChange={(value) => setForm({ ...form, monto: value })} />
+            </Field>
+            <Field label="Nro de cheque">
+              <input className="field" value={form.numeroCheque} onChange={(event) => setForm({ ...form, numeroCheque: event.target.value })} />
+            </Field>
+            <Field label="Banco">
+              <input className="field" value={form.bancoCheque} onBlur={() => setForm({ ...form, bancoCheque: toTitleCase(form.bancoCheque) })} onChange={(event) => setForm({ ...form, bancoCheque: event.target.value })} />
+            </Field>
+            <Field label="Obra vinculada opcional">
+              <input className="field" placeholder="Sin obra por ahora" value={form.obraNombre} onBlur={() => setForm({ ...form, obraNombre: toTitleCase(form.obraNombre) })} onChange={(event) => setForm({ ...form, obraNombre: event.target.value })} />
+            </Field>
+            <Field label="Fecha de emision">
+              <input className="field" type="date" value={form.fechaEmisionCheque} onChange={(event) => setForm({ ...form, fechaEmisionCheque: event.target.value })} />
+            </Field>
+            <Field label="Fecha de cobro / vencimiento">
+              <input className="field" type="date" value={form.fechaCobroCheque} onChange={(event) => setForm({ ...form, fechaCobroCheque: event.target.value })} />
+            </Field>
+            <label className="block text-[11px] font-black uppercase text-next-muted sm:col-span-2">
+              Observacion
+              <textarea className="field mt-1 min-h-24" value={form.observacion} onChange={(event) => setForm({ ...form, observacion: event.target.value })} />
+            </label>
+          </div>
         </div>
 
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-slate-100 bg-white p-4 sm:px-5">
           <button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={onClose}>Cancelar</button>
           <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={submit}>
             {saving ? "Guardando..." : "Registrar cheque"}

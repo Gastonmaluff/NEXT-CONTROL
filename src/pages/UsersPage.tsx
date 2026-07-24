@@ -294,7 +294,7 @@ export default function UsersPage() {
                   <div className="flex flex-wrap gap-2">
                     <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => editUser(user)}>Editar</button>
                     <button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => void copyOperationalLink(user)}>Copiar link</button>
-                    <a className="inline-flex h-9 items-center rounded-md bg-next-blue px-3 text-xs font-black text-white" href={getOperationalUrlForUser(user) ?? "#"} target="_blank" rel="noreferrer">Abrir vista</a>
+                    <a className="inline-flex h-11 items-center rounded-md bg-next-blue px-3 text-xs font-black text-white sm:h-9" href={getOperationalUrlForUser(user) ?? "#"} target="_blank" rel="noreferrer">Abrir vista</a>
                     <button className="h-9 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={() => toggleActive(user)}>{user.active ? "Desactivar" : "Activar"}</button>
                     <button className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-black text-next-muted" type="button" onClick={() => resetPassword(user)}>
                       <KeyRound className="h-4 w-4" /> Reset

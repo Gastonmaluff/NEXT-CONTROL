@@ -60,7 +60,7 @@ function LogoFrame({
   const sizeClass = compact
     ? "h-11 w-11"
     : login
-      ? "h-60 w-72"
+      ? "h-28 w-40 sm:h-60 sm:w-72"
       : "h-32 w-44";
 
   return (

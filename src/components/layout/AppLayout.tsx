@@ -29,12 +29,12 @@ export default function AppLayout() {
     <div className="min-h-screen min-w-0 overflow-x-hidden bg-next-bg text-next-text">
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((current) => !current)} />
       <div
-        className={`min-h-screen min-w-0 transition-[padding] duration-300 ${
+        className={`min-h-screen min-w-0 pt-16 transition-[padding] duration-300 lg:pt-0 ${
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"
         }`}
       >
         <Header />
-        <main className="mx-auto w-full max-w-none min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-none min-w-0 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
           <Outlet />
         </main>
       </div>

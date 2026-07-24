@@ -260,7 +260,7 @@ export default function TasksPage() {
                 <p className="font-black text-next-text">{jornada.equipoNombre || jornada.userName}</p>
                 <p>{jornada.obraNombre} desde {jornada.horaInicio}</p>
                 {jornada.ubicacionInicio ? (
-                  <a className="mt-2 inline-flex items-center gap-2 text-xs font-black text-next-blue" href={`https://www.google.com/maps?q=${jornada.ubicacionInicio.lat},${jornada.ubicacionInicio.lng}`} target="_blank" rel="noreferrer">
+                  <a className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-md bg-next-light px-3 text-xs font-black text-next-blue" href={`https://www.google.com/maps?q=${jornada.ubicacionInicio.lat},${jornada.ubicacionInicio.lng}`} target="_blank" rel="noreferrer">
                     <MapPin className="h-4 w-4" aria-hidden="true" />
                     Abrir en Google Maps
                   </a>
@@ -464,7 +464,7 @@ function TaskEvidenceCard({ task, workday }: { task: FieldTask; workday?: FieldW
         {location ? (
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-next-muted">
             <span>Registrada {locationTime ?? ""} | {location.lat.toFixed(5)}, {location.lng.toFixed(5)}</span>
-            <a className="inline-flex items-center gap-1 font-black text-next-blue" href={`https://www.google.com/maps?q=${location.lat},${location.lng}`} target="_blank" rel="noreferrer">
+            <a className="inline-flex min-h-10 items-center gap-1 rounded-md bg-white px-2 font-black text-next-blue" href={`https://www.google.com/maps?q=${location.lat},${location.lng}`} target="_blank" rel="noreferrer">
               <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
               Google Maps
             </a>
@@ -510,7 +510,7 @@ function TaskActions({
           </button>
         </>
       ) : null}
-      <a className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-[11px] font-black text-next-muted" href={`/NEXT-CONTROL/avance-obras/${task.obraId}`}>
+      <a className="inline-flex h-11 items-center gap-1 rounded-md border border-slate-200 px-3 text-[11px] font-black text-next-muted sm:h-8 sm:px-2" href={`/NEXT-CONTROL/avance-obras/${task.obraId}`}>
         <Eye className="h-3.5 w-3.5" />
         Obra
       </a>

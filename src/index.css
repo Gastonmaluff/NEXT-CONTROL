@@ -35,6 +35,23 @@ textarea {
   font: inherit;
 }
 
+@media (max-width: 767px) {
+  button {
+    min-height: 44px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+
+  textarea {
+    line-height: 1.45;
+  }
+}
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -46,11 +63,11 @@ textarea {
 
 @layer components {
   .field {
-    @apply h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-next-text outline-none transition placeholder:text-next-muted focus:border-next-blue focus:ring-4 focus:ring-next-blue/10;
+    @apply h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base font-semibold text-next-text outline-none transition placeholder:text-next-muted focus:border-next-blue focus:ring-4 focus:ring-next-blue/10 sm:h-10 sm:text-sm;
   }
 
   .icon-button {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue;
+    @apply inline-flex h-11 w-11 items-center justify-center rounded-md border border-slate-200 bg-white text-next-muted transition hover:border-next-blue hover:text-next-blue sm:h-9 sm:w-9;
   }
 }
 
