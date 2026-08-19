@@ -1,8 +1,12 @@
 import { KeyRound, LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
-import BrandLogo from "../components/brand/BrandLogo";
 import { useAuth } from "../context/AuthContext";
 import { isFirebaseConfigured } from "../lib/firebase";
+
+const logoPath = `${import.meta.env.BASE_URL}logo-next-glass.png`;
+const markPath = `${import.meta.env.BASE_URL}logo-next-glass-mark.png`;
+const firebaseLogoPath = `${import.meta.env.BASE_URL}firebase-authentication-official.png`;
+const googleCloudLogoPath = `${import.meta.env.BASE_URL}google-cloud-official.png`;
 
 export default function LoginPage() {
   const { demoLogin, login, resetPassword } = useAuth();
@@ -51,97 +55,70 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-next-navy px-4 py-4 text-next-text sm:py-8">
-      <section className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl items-center justify-center sm:min-h-[calc(100vh-4rem)]">
-        <div className="grid w-full overflow-hidden rounded-lg bg-white shadow-2xl lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="bg-next-navy p-5 text-white sm:p-10">
-            <BrandLogo variant="login" />
-            <div className="mt-2 text-center sm:mt-8 lg:mt-12 lg:text-left">
-              <h1 className="text-2xl font-black tracking-normal sm:text-4xl">NEXT CONTROL</h1>
-              <p className="mt-3 hidden max-w-md text-sm font-semibold leading-6 text-white/72 sm:block">
-                Plataforma de gestion y control integral para obras, finanzas, produccion e instalacion.
-              </p>
-            </div>
+    <main className="min-h-screen overflow-x-hidden bg-[#f4f7fb] text-[#122b4c] lg:h-screen lg:overflow-hidden">
+      <section className="grid min-h-screen lg:h-screen lg:grid-cols-2">
+        <div className="relative isolate flex min-h-[460px] flex-col overflow-hidden bg-[#061b33] px-8 py-10 text-white sm:px-16 lg:h-screen lg:min-h-0 lg:px-[9%] lg:py-10">
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-10">
+            <img className="absolute left-1/2 top-1/2 h-[95%] w-[95%] -translate-x-1/2 -translate-y-1/2 object-contain blur-[1px] grayscale" src={markPath} alt="" aria-hidden="true" />
           </div>
+          <div className="pointer-events-none absolute -left-32 top-8 h-96 w-96 rounded-full border border-[#087af0]/40" aria-hidden="true" />
+          <div className="pointer-events-none absolute -bottom-64 -left-20 h-[34rem] w-[34rem] rounded-full border border-[#087af0]/40" aria-hidden="true" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#0c2b4d]/80 to-transparent" aria-hidden="true" />
 
-          <form className="space-y-4 p-5 sm:space-y-5 sm:p-10" onSubmit={handleSubmit}>
+          <div className="relative z-10 flex flex-1 flex-col items-center justify-center lg:items-start">
+            <img className="h-auto w-[min(70vw,360px)] object-contain grayscale brightness-0 invert" src={logoPath} alt="NEXT GLASS Vidrios y Aluminios" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center overflow-y-auto px-5 py-8 sm:px-10 lg:h-screen lg:overflow-hidden lg:px-[8%] lg:py-6">
+          <form className="w-full max-w-[480px] rounded-[2rem] bg-white px-7 py-7 shadow-[0_24px_70px_rgba(31,58,91,0.12)] sm:px-8 sm:py-7 lg:scale-[0.96]" onSubmit={handleSubmit}>
             <div>
-              <p className="text-sm font-black uppercase text-next-blue">Acceso</p>
-              <h2 className="mt-1 text-2xl font-black">Iniciar sesion</h2>
+              <p className="text-base font-black uppercase tracking-wide text-[#1168d9]">Acceso</p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight text-[#122b4c]">Iniciar sesión</h2>
             </div>
 
-            {!firebaseReady ? (
-              <div className="rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold leading-6 text-next-orange">
-                Firebase todavia no esta configurado. La app esta usando datos demo locales.
-              </div>
-            ) : null}
+            {message ? <Notice tone="success" text={message} /> : null}
+            {error ? <Notice tone="error" text={error} /> : null}
 
-            {message ? (
-              <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold leading-6 text-next-green">
-                {message}
-              </div>
-            ) : null}
+            <div className="mt-6 space-y-3">
+              <label className="block">
+                <span className="text-base font-black text-[#122b4c]">Correo</span>
+                <input className="mt-2 h-12 w-full rounded-2xl border border-[#dce5f1] bg-[#f2f6fc] px-4 text-sm text-[#122b4c] outline-none transition placeholder:text-[#8c96a3] focus:border-[#1168d9] focus:bg-white focus:ring-4 focus:ring-[#1168d9]/10" value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="admin@nextglass.com" />
+              </label>
 
-            {error ? (
-              <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-next-red">
-                {error}
-              </div>
-            ) : null}
+              <label className="block">
+                <span className="text-base font-black text-[#122b4c]">Contraseña</span>
+                <input className="mt-2 h-12 w-full rounded-2xl border border-[#dce5f1] bg-[#f2f6fc] px-4 text-sm text-[#122b4c] outline-none transition placeholder:text-[#8c96a3] focus:border-[#1168d9] focus:bg-white focus:ring-4 focus:ring-[#1168d9]/10" value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" placeholder="**********" />
+              </label>
 
-            <label className="block">
-              <span className="text-sm font-bold text-next-muted">Correo</span>
-              <input
-                className="mt-2 h-12 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none transition focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                type="email"
-                autoComplete="email"
-                placeholder="admin@nextglass.com"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-bold text-next-muted">Contrasena</span>
-              <input
-                className="mt-2 h-12 w-full rounded-md border border-slate-200 bg-next-bg px-3 text-sm outline-none transition focus:border-next-blue focus:bg-white focus:ring-4 focus:ring-next-blue/10"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-                placeholder="********"
-              />
-            </label>
-
-            <button
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white shadow-sm transition hover:bg-next-navy disabled:cursor-not-allowed disabled:opacity-60"
-              type="submit"
-              disabled={loading}
-            >
-              <LogIn className="h-5 w-5" aria-hidden="true" />
-              {loading ? "Ingresando..." : "Iniciar sesion"}
-            </button>
-
-            <button
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
-              type="button"
-              onClick={handleResetPassword}
-            >
-              <KeyRound className="h-4 w-4" aria-hidden="true" />
-              Recuperar contrasena
-            </button>
-
-            {demoVisible ? (
-              <button
-                className="h-12 w-full rounded-md border border-next-blue bg-white px-4 text-sm font-black text-next-blue transition hover:bg-next-light"
-                type="button"
-                onClick={demoLogin}
-              >
-                Entrar en modo demo
+              <button className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#1468d8] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(20,104,216,0.2)] transition hover:bg-[#0e56b8] disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={loading}>
+                <LogIn className="h-5 w-5" aria-hidden="true" />
+                {loading ? "Ingresando..." : "Iniciar sesión"}
               </button>
-            ) : null}
+
+              <button className="inline-flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-[#bdc9d8] bg-white px-5 text-sm font-black text-[#1168d9] transition hover:bg-[#f4f8fd]" type="button" onClick={handleResetPassword}>
+                <KeyRound className="h-5 w-5" aria-hidden="true" />
+                Recuperar contraseña
+              </button>
+
+              {demoVisible ? <button className="h-12 w-full rounded-2xl border border-[#bdc9d8] bg-white px-5 text-sm font-black text-[#1168d9] transition hover:bg-[#f4f8fd]" type="button" onClick={demoLogin}>Entrar en modo demo</button> : null}
+            </div>
+
+            <div className="mt-5 border-t border-[#dfe5ed] pt-4 text-center">
+              <p className="text-sm font-medium uppercase tracking-wide text-[#9199a4]">Ingreso seguro potenciado por</p>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 grayscale opacity-75">
+                <img className="h-7 w-auto max-w-[120px] object-contain" src={firebaseLogoPath} alt="Firebase" />
+                <img className="h-7 w-auto max-w-[150px] object-contain" src={googleCloudLogoPath} alt="Google Cloud" />
+              </div>
+              <p className="mt-4 text-[11px] font-medium text-[#a1a7af]">¿Necesitas ayuda para ingresar? Contactá al administrador.</p>
+            </div>
           </form>
         </div>
       </section>
     </main>
   );
+}
+
+function Notice({ tone, text }: { tone: "success" | "error"; text: string }) {
+  return <div className={`mt-6 rounded-xl border px-4 py-3 text-sm font-semibold leading-6 ${tone === "success" ? "border-green-100 bg-green-50 text-next-green" : "border-red-100 bg-red-50 text-next-red"}`}>{text}</div>;
 }

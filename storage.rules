@@ -77,6 +77,14 @@ service firebase.storage {
       allow delete: if canUploadWorkImage(obraId);
     }
 
+    match /ordenes-produccion/{orderId}/{allPaths=**} {
+      allow read: if active();
+      allow create, update: if isManagement()
+        && request.resource.contentType in ["application/pdf", "image/png", "image/jpeg", "image/webp"]
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow delete: if isManagement();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -1,336 +1,217 @@
-import { CalendarDays, CheckCircle2, Factory, PackageCheck, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import DataCard from "../components/ui/DataCard";
-import ProgressBar from "../components/ui/ProgressBar";
-import StatusBadge from "../components/ui/StatusBadge";
+import { FileText, Factory, Plus, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { canManageUsers } from "../lib/roles";
+import { createProductionOrder, getProductionOrders } from "../lib/firestore";
 import {
-  getObras,
-  getProgressRubricsByWork,
-  registerProductionForItem
-} from "../lib/firestore";
-import type { Obra, ProductionItemStatus, WorkProgressRubric } from "../types";
-import { formatDateShort } from "../utils/formatters";
-import { formatUnitLabel } from "../utils/units";
-import { calculateM2Total, calculateM2Unitario, getProductionRows, productionProgress, roundMeasure, type ProductionWorkRow } from "../utils/workBreakdown";
+  buildProductionPdfPath,
+  buildProductionPositionImagePath,
+  buildProductionPreviewPath,
+  uploadFile
+} from "../lib/storageUpload";
+import type { ProductionOrder, ProductionOrderPosition, ProductionOrderPriority } from "../types";
+import { parseProductionPdf, type ParsedProductionPdf } from "../utils/productionPdf";
 
-const statusLabels: Record<ProductionItemStatus, string> = {
-  pendiente: "Pendiente",
-  en_proceso: "En proceso",
-  parcial: "Parcial",
-  completado: "Completado"
+const priorityLabels: Record<ProductionOrderPriority, string> = {
+  urgente: "Urgente",
+  alta: "Alta",
+  normal: "Normal",
+  baja: "Baja"
 };
 
 export default function ProductionPage() {
   const { profile } = useAuth();
-  const [obras, setObras] = useState<Obra[]>([]);
-  const [rubrics, setRubrics] = useState<WorkProgressRubric[]>([]);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"todos" | ProductionItemStatus>("todos");
-  const [selectedRow, setSelectedRow] = useState<ProductionWorkRow | null>(null);
-  const [form, setForm] = useState({ cantidadHoy: "", estado: "en_proceso" as ProductionItemStatus, observacion: "" });
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const canCreate = canManageUsers(profile);
+  const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function load() {
+  async function loadOrders() {
     setLoading(true);
-    setError("");
     try {
-      const loadedWorks = await getObras();
-      const loadedRubrics = (await Promise.all(loadedWorks.map((obra) => getProgressRubricsByWork(obra.id)))).flat();
-      setObras(loadedWorks);
-      setRubrics(loadedRubrics);
+      setOrders(await getProductionOrders());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar produccion.");
+      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las ordenes.");
     } finally {
       setLoading(false);
     }
   }
 
-  const rows = useMemo(() => getProductionRows(obras, rubrics), [obras, rubrics]);
-  const filteredRows = rows.filter((row) => {
-    const text = `${row.obra.nombre} ${row.obra.clienteNombre ?? row.obra.cliente} ${row.rubro.nombre} ${row.descripcion}`.toLowerCase();
-    const matchesQuery = text.includes(query.toLowerCase());
-    const matchesStatus = statusFilter === "todos" || row.estado === statusFilter;
-    return matchesQuery && matchesStatus;
-  });
-
-  const stats = {
-    total: rows.length,
-    pendientes: rows.filter((row) => row.estado === "pendiente").length,
-    enProceso: rows.filter((row) => row.estado === "en_proceso" || row.estado === "parcial").length,
-    completados: rows.filter((row) => row.estado === "completado").length
-  };
-
-  function openUpdate(row: ProductionWorkRow) {
-    setSelectedRow(row);
-    setForm({
-      cantidadHoy: String(row.cantidadProducida || ""),
-      estado: row.estado === "pendiente" ? "en_proceso" : row.estado,
-      observacion: row.observacion ?? ""
-    });
-  }
-
-  async function saveProduction() {
-    if (!selectedRow || saving) return;
-    const accumulatedQuantity = Number(form.cantidadHoy || 0);
-    if (!Number.isFinite(accumulatedQuantity) || accumulatedQuantity < 0) {
-      setError("Carga una cantidad producida acumulada valida.");
-      return;
-    }
-
-    setSaving(true);
-    setError("");
-    try {
-      const produced = Math.min(selectedRow.cantidadTotal, accumulatedQuantity);
-      await registerProductionForItem({
-        rubroId: selectedRow.rubro.id,
-        itemId: selectedRow.item?.id,
-        cantidadNueva: produced,
-        observacion: form.observacion.trim(),
-        allowOverTotal: profile?.role === "admin"
-      });
-
-      setMessage("Produccion actualizada correctamente.");
-      setSelectedRow(null);
-      await load();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo actualizar la produccion.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return <StateCard text="Cargando produccion..." />;
-  }
+  useEffect(() => { void loadOrders(); }, []);
 
   return (
     <div className="min-w-0 space-y-6">
-      <div className="flex min-w-0 flex-col justify-between gap-3 lg:flex-row lg:items-end">
-        <div className="min-w-0">
-          <p className="text-sm font-black uppercase text-next-blue">Taller</p>
+      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+        <div>
+          <p className="text-sm font-black uppercase text-next-blue">Fabrica</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">PRODUCCION</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
-            Items enviados a taller desde el desglose operativo de cada obra. Produccion no modifica el avance fisico instalado.
+            Ordenes de produccion cargadas desde los documentos de cada obra.
           </p>
         </div>
+        {canCreate ? (
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => { setError(""); setMessage(""); setOpen(true); }}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Crear orden de produccion
+          </button>
+        ) : null}
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DataCard title="Items en produccion"><Metric icon={Factory} value={stats.total} /></DataCard>
-        <DataCard title="Pendientes"><Metric icon={CalendarDays} value={stats.pendientes} tone="orange" /></DataCard>
-        <DataCard title="En proceso / parcial"><Metric icon={PackageCheck} value={stats.enProceso} /></DataCard>
-        <DataCard title="Completados"><Metric icon={CheckCircle2} value={stats.completados} tone="green" /></DataCard>
-      </section>
+      {loading ? <StateCard text="Cargando ordenes de produccion..." /> : orders.length ? (
+        <section className="grid gap-3">
+          {orders.map((order) => <OrderCard key={order.id} order={order} />)}
+        </section>
+      ) : <EmptyState text="Todavia no hay ordenes de produccion cargadas." />}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px]">
-          <label className="relative">
-            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-next-muted" aria-hidden="true" />
-            <input className="field pl-9" placeholder="Buscar por obra, cliente, rubro o item" value={query} onChange={(event) => setQuery(event.target.value)} />
-          </label>
-          <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "todos" | ProductionItemStatus)}>
-            <option value="todos">Todos los estados</option>
-            {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </div>
-      </section>
-
-      <section className="grid gap-3">
-        {filteredRows.length ? filteredRows.map((row) => (
-          <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge label={statusLabels[row.estado]} status={badgeForProduction(row.estado)} />
-                  <span className="text-xs font-black uppercase text-next-muted">{row.rubro.nombre}</span>
-                </div>
-                <h2 className="mt-2 text-lg font-black text-next-text">{row.descripcion}</h2>
-                <p className="mt-1 text-sm font-semibold text-next-muted">
-                  {row.obra.nombre} · {row.obra.clienteNombre ?? row.obra.cliente}
-                </p>
-                <p className="mt-1 text-xs font-semibold text-next-muted">
-                  Fecha comprometida: {row.obra.fechaComprometida || row.obra.fechaEntrega ? formatDateShort(row.obra.fechaComprometida ?? row.obra.fechaEntrega) : "-"}
-                </p>
-              </div>
-              <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white" type="button" onClick={() => openUpdate(row)}>
-                Actualizar produccion
-              </button>
-            </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_140px] lg:items-center">
-              <div className="rounded-md bg-next-bg px-3 py-2">
-                <p className="text-xs font-bold uppercase text-next-muted">Cantidad producida</p>
-                <p className="mt-1 text-sm font-black text-next-text">
-                  {row.cantidadProducida} / {row.cantidadTotal} {formatUnitLabel(row.unidad, row.cantidadTotal)}
-                </p>
-                {row.esDetalle && row.metrosCuadradosTotales ? (
-                  <p className="mt-1 text-xs font-semibold text-next-muted">
-                    Equivale a {formatM2(row.metrosCuadradosProducidos)} / {formatM2(row.metrosCuadradosTotales)}
-                  </p>
-                ) : null}
-              </div>
-              <ProgressBar value={productionProgress(row.cantidadProducida, row.cantidadTotal)} />
-              <p className="text-right text-2xl font-black text-next-blue">{productionProgress(row.cantidadProducida, row.cantidadTotal)}%</p>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <InfoCell label="Medida" value={formatMeasureLabel(row)} />
-              <InfoCell label="m2 unitario" value={formatM2Unit(row)} />
-              <InfoCell label="m2 total" value={formatM2Total(row)} />
-              <InfoCell label="Cantidad total" value={`${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
-              <InfoCell label="Producido" value={`${row.cantidadProducida} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
-              <InfoCell label="Pendiente" value={`${row.cantidadPendiente} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
-              <InfoCell label="Disponible para instalar" value={`${row.disponibleParaInstalar} ${formatUnitLabel(row.unidad, row.disponibleParaInstalar)}`} />
-              <InfoCell label="Instalado" value={`${row.cantidadInstalada} / ${row.cantidadTotal} ${formatUnitLabel(row.unidad, row.cantidadTotal)}`} />
-              <InfoCell label="Equivalencia producida" value={formatM2Equivalence(row)} />
-              <InfoCell label="Ultima actualizacion" value={formatProductionUpdated(row)} />
-              <InfoCell label="Responsable" value={formatProductionOwner(row)} />
-              <InfoCell label="Rubro" value={row.rubro.nombre} />
-            </div>
-            {row.observacion ? (
-              <p className="mt-3 rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">{row.observacion}</p>
-            ) : null}
-          </article>
-        )) : <EmptyState text="No hay items marcados para fabricar en taller." />}
-      </section>
-
-      {selectedRow ? (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
-          <section className="mx-auto max-w-lg rounded-lg bg-white p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase text-next-blue">Actualizar produccion</p>
-                <h2 className="mt-1 text-xl font-black text-next-text">{selectedRow.descripcion}</h2>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setSelectedRow(null)}>×</button>
-            </div>
-            <div className="mt-4 grid gap-3">
-              <label className="text-xs font-black uppercase text-next-muted">
-                Cantidad producida acumulada
-                <input className="field mt-1" min={0} step="0.01" type="number" value={form.cantidadHoy} onChange={(event) => setForm({ ...form, cantidadHoy: event.target.value })} />
-              </label>
-              {selectedRow.esDetalle && selectedRow.metrosCuadradosTotales ? (
-                <div className="rounded-md bg-next-bg px-3 py-2 text-xs font-semibold text-next-muted">
-                  <p className="font-black uppercase">Equivalencia estimada</p>
-                  <p className="mt-1">
-                    {formatM2(roundMeasure(Number(form.cantidadHoy || 0) * (selectedRow.metrosCuadradosPorUnidad ?? 0)))} / {formatM2(selectedRow.metrosCuadradosTotales)}
-                  </p>
-                </div>
-              ) : null}
-              <label className="text-xs font-black uppercase text-next-muted">
-                Estado
-                <select className="field mt-1" value={form.estado} onChange={(event) => setForm({ ...form, estado: event.target.value as ProductionItemStatus })}>
-                  {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </label>
-              <label className="text-xs font-black uppercase text-next-muted">
-                Observacion
-                <textarea className="field mt-1 min-h-24" value={form.observacion} onChange={(event) => setForm({ ...form, observacion: event.target.value })} />
-              </label>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={() => setSelectedRow(null)}>Cancelar</button>
-              <button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={saving} onClick={() => void saveProduction()}>
-                {saving ? "Guardando..." : "Guardar avance"}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      {open ? <ProductionOrderModal onClose={() => setOpen(false)} onCreated={async () => { setOpen(false); setMessage("Orden de produccion creada correctamente."); await loadOrders(); }} onError={setError} /> : null}
     </div>
   );
 }
 
-function Metric({ icon: Icon, value, tone = "blue" }: { icon: typeof Factory; value: number; tone?: "blue" | "green" | "orange" }) {
-  const classes = tone === "green" ? "bg-green-50 text-next-green" : tone === "orange" ? "bg-orange-50 text-next-orange" : "bg-next-light text-next-blue";
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-3xl font-black text-next-text">{value}</p>
-      <span className={`flex h-10 w-10 items-center justify-center rounded-md ${classes}`}>
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </span>
-    </div>
-  );
-}
+function ProductionOrderModal({ onClose, onCreated, onError }: { onClose: () => void; onCreated: () => Promise<void>; onError: (message: string) => void }) {
+  const { profile } = useAuth();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [parsed, setParsed] = useState<ParsedProductionPdf | null>(null);
+  const [form, setForm] = useState({ obraNombre: "", cliente: "", ubicacion: "", fechaComprometida: "", prioridad: "normal" as ProductionOrderPriority, observaciones: "" });
+  const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
 
-function InfoCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-next-bg px-3 py-2">
-      <p className="text-[11px] font-black uppercase text-next-muted">{label}</p>
-      <p className="mt-1 truncate text-xs font-black text-next-text" title={value}>{value}</p>
-    </div>
-  );
-}
-
-function formatMeasureLabel(row: ProductionWorkRow) {
-  if (row.item?.ancho && row.item?.alto) {
-    return `${row.item.ancho} x ${row.item.alto}`;
+  async function selectPdf(file?: File) {
+    if (!file) return;
+    if (file.type !== "application/pdf") { onError("Seleccioná un archivo PDF."); return; }
+    setReading(true);
+    onError("");
+    try {
+      const result = await parseProductionPdf(file);
+      setSourceFile(file);
+      setParsed(result);
+      setForm((current) => ({ ...current, obraNombre: result.obraNombre }));
+    } catch (parseError) {
+      onError(parseError instanceof Error ? parseError.message : "No se pudo leer el PDF.");
+    } finally {
+      setReading(false);
+    }
   }
-  return "Carga simple";
+
+  function updatePosition(id: string, data: Partial<ProductionOrderPosition>) {
+    setParsed((current) => current ? { ...current, posiciones: current.posiciones.map((position) => position.id === id ? { ...position, ...data } : position) } : current);
+  }
+
+  function addPosition() {
+    setParsed((current) => current ? { ...current, posiciones: [...current.posiciones, newPosition(String(current.posiciones.length + 1))] } : current);
+  }
+
+  function removePosition(id: string) {
+    setParsed((current) => current ? { ...current, posiciones: current.posiciones.filter((position) => position.id !== id) } : current);
+  }
+
+  async function confirmOrder() {
+    if (!sourceFile || !parsed || !profile) return;
+    if (!form.obraNombre.trim() || !parsed.posiciones.length) { onError("Completá la obra y dejá al menos una posición."); return; }
+    setBusy(true);
+    onError("");
+    try {
+      const orderId = `orden-${Date.now()}`;
+      const pdfPath = buildProductionPdfPath(orderId, sourceFile);
+      const previewPath = buildProductionPreviewPath(orderId, parsed.previewImage);
+      const [pdfUrl, previewUrl] = await Promise.all([saveFile(pdfPath, sourceFile), saveFile(previewPath, parsed.previewImage)]);
+      const positions = await Promise.all(parsed.posiciones.map(async (position, index) => {
+        const imageFile = parsed.positionImages[index];
+        if (!imageFile) return position;
+        const imagePath = buildProductionPositionImagePath(orderId, position.id, imageFile);
+        return { ...position, imagenUrl: await saveFile(imagePath, imageFile), imagenStoragePath: imagePath };
+      }));
+
+      await createProductionOrder({
+        numero: parsed.numero,
+        obraNombre: form.obraNombre.trim(),
+        cliente: form.cliente.trim() || undefined,
+        ubicacion: form.ubicacion.trim() || undefined,
+        fechaCreacionDocumento: parsed.fechaCreacionDocumento,
+        fechaComprometida: form.fechaComprometida || undefined,
+        observaciones: form.observaciones.trim() || undefined,
+        prioridad: form.prioridad,
+        estado: "recibida",
+        pdfUrl,
+        pdfStoragePath: pdfPath,
+        pdfFileName: sourceFile.name,
+        pdfUploadedAt: new Date().toISOString(),
+        previewImageUrl: previewUrl,
+        previewImageStoragePath: previewPath,
+        posiciones: positions,
+        createdAt: new Date().toISOString(),
+        createdBy: profile.uid
+      });
+      await onCreated();
+    } catch (saveError) {
+      onError(saveError instanceof Error ? saveError.message : "No se pudo guardar la orden.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveFile(path: string, file: File): Promise<string> {
+    if (isDemoEnvironment()) return fileToDataUrl(file);
+    return uploadFile(path, file);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
+      <section className="mx-auto max-w-6xl rounded-lg bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-xs font-black uppercase text-next-blue">Nueva orden</p><h2 className="mt-1 text-2xl font-black text-next-text">Cargar orden desde PDF</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Cerrar"><X className="h-5 w-5" /></button>
+        </div>
+        {!parsed ? (
+          <button className="mt-6 flex min-h-48 w-full flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-next-blue bg-next-light text-next-blue" type="button" onClick={() => inputRef.current?.click()} disabled={reading}>
+            <Upload className="h-10 w-10" aria-hidden="true" /><span className="text-lg font-black">{reading ? "Leyendo PDF..." : "Seleccionar PDF de la obra"}</span><span className="text-sm font-semibold text-next-muted">Se leerán las posiciones y sus imágenes de referencia.</span>
+            <input ref={inputRef} className="hidden" type="file" accept="application/pdf" onChange={(event) => void selectPdf(event.target.files?.[0])} />
+          </button>
+        ) : (
+          <div className="mt-5 grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <div><img className="w-full rounded-md border border-slate-200 object-contain" src={URL.createObjectURL(parsed.previewImage)} alt="Vista previa del PDF" /><p className="mt-2 text-xs font-semibold text-next-muted">{sourceFile?.name}</p></div>
+            <div className="min-w-0 space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Obra" value={form.obraNombre} onChange={(value) => setForm({ ...form, obraNombre: value })} />
+                <Field label="Cliente" value={form.cliente} onChange={(value) => setForm({ ...form, cliente: value })} />
+                <Field label="Ubicación" value={form.ubicacion} onChange={(value) => setForm({ ...form, ubicacion: value })} />
+                <Field label="Fecha comprometida" type="date" value={form.fechaComprometida} onChange={(value) => setForm({ ...form, fechaComprometida: value })} />
+                <label className="text-xs font-black uppercase text-next-muted">Prioridad<select className="field mt-1" value={form.prioridad} onChange={(event) => setForm({ ...form, prioridad: event.target.value as ProductionOrderPriority })}>{Object.entries(priorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label className="text-xs font-black uppercase text-next-muted">Observaciones<textarea className="field mt-1 min-h-10" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></label>
+              </div>
+              <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-black text-next-text">Posiciones ({parsed.posiciones.length})</h3><button className="h-9 rounded-md border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={addPosition}>+ Agregar posición</button></div>
+              <div className="grid gap-3">{parsed.posiciones.map((position) => <PositionEditor key={position.id} position={position} onChange={(data) => updatePosition(position.id, data)} onRemove={() => removePosition(position.id)} />)}</div>
+              <div className="flex justify-end gap-2"><button className="h-10 rounded-md border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={onClose}>Cancelar</button><button className="h-10 rounded-md bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={busy} onClick={() => void confirmOrder()}>{busy ? "Guardando PDF e imágenes..." : "Aceptar y enviar a producción"}</button></div>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
-function formatM2Unit(row: ProductionWorkRow) {
-  const value = row.metrosCuadradosPorUnidad ?? (row.item?.ancho && row.item?.alto ? calculateM2Unitario(row.item.ancho, row.item.alto) : 0);
-  return value ? formatM2(value) : "-";
+function PositionEditor({ position, onChange, onRemove }: { position: ProductionOrderPosition; onChange: (data: Partial<ProductionOrderPosition>) => void; onRemove: () => void }) {
+  return <article className="grid gap-3 rounded-lg border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end">
+    <Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} />
+    <Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} />
+    <Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} />
+    <Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity }); }} />
+    <button className="inline-flex h-10 items-center justify-center rounded-md border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button>
+    <div className="md:col-span-5 grid gap-2 text-xs font-semibold text-next-muted md:grid-cols-4"><span>Medida: {position.ancho ?? "-"} × {position.alto ?? "-"} mm</span><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div>
+  </article>;
 }
 
-function formatM2Total(row: ProductionWorkRow) {
-  const value = row.metrosCuadradosTotales ?? (row.item?.ancho && row.item?.alto ? row.item.m2Total ?? calculateM2Total(row.item.ancho, row.item.alto, row.item.cantidad) : 0);
-  if (value) return formatM2(value);
-  if (row.unidad === "m2") return formatM2(row.cantidadTotal);
-  return "-";
-}
-
-function formatM2Equivalence(row: ProductionWorkRow) {
-  if (!row.metrosCuadradosTotales) return "-";
-  return `${formatM2(row.metrosCuadradosProducidos)} / ${formatM2(row.metrosCuadradosTotales)}`;
-}
-
-function formatM2(value?: number) {
-  return `${formatMeasureValue(value ?? 0)} m2`;
-}
-
-function formatMeasureValue(value: number) {
-  return new Intl.NumberFormat("es-PY", {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 0
-  }).format(Number.isFinite(value) ? value : 0);
-}
-
-function formatProductionUpdated(row: ProductionWorkRow) {
-  const value = row.item?.updatedAt ?? row.rubro.fechaProduccionActualizada ?? row.rubro.updatedAt;
-  return value ? formatDateShort(value) : "-";
-}
-
-function formatProductionOwner(row: ProductionWorkRow) {
-  return row.item?.updatedBy ?? row.rubro.responsableProduccion ?? "-";
-}
-
-function badgeForProduction(status: ProductionItemStatus) {
-  if (status === "completado") return "success";
-  if (status === "parcial") return "warning";
-  if (status === "en_proceso") return "info";
-  return "neutral";
-}
-
-function StateCard({ text }: { text: string }) {
-  return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm font-bold text-next-muted shadow-soft">{text}</div>;
-}
-
-function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm font-semibold text-next-muted">{text}</div>;
-}
-
-function Notice({ tone, text }: { tone: "success" | "error"; text: string }) {
-  const classes = tone === "success" ? "border-green-100 bg-green-50 text-next-green" : "border-red-100 bg-red-50 text-next-red";
-  return <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${classes}`}>{text}</div>;
-}
+function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) { return <label className="text-xs font-black uppercase text-next-muted">{label}<input className="field mt-1" type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function OrderCard({ order }: { order: ProductionOrder }) { return <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-next-light px-2 py-1 text-[11px] font-black uppercase text-next-blue">{priorityLabels[order.prioridad]}</span><span className="text-xs font-bold uppercase text-next-muted">{order.estado.replace(/_/g, " ")}</span></div><h2 className="mt-2 text-xl font-black text-next-text">{order.obraNombre}</h2><p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.pdfFileName}</p></div><div className="flex items-center gap-2 text-sm font-black text-next-blue"><Factory className="h-5 w-5" />{order.posiciones.length} posiciones</div></div><div className="mt-4 grid gap-2 sm:grid-cols-3">{order.posiciones.map((position) => <div key={position.id} className="rounded-md bg-next-bg px-3 py-2"><p className="text-xs font-black text-next-text">POS. {position.numero} · {position.descripcion}</p><p className="mt-1 text-xs font-semibold text-next-muted">{position.ancho} × {position.alto} mm · {position.cantidadTotal} unidades</p></div>)}</div>{order.pdfUrl ? <a className="mt-4 inline-flex items-center gap-2 text-xs font-black text-next-blue underline" href={order.pdfUrl} target="_blank" rel="noreferrer"><FileText className="h-4 w-4" /> Ver PDF original</a> : null}</article>; }
+function isDemoEnvironment() { return !import.meta.env.PROD || !import.meta.env.VITE_FIREBASE_PROJECT_ID; }
+function fileToDataUrl(file: File): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("No se pudo preparar el archivo.")); reader.readAsDataURL(file); }); }
+function StateCard({ text }: { text: string }) { return <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm font-bold text-next-muted shadow-soft">{text}</div>; }
+function EmptyState({ text }: { text: string }) { return <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm font-semibold text-next-muted">{text}</div>; }
+function Notice({ tone, text }: { tone: "success" | "error"; text: string }) { return <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${tone === "success" ? "border-green-100 bg-green-50 text-next-green" : "border-red-100 bg-red-50 text-next-red"}`}>{text}</div>; }
+function newPosition(numero: string): ProductionOrderPosition { return { id: `manual-pos-${Date.now()}-${numero}`, numero, descripcion: "Nueva abertura", cantidadTotal: 1, cantidadPendiente: 1, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }; }

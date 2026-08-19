@@ -14,7 +14,7 @@ import {
   UserCog,
   Users
 } from "lucide-react";
-import type { SystemModuleName } from "../types";
+import type { SystemModuleName, UserRole } from "../types";
 
 export const navigationItems: Array<{
   label: string;
@@ -23,6 +23,7 @@ export const navigationItems: Array<{
   animClass: string;
   moduleName: SystemModuleName;
   adminOnly?: boolean;
+  roles?: UserRole[];
 }> = [
   { label: "Control",         path: "/control",             icon: LayoutDashboard,  animClass: "icon-control",       moduleName: "control" },
   { label: "Avance de obras", path: "/avance-obras",        icon: ClipboardCheck,   animClass: "icon-avance",        moduleName: "avance_obras" },
@@ -33,7 +34,8 @@ export const navigationItems: Array<{
   { label: "Tareas",          path: "/tareas",              icon: ClipboardList,    animClass: "icon-avance",        moduleName: "tareas" },
   { label: "Instalaciones",   path: "/instalaciones",       icon: Truck,            animClass: "icon-instalaciones", moduleName: "instalaciones" },
   { label: "Presupuestos",    path: "/presupuestos",        icon: FileSpreadsheet,  animClass: "icon-presupuestos",  moduleName: "presupuestos" },
-  { label: "Produccion",      path: "/produccion",          icon: Factory,          animClass: "icon-produccion",    moduleName: "produccion" },
+  { label: "Panel de produccion", path: "/produccion/panel", icon: Factory, animClass: "icon-produccion", moduleName: "produccion", roles: ["admin", "gerencia"] },
+  { label: "Produccion",      path: "/produccion",          icon: Factory,          animClass: "icon-produccion",    moduleName: "produccion", roles: ["admin", "gerencia", "produccion", "taller"] },
   { label: "Inventario",      path: "/inventario",          icon: Boxes,            animClass: "icon-inventario",    moduleName: "inventario" },
   { label: "Reportes",        path: "/reportes",            icon: BarChart3,        animClass: "icon-reportes",      moduleName: "reportes" },
   { label: "Configuracion",   path: "/configuracion",       icon: Settings,         animClass: "icon-settings",      moduleName: "configuracion" },

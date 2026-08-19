@@ -17,7 +17,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = navigationItems.filter((item) =>
     canViewModule(profile, item.moduleName) &&
-    (!item.adminOnly || canManageUsers(profile))
+    (!item.adminOnly || canManageUsers(profile)) &&
+    (!item.roles || (profile?.role ? item.roles.includes(profile.role) : false))
   );
   const currentItem = items.find((item) =>
     location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)

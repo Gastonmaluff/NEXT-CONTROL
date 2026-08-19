@@ -27,6 +27,7 @@ import type {
   Obra,
   OportunidadCRM,
   ProductionEvent,
+  ProductionOrder,
   Proveedor,
   ProgressActivityLog,
   ProgressMaterialReport,
@@ -72,7 +73,8 @@ const collections = {
   jornadasCampo: "jornadasCampo",
   asignacionesCampo: "asignacionesCampo",
   produccionEventos: "produccionEventos",
-  instalacionEventos: "instalacionEventos"
+  instalacionEventos: "instalacionEventos",
+  ordenesProduccion: "ordenesProduccion"
 } as const;
 
 function shouldUseFirebase() {
@@ -751,6 +753,24 @@ export async function updateFieldAssignment(id: string, data: Partial<FieldAssig
 export async function getProductionEventsByWork(obraId: string): Promise<ProductionEvent[]> {
   return (await getCollectionByWork<ProductionEvent>("produccionEventos", obraId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getProductionOrders(): Promise<ProductionOrder[]> {
+  return (await getCollection<ProductionOrder>("ordenesProduccion"))
+    .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
+}
+
+export async function createProductionOrder(data: Omit<ProductionOrder, "id">): Promise<ProductionOrder> {
+  return createDocument<ProductionOrder>("ordenesProduccion", data);
+}
+
+export async function updateProductionOrder(id: string, data: Partial<ProductionOrder>): Promise<ProductionOrder> {
+  const profile = await getCurrentUserProfile();
+  return updateDocument<ProductionOrder>("ordenesProduccion", id, {
+    ...data,
+    updatedAt: now(),
+    updatedBy: profile?.uid ?? "produccion"
+  });
 }
 
 export async function getInstallationEventsByWork(obraId: string): Promise<InstallationEvent[]> {

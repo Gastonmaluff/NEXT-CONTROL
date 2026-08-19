@@ -12,6 +12,7 @@ import FinancesPage from "./pages/FinancesPage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProductionPage from "./pages/ProductionPage";
+import FactoryProductionPage from "./pages/FactoryProductionPage";
 import ProjectControlPage from "./pages/ProjectControlPage";
 import SettingsPage from "./pages/SettingsPage";
 import SupervisorPage from "./pages/SupervisorPage";
@@ -73,7 +74,8 @@ function AppRoutes() {
             <Route path="/finanzas-obras" element={<ModuleGuard moduleName="finanzas_obras"><FinancesPage /></ModuleGuard>} />
             <Route path="/finanzas-obras/:obraId" element={<ModuleGuard moduleName="finanzas_obras"><FinancesPage /></ModuleGuard>} />
             <Route path="/presupuestos" element={<ModuleGuard moduleName="presupuestos"><PlaceholderPage title="Presupuestos" /></ModuleGuard>} />
-            <Route path="/produccion" element={<ModuleGuard moduleName="produccion"><ProductionPage /></ModuleGuard>} />
+            <Route path="/produccion/panel" element={<ModuleGuard moduleName="produccion"><ProductionPage /></ModuleGuard>} />
+            <Route path="/produccion" element={<ModuleGuard moduleName="produccion"><FactoryProductionPage /></ModuleGuard>} />
             <Route
               path="/cheques"
               element={canManageFinancesForUser(profile) ? <ModuleGuard moduleName="cheques"><ChequesPage /></ModuleGuard> : <NoPermissionPage />}

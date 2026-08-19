@@ -13,6 +13,18 @@ export function buildProductionPhotoPath(obraId: string, rubroId: string, itemId
   return `obras/${obraId}/produccion/${rubroId}/${itemId}/${Date.now()}-${sanitizeStorageFileName(file.name || "produccion.jpg")}`;
 }
 
+export function buildProductionPdfPath(orderId: string, file: File): string {
+  return `ordenes-produccion/${orderId}/documento/${Date.now()}-${sanitizeStorageFileName(file.name || "orden-produccion.pdf")}`;
+}
+
+export function buildProductionPreviewPath(orderId: string, file: File): string {
+  return `ordenes-produccion/${orderId}/preview/${Date.now()}-${sanitizeStorageFileName(file.name || "vista-previa.png")}`;
+}
+
+export function buildProductionPositionImagePath(orderId: string, positionId: string, file: File): string {
+  return `ordenes-produccion/${orderId}/posiciones/${positionId}/${Date.now()}-${sanitizeStorageFileName(file.name || "referencia.png")}`;
+}
+
 export function buildTaskPhotoPath(obraId: string, taskId: string, file: File): string {
   return `obras/${obraId}/tareas/${taskId}/${Date.now()}-${sanitizeStorageFileName(file.name || "tarea.jpg")}`;
 }

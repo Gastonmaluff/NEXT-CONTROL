@@ -1001,5 +1001,6 @@ export const seedData: StoredData = {
   ],
   asignacionesCampo: [],
   produccionEventos: [],
-  instalacionEventos: []
+  instalacionEventos: [],
+  ordenesProduccion: []
 };

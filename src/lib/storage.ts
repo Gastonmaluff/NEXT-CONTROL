@@ -75,7 +75,8 @@ function normalizeStoredData(data: Partial<StoredData>): StoredData {
     jornadasCampo: data.jornadasCampo ?? fallback.jornadasCampo,
     asignacionesCampo: data.asignacionesCampo ?? fallback.asignacionesCampo,
     produccionEventos: data.produccionEventos ?? fallback.produccionEventos,
-    instalacionEventos: data.instalacionEventos ?? fallback.instalacionEventos
+    instalacionEventos: data.instalacionEventos ?? fallback.instalacionEventos,
+    ordenesProduccion: data.ordenesProduccion ?? fallback.ordenesProduccion
   };
 }
 
@@ -104,6 +105,7 @@ function createEmptyStoredData(): StoredData {
     jornadasCampo: [],
     asignacionesCampo: [],
     produccionEventos: [],
-    instalacionEventos: []
+    instalacionEventos: [],
+    ordenesProduccion: []
   };
 }

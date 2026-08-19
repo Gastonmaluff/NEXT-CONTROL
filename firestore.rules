@@ -41,6 +41,14 @@ service cloud.firestore {
       return isActiveUser() && userRole() in ["produccion", "taller"];
     }
 
+    function canReadProductionOrder() {
+      return isManagement() || canReadProduction();
+    }
+
+    function canManageProductionOrder() {
+      return isManagement();
+    }
+
     function canWriteOperational() {
       return isActiveUser()
         && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado", "equipo_campo", "campo", "instalador", "produccion", "taller"];
@@ -257,6 +265,16 @@ service cloud.firestore {
         && userRole() in ["admin", "gerencia", "produccion", "taller"]
         && (isManagement() || isAssignedToWork(request.resource.data.obraId) || userRole() in ["produccion", "taller"]);
       allow update, delete: if isManagement();
+    }
+
+    match /ordenesProduccion/{id} {
+      allow read: if canReadProductionOrder();
+      allow create, delete: if canManageProductionOrder();
+      allow update: if canManageProductionOrder()
+        || (
+          canReadProduction()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["posiciones", "estado", "updatedAt", "updatedBy"])
+        );
     }
 
     match /instalacionEventos/{id} {

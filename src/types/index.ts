@@ -34,6 +34,8 @@ export type PipelineStatus =
 
 export type ProductionStageStatus = "Pendiente" | "En proceso" | "Completado";
 export type ProductionItemStatus = "pendiente" | "en_proceso" | "parcial" | "completado";
+export type ProductionOrderPriority = "urgente" | "alta" | "normal" | "baja";
+export type ProductionOrderStatus = "recibida" | "en_produccion" | "parcial" | "terminada" | "bloqueada";
 export type InstallationItemStatus = "pendiente" | "en_proceso" | "parcial" | "completado";
 export type MaterialStatus = "Pendiente" | "Resuelto";
 export type ProgressMaterialStatus = "Pendiente" | "Solicitado" | "Recibido" | "Resuelto";
@@ -622,6 +624,55 @@ export type ProductionEvent = {
   createdAt: string;
 };
 
+export type ProductionOrderPosition = {
+  id: string;
+  numero: string;
+  tipo?: string;
+  codigo?: string;
+  descripcion: string;
+  ancho?: number;
+  alto?: number;
+  cantidadTotal: number;
+  cantidadPendiente: number;
+  cantidadEnProduccion: number;
+  cantidadTerminada: number;
+  estado: ProductionItemStatus;
+  color?: string;
+  linea?: string;
+  vidrio?: string;
+  detalles?: string;
+  observaciones?: string;
+  imagenUrl?: string;
+  imagenStoragePath?: string;
+};
+
+export type ProductionOrder = {
+  id: string;
+  numero?: string;
+  obraId?: string;
+  obraNombre: string;
+  cliente?: string;
+  ubicacion?: string;
+  presupuestoNumero?: string;
+  fechaCreacionDocumento?: string;
+  fechaComprometida?: string;
+  responsable?: string;
+  observaciones?: string;
+  prioridad: ProductionOrderPriority;
+  estado: ProductionOrderStatus;
+  pdfUrl?: string;
+  pdfStoragePath?: string;
+  pdfFileName: string;
+  pdfUploadedAt?: string;
+  previewImageUrl?: string;
+  previewImageStoragePath?: string;
+  posiciones: ProductionOrderPosition[];
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
 export type InstallationEvent = {
   id: string;
   obraId: string;
@@ -663,6 +714,7 @@ export type StoredData = {
   asignacionesCampo: FieldAssignment[];
   produccionEventos: ProductionEvent[];
   instalacionEventos: InstallationEvent[];
+  ordenesProduccion: ProductionOrder[];
 };
 
 export type DataSourceLabel = "Usando Firebase" | "Usando modo demo local";
