@@ -1,7 +1,7 @@
 import { FileText, Factory, Plus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { canManageUsers } from "../lib/roles";
+import { canManageProductionOrders } from "../lib/roles";
 import { createProductionOrder, getProductionOrders } from "../lib/firestore";
 import {
   buildProductionPdfPath,
@@ -21,7 +21,7 @@ const priorityLabels: Record<ProductionOrderPriority, string> = {
 
 export default function ProductionPage() {
   const { profile } = useAuth();
-  const canCreate = canManageUsers(profile);
+  const canCreate = canManageProductionOrders(profile);
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,8 +45,8 @@ export default function ProductionPage() {
     <div className="min-w-0 space-y-6">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
-          <p className="text-sm font-black uppercase text-next-blue">Fabrica</p>
-          <h1 className="mt-1 text-3xl font-black tracking-normal">PRODUCCION</h1>
+          <p className="text-sm font-black uppercase text-next-blue">Administrador de fábrica</p>
+          <h1 className="mt-1 text-3xl font-black tracking-normal">PRODUCCIÓN</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
             Ordenes de produccion cargadas desde los documentos de cada obra.
           </p>
@@ -54,7 +54,7 @@ export default function ProductionPage() {
         {canCreate ? (
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white" type="button" onClick={() => { setError(""); setMessage(""); setOpen(true); }}>
             <Plus className="h-4 w-4" aria-hidden="true" />
-            Crear orden de produccion
+            Agregar PDF
           </button>
         ) : null}
       </div>

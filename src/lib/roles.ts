@@ -51,6 +51,10 @@ export function canManageUsers(user?: Pick<SystemUser, "role" | "active"> | null
   return Boolean(user?.active) && (user?.role === "admin" || user?.role === "gerencia");
 }
 
+export function canManageProductionOrders(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
+  return Boolean(user?.active && ["admin", "gerencia"].includes(user.role));
+}
+
 export function canCreateWork(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
   return Boolean(user?.active && ["admin", "gerencia", "administracion"].includes(user.role));
 }

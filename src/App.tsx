@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactElement } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { canManageFinancesForUser, canManageUsers, canViewModule } from "./lib/roles";
+import { canManageFinancesForUser, canManageProductionOrders, canManageUsers, canViewModule } from "./lib/roles";
 import AdminInstallationsPage from "./pages/AdminInstallationsPage";
 import ChequesPage from "./pages/ChequesPage";
 import CrmPage from "./pages/CrmPage";
@@ -19,7 +19,6 @@ import SupervisorPage from "./pages/SupervisorPage";
 import SuppliersPage from "./pages/SuppliersPage";
 import TasksPage from "./pages/TasksPage";
 import UsersPage from "./pages/UsersPage";
-import WorkshopPage from "./pages/WorkshopPage";
 
 export default function App() {
   return (
@@ -50,7 +49,7 @@ function AppRoutes() {
       <Route path="/fiscalizador" element={<SupervisorPage />} />
       <Route path="/fiscalizadores" element={<SupervisorPage />} />
       <Route path="/supervisor" element={<SupervisorPage />} />
-      <Route path="/taller" element={<WorkshopPage />} />
+      <Route path="/taller" element={<Navigate to="/produccion" replace />} />
 
       {!isAuthenticated ? (
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -74,8 +73,8 @@ function AppRoutes() {
             <Route path="/finanzas-obras" element={<ModuleGuard moduleName="finanzas_obras"><FinancesPage /></ModuleGuard>} />
             <Route path="/finanzas-obras/:obraId" element={<ModuleGuard moduleName="finanzas_obras"><FinancesPage /></ModuleGuard>} />
             <Route path="/presupuestos" element={<ModuleGuard moduleName="presupuestos"><PlaceholderPage title="Presupuestos" /></ModuleGuard>} />
-            <Route path="/produccion/panel" element={<ModuleGuard moduleName="produccion"><ProductionPage /></ModuleGuard>} />
-            <Route path="/produccion" element={<ModuleGuard moduleName="produccion"><FactoryProductionPage /></ModuleGuard>} />
+            <Route path="/produccion/panel" element={<ModuleGuard moduleName="produccion"><ProductionManagerRoute /></ModuleGuard>} />
+            <Route path="/produccion" element={<ModuleGuard moduleName="produccion"><ProductionRoleRoute /></ModuleGuard>} />
             <Route
               path="/cheques"
               element={canManageFinancesForUser(profile) ? <ModuleGuard moduleName="cheques"><ChequesPage /></ModuleGuard> : <NoPermissionPage />}
@@ -105,6 +104,16 @@ function ModuleGuard({ children, moduleName }: { children: ReactElement; moduleN
     return <NoPermissionPage />;
   }
   return children;
+}
+
+function ProductionRoleRoute() {
+  const { profile } = useAuth();
+  return canManageProductionOrders(profile) ? <ProductionPage /> : <FactoryProductionPage />;
+}
+
+function ProductionManagerRoute() {
+  const { profile } = useAuth();
+  return canManageProductionOrders(profile) ? <ProductionPage /> : <NoPermissionPage />;
 }
 
 function NoPermissionPage() {
