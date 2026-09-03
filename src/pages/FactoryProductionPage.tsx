@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   Factory,
-  Image as ImageIcon,
   Package,
   Play,
   Plus,
@@ -13,6 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import ProductionPositionImage from "../components/production/ProductionPositionImage";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToProductionOrders, updateProductionOrder } from "../lib/firestore";
 import type { ProductionOrder, ProductionOrderPosition } from "../types";
@@ -191,7 +191,7 @@ function PositionWorkCard({ position, busy, saving, onAction, onSaveNote }: { po
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
-      <div className="flex h-40 items-center justify-center bg-next-bg sm:h-48">{position.imagenUrl ? <img className="h-full w-full object-contain" src={position.imagenUrl} alt={`Referencia posición ${position.numero}`} /> : <ImageIcon className="h-10 w-10 text-slate-300" />}</div>
+      <ProductionPositionImage src={position.imagenUrl} alt={`Posición ${position.numero}: ${position.descripcion}`} />
       <div className="p-4">
         <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-next-light px-2.5 py-1 text-xs font-black text-next-blue">POS. {position.numero}</span><span className="text-xs font-bold uppercase text-next-muted">{position.codigo}</span></div>
         <h3 className="mt-3 text-base font-black uppercase text-next-text">{position.descripcion}</h3>

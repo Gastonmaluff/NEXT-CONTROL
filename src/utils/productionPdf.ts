@@ -30,17 +30,21 @@ export async function parseProductionPdf(file: File): Promise<ParsedProductionPd
   }
 
   const previewImage = await renderPageToFile(pages[0], `${file.name.replace(/\.pdf$/i, "")}-vista.png`);
-  const imageRanges = findPositionRanges(pageTexts[0].items as unknown[], positions, pages[0].getViewport({ scale: 1 }));
+  const imageRanges = pageTexts.flatMap((content, pageIndex) => findPositionRanges(
+    content.items as unknown[],
+    pages[pageIndex].getViewport({ scale: 1 }),
+    pageIndex
+  ));
   const imageFiles = await Promise.all(
-    positions.map((position, index) => cropPageRegion(pages[0], imageRanges[index], `${position.id}-referencia.png`))
+    positions.map((position, index) => {
+      const range = imageRanges[index] ?? defaultPositionRange(pages[0].getViewport({ scale: 1 }), 0);
+      return cropPageRegion(pages[range.pageIndex], range, `${position.id}-referencia.png`);
+    })
   );
 
   return {
     ...header,
-    posiciones: positions.map((position, index) => ({
-      ...position,
-      imagenUrl: URL.createObjectURL(imageFiles[index])
-    })),
+    posiciones: positions,
     previewImage,
     positionImages: imageFiles
   };
@@ -58,7 +62,12 @@ function parseHeader(text: string): Pick<ParsedProductionPdf, "numero" | "obraNo
 
 function parsePositions(text: string): ProductionOrderPosition[] {
   const normalized = text.replace(/\s+/g, " ").trim();
-  const matches = [...normalized.matchAll(/(?:Pos\.\s*)?(\d+)\s+([^\s]+)\s+([^\s]+)\s+(\d+)\s*[Xx]\s*(\d+)\s+(\d+)/g)];
+  const reportRows = [...normalized.matchAll(
+    /Pos\.?\s+Tipo\s+C[oó]digo\s+Dimensiones\s+Cant\.?\s+(\d+)\s+(.+?)\s+([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9._/-]*)\s+(\d+(?:[.,]\d+)?)\s*[Xx×]\s*(\d+(?:[.,]\d+)?)\s+(\d+)(?=\s+Descripci[oó]n\s*:)/gi
+  )];
+  const matches = reportRows.length ? reportRows : [...normalized.matchAll(
+    /(?:Pos\.?\s*)?(\d+)\s+([^\s]+)\s+([^\s]+)\s+(\d+(?:[.,]\d+)?)\s*[Xx×]\s*(\d+(?:[.,]\d+)?)\s+(\d+)(?=\s+Descripci[oó]n\s*:)/gi
+  )];
   const positions: ProductionOrderPosition[] = [];
 
   for (let index = 0; index < matches.length; index += 1) {
@@ -73,8 +82,8 @@ function parsePositions(text: string): ProductionOrderPosition[] {
       tipo: match[2],
       codigo: match[3],
       descripcion: findDetail(block, "Descripci[oó]n") || "Abertura",
-      ancho: Number(match[4]),
-      alto: Number(match[5]),
+      ancho: parsePdfNumber(match[4]),
+      alto: parsePdfNumber(match[5]),
       cantidadTotal: quantity,
       cantidadPendiente: quantity,
       cantidadEnProduccion: 0,
@@ -96,7 +105,7 @@ function findDetail(block: string, label: string): string | undefined {
 }
 
 function findLine(block: string): string | undefined {
-  const match = block.match(/L[IÍ]NEA\s+([^,]+)/i);
+  const match = block.match(/L[IÍ]NEA\s+(.+?)(?=\s+(?:Kit|OPCI[OÓ]N)\b|[,;]|$)/i);
   return match?.[1]?.trim() || undefined;
 }
 
@@ -109,11 +118,20 @@ async function renderPageToFile(page: PDFPageProxy, name: string): Promise<File>
   return canvasToFile(canvas, name);
 }
 
-async function cropPageRegion(page: PDFPageProxy, range: { top: number; bottom: number } | undefined, name: string): Promise<File> {
-  const viewport = page.getViewport({ scale: 1.5 });
+type PositionImageRange = {
+  pageIndex: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+async function cropPageRegion(page: PDFPageProxy, range: PositionImageRange, name: string): Promise<File> {
+  const scale = 2;
+  const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(viewport.width * 0.44);
-  canvas.height = Math.max(260, Math.ceil((range?.bottom ?? viewport.height) - (range?.top ?? 0)));
+  canvas.width = Math.ceil((range.right - range.left) * scale);
+  canvas.height = Math.ceil((range.bottom - range.top) * scale);
   const context = canvas.getContext("2d")!;
   context.fillStyle = "white";
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -121,26 +139,52 @@ async function cropPageRegion(page: PDFPageProxy, range: { top: number; bottom: 
     canvas,
     canvasContext: context,
     viewport,
-    transform: [1, 0, 0, 1, 0, -(range?.top ?? 0)]
+    transform: [1, 0, 0, 1, -range.left * scale, -range.top * scale]
   }).promise;
-  const cropped = document.createElement("canvas");
-  cropped.width = canvas.width;
-  cropped.height = canvas.height;
-  cropped.getContext("2d")!.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  return canvasToFile(cropped, name);
+  return canvasToFile(canvas, name);
 }
 
-function findPositionRanges(items: unknown[], positions: ProductionOrderPosition[], viewport: { height: number }) {
-  const anchors = positions.map((position) => {
-    const item = items.map((candidate) => candidate as { str?: string; transform?: number[] }).find((candidate) => candidate.str?.includes(position.codigo ?? "__never__"));
-    return item?.transform?.[5] ? viewport.height - item.transform[5] : undefined;
-  });
-  return positions.map((_, index) => {
-    const top = Math.max(0, (anchors[index] ?? 0) - 10) * 1.5;
-    const next = anchors[index + 1];
-    const bottom = Math.min(viewport.height * 1.5, (next === undefined ? viewport.height : next) * 1.5);
-    return { top, bottom };
-  });
+function findPositionRanges(items: unknown[], viewport: { width: number; height: number }, pageIndex: number): PositionImageRange[] {
+  const headers = items
+    .map((candidate) => candidate as { str?: string; transform?: number[]; height?: number })
+    .filter((candidate) => /^Pos\.?$/i.test(candidate.str?.trim() ?? "") && candidate.transform?.length)
+    .map((candidate) => ({
+      left: candidate.transform?.[4] ?? 28,
+      top: viewport.height - (candidate.transform?.[5] ?? viewport.height) - (candidate.height ?? 10) - 3
+    }))
+    .sort((a, b) => a.top - b.top);
+
+  if (!headers.length) return [];
+
+  const gaps = headers.slice(1).map((header, index) => header.top - headers[index].top);
+  const typicalHeight = gaps.length ? median(gaps) : viewport.height - headers[0].top - 45;
+  const left = Math.max(0, Math.min(...headers.map((header) => header.left)) - 2);
+  const right = Math.max(left + 1, viewport.width - left);
+
+  return headers.map((header, index) => ({
+    pageIndex,
+    left,
+    right,
+    top: Math.max(0, header.top),
+    bottom: Math.min(
+      viewport.height - 42,
+      headers[index + 1] ? headers[index + 1].top - 5 : header.top + typicalHeight
+    )
+  }));
+}
+
+function defaultPositionRange(viewport: { width: number; height: number }, pageIndex: number): PositionImageRange {
+  return { pageIndex, left: 24, right: viewport.width - 24, top: 120, bottom: viewport.height - 45 };
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function parsePdfNumber(value: string) {
+  return Number(value.replace(",", "."));
 }
 
 function canvasToFile(canvas: HTMLCanvasElement, name: string): Promise<File> {
