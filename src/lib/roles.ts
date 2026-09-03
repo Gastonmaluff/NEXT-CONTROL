@@ -48,7 +48,7 @@ export function isAdmin(user?: Pick<SystemUser, "role" | "active"> | null): bool
 }
 
 export function canManageUsers(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
-  return Boolean(user?.active) && (user?.role === "admin" || user?.role === "gerencia");
+  return Boolean(user?.active) && user?.role === "admin";
 }
 
 export function canManageProductionOrders(user?: Pick<SystemUser, "role" | "active"> | null): boolean {
@@ -164,7 +164,8 @@ export function getOperationalUrlForUser(user: Pick<SystemUser, "role" | "operat
   const path = user.operationalPath || getOperationalPathByRole(user.role);
   if (!path) return null;
   const base = origin || (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}${path}`;
+  const appBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+  return `${base}${appBase}${path}`;
 }
 
 const defaultPermissionsByRole: Record<UserRole, Partial<Record<SystemPermissionName, boolean>>> = {
@@ -183,7 +184,6 @@ const defaultPermissionsByRole: Record<UserRole, Partial<Record<SystemPermission
     canValidateProgress: true,
     canEditProgress: true,
     canViewFinancials: true,
-    canManageUsers: true,
     canUpdateProduction: true
   },
   administracion: {
@@ -226,7 +226,7 @@ const defaultModulesByRole: Record<UserRole, SystemModuleName[]> = {
   gerencia: [
     "control", "avance_obras", "finanzas_obras", "clientes", "proveedores", "cheques",
     "tareas", "instalaciones", "presupuestos", "produccion", "inventario", "reportes",
-    "configuracion", "usuarios"
+    "configuracion"
   ],
   administracion: ["control", "finanzas_obras", "clientes", "proveedores", "cheques", "reportes"],
   fiscalizador: ["control", "avance_obras", "tareas", "instalaciones", "produccion"],

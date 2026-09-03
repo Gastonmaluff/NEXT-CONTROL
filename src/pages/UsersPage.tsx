@@ -35,6 +35,28 @@ const roles: UserRole[] = [
   "solo_lectura"
 ];
 
+const roleLabels: Record<UserRole, string> = {
+  admin: "Administrador",
+  gerencia: "Gerencia",
+  administracion: "Administración",
+  supervisor: "Supervisor",
+  fiscalizador: "Fiscalizador",
+  encargado: "Encargado",
+  equipo_campo: "Equipo de campo",
+  campo: "Campo",
+  produccion: "Producción",
+  taller: "Taller / operario",
+  instalador: "Instalador",
+  solo_lectura: "Solo lectura"
+};
+
+const roleDescriptions: Partial<Record<UserRole, string>> = {
+  admin: "Acceso total, creación de usuarios y administración de órdenes.",
+  gerencia: "Visualiza y administra la operación, sin crear cuentas de usuario.",
+  produccion: "Recibe órdenes asignadas y registra el avance de fabricación.",
+  taller: "Vista simple de taller para avanzar las órdenes que se le asignen."
+};
+
 const emptyForm = {
   uid: "",
   nombre: "",
@@ -232,9 +254,13 @@ export default function UsersPage() {
             {!selectedUser && mode === "create" ? (
               <input className="field" required placeholder="Contrasena temporal" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
             ) : null}
-            <select className="field" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}>
-              {roles.map((role) => <option key={role}>{role}</option>)}
-            </select>
+            <label>
+              <span className="text-xs font-black uppercase text-next-muted">Rol y permisos</span>
+              <select className="field mt-1" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}>
+                {roles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
+              </select>
+              <span className="mt-1 block text-xs font-semibold leading-5 text-next-muted">{roleDescriptions[form.role] ?? "Acceso limitado según las tareas de este rol."}</span>
+            </label>
             <input className="field" placeholder="Telefono opcional" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             {form.role === "equipo_campo" ? (
               <>
@@ -245,6 +271,17 @@ export default function UsersPage() {
                 </select>
                 <textarea className="field min-h-20 sm:col-span-2" placeholder="Descripcion de integrantes o uso compartido" value={form.membersDescription} onChange={(event) => setForm({ ...form, membersDescription: event.target.value })} />
               </>
+            ) : null}
+            {form.role === "taller" || form.role === "produccion" ? (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 sm:col-span-2">
+                <p className="text-xs font-black uppercase text-next-blue">Acceso Producción / Taller</p>
+                <ul className="mt-2 grid gap-1 text-sm font-semibold text-next-text sm:grid-cols-3">
+                  <li>✓ Recibe solo órdenes asignadas</li>
+                  <li>✓ Registra avances con botones</li>
+                  <li>✓ No accede a finanzas ni usuarios</li>
+                </ul>
+                <p className="mt-2 text-xs font-semibold text-next-muted">Al iniciar sesión será dirigido automáticamente a su vista de taller.</p>
+              </div>
             ) : null}
             <label className="flex h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-bold text-next-muted">
               <input checked={form.active} className="accent-next-blue" type="checkbox" onChange={(event) => setForm({ ...form, active: event.target.checked })} />
@@ -280,7 +317,7 @@ export default function UsersPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-base font-black text-next-text">{user.nombre}</h2>
                       <StatusBadge label={user.active ? "Activo" : "Inactivo"} status={user.active ? "success" : "critical"} />
-                      <StatusBadge label={user.role} status="info" />
+                      <StatusBadge label={roleLabels[user.role]} status="info" />
                     </div>
                     <p className="mt-1 text-sm font-semibold text-next-muted">{user.email}</p>
                     <p className="mt-1 break-all text-xs font-semibold text-next-muted">UID: {user.uid}</p>
@@ -288,7 +325,7 @@ export default function UsersPage() {
                       Link operativo: {getOperationalUrlForUser(user) ?? "Perfil pendiente"}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-next-muted">
-                      Obras asignadas: {countAssignedWorks(user, works)} · Ultimo acceso: {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Sin dato"}
+                      {user.role === "taller" || user.role === "produccion" ? "Órdenes: por asignación directa" : `Obras asignadas: ${countAssignedWorks(user, works)}`} · Último acceso: {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Sin dato"}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

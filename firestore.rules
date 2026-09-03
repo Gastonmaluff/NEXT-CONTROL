@@ -41,8 +41,12 @@ service cloud.firestore {
       return isActiveUser() && userRole() in ["produccion", "taller"];
     }
 
-    function canReadProductionOrder() {
-      return isManagement() || canReadProduction();
+    function canReadProductionOrder(data) {
+      return isManagement()
+        || (
+          canReadProduction()
+          && data.assignedToUid == request.auth.uid
+        );
     }
 
     function canManageProductionOrder() {
@@ -268,11 +272,13 @@ service cloud.firestore {
     }
 
     match /ordenesProduccion/{id} {
-      allow read: if canReadProductionOrder();
+      allow read: if canReadProductionOrder(resource.data);
       allow create, delete: if canManageProductionOrder();
       allow update: if canManageProductionOrder()
         || (
           canReadProduction()
+          && resource.data.assignedToUid == request.auth.uid
+          && request.resource.data.assignedToUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["posiciones", "estado", "updatedAt", "updatedBy"])
         );
     }

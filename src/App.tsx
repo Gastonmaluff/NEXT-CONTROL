@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactElement } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { canManageFinancesForUser, canManageProductionOrders, canManageUsers, canViewModule } from "./lib/roles";
+import { canManageFinancesForUser, canManageProductionOrders, canManageUsers, canViewModule, getOperationalPathByRole } from "./lib/roles";
 import AdminInstallationsPage from "./pages/AdminInstallationsPage";
 import ChequesPage from "./pages/ChequesPage";
 import CrmPage from "./pages/CrmPage";
@@ -42,10 +42,11 @@ function AppRoutes() {
   }
 
   const authenticatedWithoutProfile = Boolean(authUser && !profile);
+  const operationalHome = getOperationalPathByRole(profile?.role) ?? "/control";
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/control" replace /> : <LoginPage />} />
+      <Route path="/login" element={isAuthenticated ? <Navigate to={operationalHome} replace /> : <LoginPage />} />
       <Route path="/fiscalizador" element={<SupervisorPage />} />
       <Route path="/fiscalizadores" element={<SupervisorPage />} />
       <Route path="/supervisor" element={<SupervisorPage />} />
@@ -61,7 +62,7 @@ function AppRoutes() {
           <Route path="/instalaciones/campo" element={<FieldInstallationsPage />} />
           <Route path="/campo" element={<FieldInstallationsPage />} />
           <Route element={<AppLayout />}>
-            <Route index element={<Navigate to="/control" replace />} />
+            <Route index element={<Navigate to={operationalHome} replace />} />
             <Route path="/control" element={<ModuleGuard moduleName="control"><DashboardPage /></ModuleGuard>} />
             <Route path="/dashboard" element={<Navigate to="/control" replace />} />
             <Route path="/clientes" element={<ModuleGuard moduleName="clientes"><CrmPage /></ModuleGuard>} />
@@ -91,7 +92,7 @@ function AppRoutes() {
               element={canManageUsers(profile) ? <ModuleGuard moduleName="usuarios"><UsersPage /></ModuleGuard> : <NoPermissionPage />}
             />
           </Route>
-          <Route path="*" element={<Navigate to="/control" replace />} />
+          <Route path="*" element={<Navigate to={operationalHome} replace />} />
         </>
       )}
     </Routes>

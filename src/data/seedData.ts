@@ -897,6 +897,18 @@ export const seedData: StoredData = {
       membersDescription: "Usuario compartido para cuadrilla operativa.",
       createdAt: now,
       createdBy: "demo-admin"
+    },
+    {
+      uid: "demo-taller",
+      nombre: "Responsable de Taller",
+      email: "taller@nextglass.com",
+      role: "taller",
+      active: true,
+      phone: "",
+      assignedWorkIds: [],
+      operationalPath: "/taller",
+      createdAt: now,
+      createdBy: "demo-admin"
     }
   ],
   tareas: [
@@ -1002,5 +1014,56 @@ export const seedData: StoredData = {
   asignacionesCampo: [],
   produccionEventos: [],
   instalacionEventos: [],
-  ordenesProduccion: []
+  ordenesProduccion: [
+    {
+      id: "orden-demo-taller",
+      numero: "OP-1042",
+      obraNombre: "Residencia San Blas",
+      cliente: "Familia Benítez",
+      fechaComprometida: "2026-09-12",
+      responsable: "Responsable de Taller",
+      assignedToUid: "demo-taller",
+      assignedToName: "Responsable de Taller",
+      assignedAt: now,
+      prioridad: "alta",
+      estado: "parcial",
+      pdfFileName: "presupuesto-san-blas.pdf",
+      posiciones: [
+        {
+          id: "pos-demo-01",
+          numero: "01",
+          codigo: "V-01",
+          descripcion: "Ventana corrediza 2 hojas",
+          ancho: 1500,
+          alto: 1200,
+          color: "Negro",
+          linea: "A30",
+          cantidadTotal: 10,
+          cantidadPendiente: 6,
+          cantidadEnProduccion: 1,
+          cantidadTerminada: 3,
+          estado: "parcial"
+        },
+        {
+          id: "pos-demo-02",
+          numero: "02",
+          codigo: "V-02",
+          descripcion: "Ventana proyectante",
+          ancho: 800,
+          alto: 600,
+          color: "Negro",
+          linea: "Módena",
+          cantidadTotal: 4,
+          cantidadPendiente: 4,
+          cantidadEnProduccion: 0,
+          cantidadTerminada: 0,
+          estado: "pendiente"
+        }
+      ],
+      createdAt: now,
+      createdBy: "demo-admin",
+      updatedAt: now,
+      updatedBy: "demo-taller"
+    }
+  ]
 };

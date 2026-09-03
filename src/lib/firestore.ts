@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   setDoc,
   updateDoc,
@@ -758,6 +759,34 @@ export async function getProductionEventsByWork(obraId: string): Promise<Product
 export async function getProductionOrders(): Promise<ProductionOrder[]> {
   return (await getCollection<ProductionOrder>("ordenesProduccion"))
     .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
+}
+
+export function subscribeToProductionOrders(
+  onOrders: (orders: ProductionOrder[]) => void,
+  onError: (error: Error) => void,
+  assignedToUid?: string
+): () => void {
+  const sortOrders = (orders: ProductionOrder[]) => orders
+    .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
+
+  if (!shouldUseFirebase() || !firestoreDb) {
+    const orders = getStoredData().ordenesProduccion
+      .filter((order) => !assignedToUid || order.assignedToUid === assignedToUid);
+    onOrders(sortOrders(orders));
+    return () => undefined;
+  }
+
+  const source = assignedToUid
+    ? query(collection(firestoreDb, collections.ordenesProduccion), where("assignedToUid", "==", assignedToUid))
+    : collection(firestoreDb, collections.ordenesProduccion);
+
+  return onSnapshot(
+    source,
+    (snapshot) => {
+      onOrders(sortOrders(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ProductionOrder)));
+    },
+    (error) => onError(withError(error, "No se pudieron actualizar las ordenes de produccion."))
+  );
 }
 
 export async function createProductionOrder(data: Omit<ProductionOrder, "id">): Promise<ProductionOrder> {

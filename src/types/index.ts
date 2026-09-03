@@ -657,6 +657,9 @@ export type ProductionOrder = {
   fechaCreacionDocumento?: string;
   fechaComprometida?: string;
   responsable?: string;
+  assignedToUid?: string;
+  assignedToName?: string;
+  assignedAt?: string;
   observaciones?: string;
   prioridad: ProductionOrderPriority;
   estado: ProductionOrderStatus;
