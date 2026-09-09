@@ -31,7 +31,8 @@ const OPERATIONAL_COLLECTIONS = [
   "jornadasCampo",
   "asignacionesCampo",
   "produccionEventos",
-  "instalacionEventos"
+  "instalacionEventos",
+  "ordenesProduccion"
 ];
 
 const OPTIONAL_OPERATIONAL_COLLECTIONS = [
@@ -61,7 +62,8 @@ const PRESERVED_COLLECTIONS = [
 ];
 
 const STORAGE_OPERATIONAL_PREFIXES = [
-  "obras/"
+  "obras/",
+  "ordenes-produccion/"
 ];
 
 const env = {
