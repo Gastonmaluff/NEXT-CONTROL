@@ -1,6 +1,47 @@
-import type { ProductionItemStatus, ProductionOrderPosition, ProductionOrderStatus } from "../types";
+import type { ProductionItemStatus, ProductionMissingItem, ProductionOrderPosition, ProductionOrderStatus } from "../types";
 
 export type ProductionQuickAction = "start" | "finish" | "undo";
+
+export function getProductionMissingItems(position: ProductionOrderPosition) {
+  return (position.faltantes ?? []).filter((item) => item.estado !== "resuelto");
+}
+
+export function addProductionMissingItem(
+  position: ProductionOrderPosition,
+  descripcion: string,
+  observacion: string,
+  reportadoPor: string
+): ProductionOrderPosition {
+  const cleanDescription = descripcion.trim();
+  if (!cleanDescription) return position;
+
+  const missingItem: ProductionMissingItem = {
+    id: createMissingItemId(),
+    descripcion: cleanDescription,
+    observacion: observacion.trim() || undefined,
+    reportadoPor,
+    reportadoAt: new Date().toISOString(),
+    estado: "pendiente"
+  };
+
+  return {
+    ...position,
+    faltantes: [...(position.faltantes ?? []), missingItem]
+  };
+}
+
+export function resolveProductionMissingItem(
+  position: ProductionOrderPosition,
+  missingItemId: string,
+  resueltoPor: string
+): ProductionOrderPosition {
+  return {
+    ...position,
+    faltantes: (position.faltantes ?? []).map((item) => item.id === missingItemId
+      ? { ...item, estado: "resuelto", resueltoPor, resueltoAt: new Date().toISOString() }
+      : item)
+  };
+}
 
 export function getProductionPositionCounts(position: ProductionOrderPosition) {
   const total = Math.max(0, Number(position.cantidadTotal) || 0);
@@ -68,6 +109,7 @@ export function getProductionOrderProgress(positions: ProductionOrderPosition[])
 
 export function getProductionOrderStatus(positions: ProductionOrderPosition[]): ProductionOrderStatus {
   const progress = getProductionOrderProgress(positions);
+  if (positions.some((position) => getProductionMissingItems(position).length > 0)) return "bloqueada";
   if (progress.total > 0 && progress.finished === progress.total) return "terminada";
   if (progress.finished > 0) return "parcial";
   if (progress.inProduction > 0) return "en_produccion";
@@ -88,4 +130,9 @@ function getProductionPositionStatus(
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function createMissingItemId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `faltante-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

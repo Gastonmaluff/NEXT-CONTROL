@@ -642,8 +642,20 @@ export type ProductionOrderPosition = {
   vidrio?: string;
   detalles?: string;
   observaciones?: string;
+  faltantes?: ProductionMissingItem[];
   imagenUrl?: string;
   imagenStoragePath?: string;
+};
+
+export type ProductionMissingItem = {
+  id: string;
+  descripcion: string;
+  observacion?: string;
+  reportadoPor: string;
+  reportadoAt: string;
+  estado: "pendiente" | "resuelto";
+  resueltoPor?: string;
+  resueltoAt?: string;
 };
 
 export type ProductionOrder = {

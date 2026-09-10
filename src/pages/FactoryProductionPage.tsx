@@ -11,16 +11,19 @@ import {
   StickyNote,
   type LucideIcon
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import ProductionPositionImage from "../components/production/ProductionPositionImage";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToProductionOrders, updateProductionOrder } from "../lib/firestore";
 import type { ProductionOrder, ProductionOrderPosition } from "../types";
 import {
   applyProductionQuickAction,
+  addProductionMissingItem,
   getProductionOrderProgress,
   getProductionOrderStatus,
   getProductionPositionCounts,
+  getProductionMissingItems,
+  resolveProductionMissingItem,
   type ProductionQuickAction
 } from "../utils/productionOrders";
 
@@ -92,6 +95,17 @@ export default function FactoryProductionPage() {
     void updatePosition(order, nextPosition, labels[action]);
   }
 
+  function reportMissing(order: ProductionOrder, position: ProductionOrderPosition, descripcion: string, observacion: string) {
+    const nextPosition = addProductionMissingItem(position, descripcion, observacion, profile?.nombre ?? "Taller");
+    if (nextPosition === position) return;
+    void updatePosition(order, nextPosition, "Faltante registrado para esta posición.");
+  }
+
+  function resolveMissing(order: ProductionOrder, position: ProductionOrderPosition, missingItemId: string) {
+    const nextPosition = resolveProductionMissingItem(position, missingItemId, profile?.nombre ?? "Taller");
+    void updatePosition(order, nextPosition, "Faltante marcado como resuelto.");
+  }
+
   if (loading) return <StateCard text="Cargando tus órdenes de taller..." />;
 
   return (
@@ -119,6 +133,8 @@ export default function FactoryProductionPage() {
           onBack={() => setSelectedId("")}
           onAction={runQuickAction}
           onSaveNote={(position, note) => void updatePosition(selected, { ...position, observaciones: note }, "Nota guardada.")}
+          onReportMissing={(position, descripcion, observacion) => reportMissing(selected, position, descripcion, observacion)}
+          onResolveMissing={(position, missingItemId) => resolveMissing(selected, position, missingItemId)}
         />
       ) : (
         <section className="grid gap-3">
@@ -144,7 +160,9 @@ function OrderWorkView({
   savingPositionId,
   onBack,
   onAction,
-  onSaveNote
+  onSaveNote,
+  onReportMissing,
+  onResolveMissing
 }: {
   order: ProductionOrder;
   showBack: boolean;
@@ -152,6 +170,8 @@ function OrderWorkView({
   onBack: () => void;
   onAction: (order: ProductionOrder, position: ProductionOrderPosition, action: ProductionQuickAction) => void;
   onSaveNote: (position: ProductionOrderPosition, note: string) => void;
+  onReportMissing: (position: ProductionOrderPosition, descripcion: string, observacion: string) => void;
+  onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void;
 }) {
   const progress = getProductionOrderProgress(order.posiciones);
   return (
@@ -175,6 +195,8 @@ function OrderWorkView({
             saving={savingPositionId === position.id}
             onAction={(action) => onAction(order, position, action)}
             onSaveNote={(note) => onSaveNote(position, note)}
+            onReportMissing={(descripcion, observacion) => onReportMissing(position, descripcion, observacion)}
+            onResolveMissing={(missingItemId) => onResolveMissing(position, missingItemId)}
           />
         ))}
       </div>
@@ -182,12 +204,25 @@ function OrderWorkView({
   );
 }
 
-function PositionWorkCard({ position, busy, saving, onAction, onSaveNote }: { position: ProductionOrderPosition; busy: boolean; saving: boolean; onAction: (action: ProductionQuickAction) => void; onSaveNote: (note: string) => void }) {
+function PositionWorkCard({ position, busy, saving, onAction, onSaveNote, onReportMissing, onResolveMissing }: { position: ProductionOrderPosition; busy: boolean; saving: boolean; onAction: (action: ProductionQuickAction) => void; onSaveNote: (note: string) => void; onReportMissing: (descripcion: string, observacion: string) => void; onResolveMissing: (missingItemId: string) => void }) {
   const counts = getProductionPositionCounts(position);
   const progress = getProductionOrderProgress([position]);
+  const missingItems = getProductionMissingItems(position);
   const [note, setNote] = useState(position.observaciones ?? "");
+  const [missingOpen, setMissingOpen] = useState(false);
+  const [missingDescription, setMissingDescription] = useState("");
+  const [missingNote, setMissingNote] = useState("");
 
   useEffect(() => setNote(position.observaciones ?? ""), [position.observaciones]);
+
+  function submitMissing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!missingDescription.trim()) return;
+    onReportMissing(missingDescription, missingNote);
+    setMissingDescription("");
+    setMissingNote("");
+    setMissingOpen(false);
+  }
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
@@ -203,6 +238,39 @@ function PositionWorkCard({ position, busy, saving, onAction, onSaveNote }: { po
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-next-blue" style={{ width: `${progress.percentage}%` }} /></div>
           <p className="mt-2 text-xs font-bold text-next-muted">{counts.pending} pendientes · {counts.inProduction} en proceso</p>
         </div>
+
+        {missingItems.length ? (
+          <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-black uppercase text-next-orange">Faltantes reportados</p>
+              <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-next-orange">{missingItems.length}</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {missingItems.map((item) => (
+                <div key={item.id} className="rounded-xl border border-orange-100 bg-white p-3">
+                  <p className="text-sm font-black text-next-text">{item.descripcion}</p>
+                  {item.observacion ? <p className="mt-1 text-xs font-semibold text-next-muted">{item.observacion}</p> : null}
+                  <p className="mt-2 text-[10px] font-bold uppercase text-next-muted">Reportado por {item.reportadoPor} · {formatMissingDate(item.reportadoAt)}</p>
+                  <button className="mt-2 h-9 rounded-lg border border-orange-300 px-3 text-xs font-black text-next-orange disabled:opacity-40" type="button" disabled={busy} onClick={() => onResolveMissing(item.id)}>Marcar como resuelto</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {missingOpen ? (
+          <form className="mt-4 rounded-2xl border border-next-blue/20 bg-blue-50 p-4" onSubmit={submitMissing}>
+            <p className="text-xs font-black uppercase text-next-blue">¿Qué falta para esta ventana?</p>
+            <input className="field mt-3" required autoFocus value={missingDescription} onChange={(event) => setMissingDescription(event.target.value)} placeholder="Ej.: batería, vidrio, herraje..." />
+            <textarea className="field mt-2 min-h-20" value={missingNote} onChange={(event) => setMissingNote(event.target.value)} placeholder="Detalle opcional: medida, cantidad o motivo" />
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button className="h-10 rounded-xl border border-slate-200 bg-white text-xs font-black text-next-muted" type="button" onClick={() => setMissingOpen(false)}>Cancelar</button>
+              <button className="h-10 rounded-xl bg-next-blue text-xs font-black text-white disabled:opacity-40" type="submit" disabled={busy}>Agregar faltante</button>
+            </div>
+          </form>
+        ) : (
+          <button className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-orange-300 bg-orange-50 text-xs font-black text-next-orange disabled:opacity-40" type="button" disabled={busy} onClick={() => setMissingOpen(true)}><Plus className="h-4 w-4" /> Informar faltante</button>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-next-blue bg-white px-3 text-sm font-black text-next-blue disabled:opacity-40" type="button" disabled={busy || counts.pending === 0} onClick={() => onAction("start")}><Play className="h-4 w-4 fill-current" /> Empezar 1</button>
@@ -225,3 +293,4 @@ function Metric({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: s
 function StateCard({ text }: { text: string }) { return <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm font-bold text-next-muted shadow-soft">{text}</div>; }
 function EmptyState({ text }: { text: string }) { return <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-sm font-semibold leading-6 text-next-muted">{text}</div>; }
 function Notice({ tone, text }: { tone: "success" | "error"; text: string }) { return <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${tone === "success" ? "border-green-100 bg-green-50 text-next-green" : "border-red-100 bg-red-50 text-next-red"}`}>{tone === "error" ? <AlertTriangle className="mr-2 inline h-4 w-4" /> : null}{text}</div>; }
+function formatMissingDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "fecha desconocida" : date.toLocaleDateString("es-PY"); }
