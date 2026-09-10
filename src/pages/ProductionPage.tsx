@@ -2,6 +2,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock3,
+  Eye,
   FileText,
   Factory,
   PackageCheck,
@@ -35,6 +36,7 @@ import type {
 } from "../types";
 import { parseProductionPdf, type ParsedProductionPdf } from "../utils/productionPdf";
 import { getProductionMissingItems, getProductionOrderProgress, getProductionOrderStatus, resolveProductionMissingItem } from "../utils/productionOrders";
+import ProductionOrderPreviewDialog from "../components/production/ProductionOrderPreviewDialog";
 
 const priorityLabels: Record<ProductionOrderPriority, string> = {
   urgente: "Urgente",
@@ -61,8 +63,10 @@ export default function ProductionPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
+  const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
   const [assigningOrderId, setAssigningOrderId] = useState("");
   const [savingMissingId, setSavingMissingId] = useState("");
+  const previewOrder = previewOrderId ? orders.find((order) => order.id === previewOrderId) ?? null : null;
 
   useEffect(() => {
     const unsubscribe = subscribeToProductionOrders(
@@ -189,12 +193,15 @@ export default function ProductionPage() {
               workers={workers}
               assigning={assigningOrderId === order.id}
               onAssign={(uid) => void assignOrder(order, uid)}
+              onPreview={() => setPreviewOrderId(order.id)}
               savingMissingId={savingMissingId}
               onResolveMissing={(position, missingItemId) => void resolveMissing(order, position, missingItemId)}
             />
           ))}
         </section>
       ) : <EmptyState text="Todavía no hay órdenes de producción cargadas." />}
+
+      {previewOrder ? <ProductionOrderPreviewDialog order={previewOrder} onClose={() => setPreviewOrderId(null)} /> : null}
 
       {open ? (
         <ProductionOrderModal
@@ -392,7 +399,7 @@ function PositionEditor({ position, onChange, onRemove }: { position: Production
   return <article className="grid gap-3 rounded-xl border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end"><Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} /><Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} /><Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} /><Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }); }} /><button className="inline-flex h-10 items-center justify-center rounded-lg border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button><div className="grid gap-2 text-xs font-semibold text-next-muted md:col-span-5 md:grid-cols-4"><span>Medida: {position.ancho ?? "-"} × {position.alto ?? "-"} mm</span><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div></article>;
 }
 
-function OrderCard({ order, workers, assigning, onAssign, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
+function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
   const progress = getProductionOrderProgress(order.posiciones);
   const missingCount = order.posiciones.reduce((sum, position) => sum + getProductionMissingItems(position).length, 0);
 
@@ -409,13 +416,18 @@ function OrderCard({ order, workers, assigning, onAssign, savingMissingId, onRes
             <h2 className="mt-2 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2>
             <p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.pdfFileName}</p>
           </div>
-          <label className="min-w-0 text-xs font-black uppercase text-next-muted lg:w-72">
-            Responsable de taller
-            <select className={`field mt-1 ${order.assignedToUid ? "" : "border-orange-300 bg-orange-50"}`} value={order.assignedToUid ?? ""} disabled={assigning || !workers.length} onChange={(event) => onAssign(event.target.value)}>
-              <option value="" disabled>{workers.length ? "Asignar usuario..." : "No hay usuarios de taller"}</option>
-              {workers.map((worker) => <option key={worker.uid} value={worker.uid}>{worker.nombre}</option>)}
-            </select>
-          </label>
+          <div className="flex flex-wrap items-end justify-start gap-2 lg:justify-end">
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue transition hover:bg-next-light" type="button" onClick={onPreview} aria-label={`Ver vista de producción de ${order.obraNombre}`}>
+              <Eye className="h-4 w-4" aria-hidden="true" /> Ver producción
+            </button>
+            <label className="min-w-0 text-xs font-black uppercase text-next-muted lg:w-72">
+              Responsable de taller
+              <select className={`field mt-1 ${order.assignedToUid ? "" : "border-orange-300 bg-orange-50"}`} value={order.assignedToUid ?? ""} disabled={assigning || !workers.length} onChange={(event) => onAssign(event.target.value)}>
+                <option value="" disabled>{workers.length ? "Asignar usuario..." : "No hay usuarios de taller"}</option>
+                {workers.map((worker) => <option key={worker.uid} value={worker.uid}>{worker.nombre}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="mt-5 rounded-xl bg-next-bg p-4">
