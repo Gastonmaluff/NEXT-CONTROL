@@ -34,7 +34,7 @@ export const navigationItems: Array<{
   { label: "Tareas",          path: "/tareas",              icon: ClipboardList,    animClass: "icon-avance",        moduleName: "tareas" },
   { label: "Instalaciones",   path: "/instalaciones",       icon: Truck,            animClass: "icon-instalaciones", moduleName: "instalaciones" },
   { label: "Presupuestos",    path: "/presupuestos",        icon: FileSpreadsheet,  animClass: "icon-presupuestos",  moduleName: "presupuestos" },
-  { label: "Produccion / cargar PDF", path: "/produccion", icon: Factory, animClass: "icon-produccion", moduleName: "produccion", roles: ["admin", "gerencia"] },
+  { label: "Producción / taller", path: "/produccion", icon: Factory, animClass: "icon-produccion", moduleName: "produccion", roles: ["admin", "gerencia"] },
   { label: "Produccion / avances", path: "/produccion", icon: Factory, animClass: "icon-produccion", moduleName: "produccion", roles: ["produccion", "taller"] },
   { label: "Inventario",      path: "/inventario",          icon: Boxes,            animClass: "icon-inventario",    moduleName: "inventario" },
   { label: "Reportes",        path: "/reportes",            icon: BarChart3,        animClass: "icon-reportes",      moduleName: "reportes" },

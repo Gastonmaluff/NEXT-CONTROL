@@ -37,6 +37,7 @@ import type {
 import { parseProductionPdf, type ParsedProductionPdf } from "../utils/productionPdf";
 import { getProductionMissingItems, getProductionOrderProgress, getProductionOrderStatus, resolveProductionMissingItem } from "../utils/productionOrders";
 import ProductionOrderPreviewDialog from "../components/production/ProductionOrderPreviewDialog";
+import ManualProductionOrderModal from "../components/production/ManualProductionOrderModal";
 
 const priorityLabels: Record<ProductionOrderPriority, string> = {
   urgente: "Urgente",
@@ -63,6 +64,7 @@ export default function ProductionPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
   const [assigningOrderId, setAssigningOrderId] = useState("");
   const [savingMissingId, setSavingMissingId] = useState("");
@@ -159,15 +161,17 @@ export default function ProductionPage() {
           <p className="text-sm font-black uppercase text-next-blue">Panel de fábrica</p>
           <h1 className="mt-1 text-3xl font-black tracking-normal">PRODUCCIÓN / TALLER</h1>
           <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
-            Cargá la orden desde el PDF, asignala al taller y seguí su avance en tiempo real.
+            Creá órdenes desde un PDF o cargalas manualmente, asignalas al taller y seguí su avance en tiempo real.
           </p>
         </div>
-        {canCreate ? (
-          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-next-blue px-4 text-sm font-black text-white shadow-sm" type="button" onClick={() => { setError(""); setMessage(""); setOpen(true); }}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nueva orden desde PDF
+        {canCreate ? <div className="flex flex-wrap gap-2">
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-next-blue bg-white px-4 text-sm font-black text-next-blue shadow-sm" type="button" onClick={() => { setError(""); setMessage(""); setManualOpen(true); }}>
+            <Plus className="h-4 w-4" aria-hidden="true" /> Carga manual
           </button>
-        ) : null}
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-next-blue px-4 text-sm font-black text-white shadow-sm" type="button" onClick={() => { setError(""); setMessage(""); setOpen(true); }}>
+            <Upload className="h-4 w-4" aria-hidden="true" /> Nueva orden desde PDF
+          </button>
+        </div> : null}
       </div>
 
       {message ? <Notice tone="success" text={message} /> : null}
@@ -202,6 +206,16 @@ export default function ProductionPage() {
       ) : <EmptyState text="Todavía no hay órdenes de producción cargadas." />}
 
       {previewOrder ? <ProductionOrderPreviewDialog order={previewOrder} onClose={() => setPreviewOrderId(null)} /> : null}
+
+      {manualOpen ? <ManualProductionOrderModal
+        workers={workers}
+        onClose={() => setManualOpen(false)}
+        onCreated={async () => {
+          setManualOpen(false);
+          setMessage("Orden manual creada y enviada al responsable de taller.");
+          await refreshOrders();
+        }}
+      /> : null}
 
       {open ? (
         <ProductionOrderModal
@@ -323,6 +337,7 @@ function ProductionOrderModal({
       const timestamp = new Date().toISOString();
 
       await createProductionOrder({
+        origen: "pdf",
         numero: parsed.numero,
         obraNombre: form.obraNombre.trim(),
         cliente: form.cliente.trim() || undefined,
@@ -414,7 +429,7 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissi
               {missingCount ? <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-black uppercase text-next-orange">{missingCount} faltante{missingCount === 1 ? "" : "s"}</span> : null}
             </div>
             <h2 className="mt-2 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2>
-            <p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.pdfFileName}</p>
+            <p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.origen === "manual" ? "Carga manual" : order.pdfFileName ?? "Orden desde PDF"}</p>
           </div>
           <div className="flex flex-wrap items-end justify-start gap-2 lg:justify-end">
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue transition hover:bg-next-light" type="button" onClick={onPreview} aria-label={`Ver vista de producción de ${order.obraNombre}`}>
@@ -446,7 +461,7 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissi
             return (
               <div key={position.id} className="rounded-xl border border-slate-100 px-3 py-3">
                 <div className="flex items-start justify-between gap-2"><p className="text-xs font-black text-next-text">POS. {position.numero} · {position.descripcion}</p><span className="shrink-0 text-sm font-black text-next-blue">{itemProgress.percentage}%</span></div>
-                <p className="mt-1 text-xs font-semibold text-next-muted">{position.ancho ?? "-"} × {position.alto ?? "-"} mm · {itemProgress.finished}/{itemProgress.total} terminadas</p>
+                <p className="mt-1 text-xs font-semibold text-next-muted">{position.ancho || position.alto ? `${position.ancho ?? "-"} × ${position.alto ?? "-"} mm · ` : ""}{itemProgress.finished}/{itemProgress.total} terminadas</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-next-blue" style={{ width: `${itemProgress.percentage}%` }} /></div>
                 {missingItems.length ? (
                   <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-2.5">

@@ -660,6 +660,7 @@ export type ProductionMissingItem = {
 
 export type ProductionOrder = {
   id: string;
+  origen?: "pdf" | "manual";
   numero?: string;
   obraId?: string;
   obraNombre: string;
@@ -677,7 +678,7 @@ export type ProductionOrder = {
   estado: ProductionOrderStatus;
   pdfUrl?: string;
   pdfStoragePath?: string;
-  pdfFileName: string;
+  pdfFileName?: string;
   pdfUploadedAt?: string;
   previewImageUrl?: string;
   previewImageStoragePath?: string;

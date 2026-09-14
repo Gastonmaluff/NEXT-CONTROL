@@ -179,11 +179,12 @@ function OrderWorkView({
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
         {showBack ? <button className="inline-flex items-center gap-1 text-xs font-black uppercase text-next-blue" type="button" onClick={onBack}><ChevronLeft className="h-4 w-4" /> Ver órdenes</button> : null}
         <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-xs font-black uppercase text-next-muted">Orden {order.numero ?? "sin número"}</p><h2 className="mt-1 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2><p className="mt-1 text-sm font-semibold text-next-muted">{order.cliente ? `${order.cliente} · ` : ""}{order.posiciones.length} posiciones</p></div>
+          <div><p className="text-xs font-black uppercase text-next-muted">Orden {order.numero ?? "sin número"}</p><h2 className="mt-1 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2><p className="mt-1 text-sm font-semibold text-next-muted">{order.cliente ? `${order.cliente} · ` : ""}{order.posiciones.length} {order.origen === "manual" ? "ítems" : "posiciones"}</p></div>
           <span className="text-4xl font-black text-next-blue">{progress.percentage}%</span>
         </div>
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-next-blue to-cyan-400 transition-[width] duration-500" style={{ width: `${progress.percentage}%` }} /></div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.finished}/{progress.total} terminadas</span><span>{progress.inProduction} en proceso</span><span>{progress.pending} pendientes</span></div>
+        {order.observaciones ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-xs font-black uppercase text-next-blue">Instrucciones del trabajo</p><p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-next-text">{order.observaciones}</p></div> : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -230,7 +231,8 @@ function PositionWorkCard({ position, busy, saving, onAction, onSaveNote, onRepo
       <div className="p-4">
         <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-next-light px-2.5 py-1 text-xs font-black text-next-blue">POS. {position.numero}</span><span className="text-xs font-bold uppercase text-next-muted">{position.codigo}</span></div>
         <h3 className="mt-3 text-base font-black uppercase text-next-text">{position.descripcion}</h3>
-        <p className="mt-1 text-sm font-semibold text-next-muted">{position.ancho ?? "-"} × {position.alto ?? "-"} mm · {position.color ?? "Sin color"}</p>
+        <p className="mt-1 text-sm font-semibold text-next-muted">{position.ancho || position.alto ? `${position.ancho ?? "-"} × ${position.alto ?? "-"} mm` : "Sin medidas especificadas"}{position.color ? ` · ${position.color}` : ""}{position.linea ? ` · ${position.linea}` : ""}</p>
+        {position.vidrio || position.detalles ? <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm font-semibold text-next-text">{position.vidrio ? <p><strong>Vidrio:</strong> {position.vidrio}</p> : null}{position.detalles ? <p className="mt-1 whitespace-pre-wrap"><strong>Indicaciones:</strong> {position.detalles}</p> : null}</div> : null}
 
         <div className="mt-4 rounded-2xl bg-next-bg p-4 text-center">
           <p className="text-xs font-black uppercase text-next-muted">Terminadas</p>
@@ -260,7 +262,7 @@ function PositionWorkCard({ position, busy, saving, onAction, onSaveNote, onRepo
 
         {missingOpen ? (
           <form className="mt-4 rounded-2xl border border-next-blue/20 bg-blue-50 p-4" onSubmit={submitMissing}>
-            <p className="text-xs font-black uppercase text-next-blue">¿Qué falta para esta ventana?</p>
+            <p className="text-xs font-black uppercase text-next-blue">¿Qué falta para este ítem?</p>
             <input className="field mt-3" required autoFocus value={missingDescription} onChange={(event) => setMissingDescription(event.target.value)} placeholder="Ej.: batería, vidrio, herraje..." />
             <textarea className="field mt-2 min-h-20" value={missingNote} onChange={(event) => setMissingNote(event.target.value)} placeholder="Detalle opcional: medida, cantidad o motivo" />
             <div className="mt-2 grid grid-cols-2 gap-2">
