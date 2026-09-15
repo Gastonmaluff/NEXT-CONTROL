@@ -25,6 +25,10 @@ export function buildProductionPositionImagePath(orderId: string, positionId: st
   return `ordenes-produccion/${orderId}/posiciones/${positionId}/${Date.now()}-${sanitizeStorageFileName(file.name || "referencia.png")}`;
 }
 
+export function buildProductionAttachmentPath(orderId: string, attachmentId: string, file: File): string {
+  return `ordenes-produccion/${orderId}/adjuntos/${attachmentId}-${sanitizeStorageFileName(file.name || "archivo")}`;
+}
+
 export function buildTaskPhotoPath(obraId: string, taskId: string, file: File): string {
   return `obras/${obraId}/tareas/${taskId}/${Date.now()}-${sanitizeStorageFileName(file.name || "tarea.jpg")}`;
 }

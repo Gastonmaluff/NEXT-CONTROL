@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import ProductionPositionImage from "../components/production/ProductionPositionImage";
+import ProductionSupportMaterials from "../components/production/ProductionSupportMaterials";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToProductionOrders, updateProductionOrder } from "../lib/firestore";
 import type { ProductionOrder, ProductionOrderPosition } from "../types";
@@ -186,6 +187,8 @@ function OrderWorkView({
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.finished}/{progress.total} terminadas</span><span>{progress.inProduction} en proceso</span><span>{progress.pending} pendientes</span></div>
         {order.observaciones ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-xs font-black uppercase text-next-blue">Instrucciones del trabajo</p><p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-next-text">{order.observaciones}</p></div> : null}
       </div>
+
+      <ProductionSupportMaterials order={order} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {order.posiciones.map((position) => (

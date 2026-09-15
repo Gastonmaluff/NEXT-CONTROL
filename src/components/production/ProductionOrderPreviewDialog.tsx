@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { ProductionOrder, ProductionOrderPosition } from "../../types";
 import { getProductionMissingItems, getProductionOrderProgress } from "../../utils/productionOrders";
 import ProductionPositionImage from "./ProductionPositionImage";
+import ProductionSupportMaterials from "./ProductionSupportMaterials";
 
 type ProductionOrderPreviewDialogProps = {
   order: ProductionOrder;
@@ -61,6 +62,8 @@ export default function ProductionOrderPreviewDialog({ order, onClose }: Product
           </div>
 
           {order.observaciones ? <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-black uppercase text-next-muted">Observaciones de la orden</p><p className="mt-1 text-sm font-semibold leading-6 text-next-text">{order.observaciones}</p></div> : null}
+
+          <div className="mt-4"><ProductionSupportMaterials order={order} /></div>
 
           <div className="mt-5 flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase text-next-blue">Detalle de fabricación</p><h3 className="mt-1 text-xl font-black text-next-text">{order.posiciones.length} {order.origen === "manual" ? (order.posiciones.length === 1 ? "ítem" : "ítems") : (order.posiciones.length === 1 ? "posición" : "posiciones")}</h3></div><p className="hidden text-xs font-semibold text-next-muted sm:block">Tocá una imagen para ver el detalle completo.</p></div>
           <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

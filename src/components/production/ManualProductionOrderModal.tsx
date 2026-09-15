@@ -6,6 +6,8 @@ import { isFirebaseConfigured } from "../../lib/firebase";
 import { isDemoSession } from "../../lib/storage";
 import { buildProductionPositionImagePath, uploadFile } from "../../lib/storageUpload";
 import type { ProductionOrderPosition, ProductionOrderPriority, SystemUser } from "../../types";
+import { materializeProductionAttachments, type ProductionAttachmentDraft } from "../../utils/productionAttachments";
+import ProductionAttachmentsComposer from "./ProductionAttachmentsComposer";
 
 type ManualItem = {
   id: string;
@@ -41,6 +43,7 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
     prioridad: "normal" as ProductionOrderPriority, observaciones: "", assignedToUid: ""
   });
   const [items, setItems] = useState<ManualItem[]>(() => [emptyItem()]);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<ProductionAttachmentDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -101,6 +104,7 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
           : await uploadFile(imagePath, item.imagen);
         return { ...position, imagenUrl: imageUrl, imagenStoragePath: imagePath };
       }));
+      const materialesApoyo = await materializeProductionAttachments(orderId, attachmentDrafts, { uid: profile.uid, nombre: profile.nombre });
 
       await createProductionOrder({
         origen: "manual",
@@ -116,6 +120,7 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
         assignedToName: worker.nombre,
         assignedAt: timestamp,
         responsable: worker.nombre,
+        materialesApoyo,
         posiciones: positions,
         createdAt: timestamp,
         createdBy: profile.uid
@@ -147,6 +152,8 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
           <label className="text-xs font-black uppercase text-next-muted">Responsable de taller *<select className="field mt-1" value={form.assignedToUid} onChange={(event) => setForm({ ...form, assignedToUid: event.target.value })} required><option value="">Elegir usuario...</option>{workers.map((worker) => <option key={worker.uid} value={worker.uid}>{worker.nombre}</option>)}</select></label>
           <label className="text-xs font-black uppercase text-next-muted md:col-span-2">Instrucciones generales<textarea className="field mt-1 min-h-20" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} placeholder="Indicaciones para todo el trabajo" /></label>
         </div>
+
+        <div className="mt-5"><ProductionAttachmentsComposer drafts={attachmentDrafts} onChange={setAttachmentDrafts} disabled={saving} /></div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black text-next-text">Ítems a fabricar ({items.length})</h3><p className="text-xs font-semibold text-next-muted">Cada ítem tendrá su propia cantidad y avance en taller.</p></div><button className="inline-flex h-9 items-center gap-1 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={() => setItems((current) => [...current, emptyItem()])} disabled={saving}><Plus className="h-4 w-4" aria-hidden="true" /> Agregar ítem</button></div>
         <div className="mt-3 space-y-3">{items.map((item, index) => (

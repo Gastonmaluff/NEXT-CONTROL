@@ -6,6 +6,7 @@ import {
   FileText,
   Factory,
   PackageCheck,
+  Paperclip,
   Plus,
   UserRound,
   Upload,
@@ -35,8 +36,11 @@ import type {
   SystemUser
 } from "../types";
 import { parseProductionPdf, type ParsedProductionPdf } from "../utils/productionPdf";
+import { materializeProductionAttachments, type ProductionAttachmentDraft } from "../utils/productionAttachments";
 import { getProductionMissingItems, getProductionOrderProgress, getProductionOrderStatus, resolveProductionMissingItem } from "../utils/productionOrders";
+import AddProductionMaterialsModal from "../components/production/AddProductionMaterialsModal";
 import ProductionOrderPreviewDialog from "../components/production/ProductionOrderPreviewDialog";
+import ProductionAttachmentsComposer from "../components/production/ProductionAttachmentsComposer";
 import ManualProductionOrderModal from "../components/production/ManualProductionOrderModal";
 
 const priorityLabels: Record<ProductionOrderPriority, string> = {
@@ -66,9 +70,11 @@ export default function ProductionPage() {
   const [open, setOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
+  const [materialOrderId, setMaterialOrderId] = useState<string | null>(null);
   const [assigningOrderId, setAssigningOrderId] = useState("");
   const [savingMissingId, setSavingMissingId] = useState("");
   const previewOrder = previewOrderId ? orders.find((order) => order.id === previewOrderId) ?? null : null;
+  const materialOrder = materialOrderId ? orders.find((order) => order.id === materialOrderId) ?? null : null;
 
   useEffect(() => {
     const unsubscribe = subscribeToProductionOrders(
@@ -198,6 +204,7 @@ export default function ProductionPage() {
               assigning={assigningOrderId === order.id}
               onAssign={(uid) => void assignOrder(order, uid)}
               onPreview={() => setPreviewOrderId(order.id)}
+              onAddMaterial={() => setMaterialOrderId(order.id)}
               savingMissingId={savingMissingId}
               onResolveMissing={(position, missingItemId) => void resolveMissing(order, position, missingItemId)}
             />
@@ -206,6 +213,11 @@ export default function ProductionPage() {
       ) : <EmptyState text="Todavía no hay órdenes de producción cargadas." />}
 
       {previewOrder ? <ProductionOrderPreviewDialog order={previewOrder} onClose={() => setPreviewOrderId(null)} /> : null}
+
+      {materialOrder ? <AddProductionMaterialsModal order={materialOrder} onClose={() => setMaterialOrderId(null)} onUpdated={(updated) => {
+        setOrders((current) => current.map((order) => order.id === updated.id ? updated : order));
+        setMessage("Material de apoyo agregado a la orden.");
+      }} /> : null}
 
       {manualOpen ? <ManualProductionOrderModal
         workers={workers}
@@ -248,6 +260,7 @@ function ProductionOrderModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<ParsedProductionPdf | null>(null);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<ProductionAttachmentDraft[]>([]);
   const [form, setForm] = useState({
     obraNombre: "",
     cliente: "",
@@ -324,9 +337,10 @@ function ProductionOrderModal({
       const orderId = `orden-${Date.now()}`;
       const pdfPath = buildProductionPdfPath(orderId, sourceFile);
       const previewPath = buildProductionPreviewPath(orderId, parsed.previewImage);
-      const [pdfUrl, previewImageUrl] = await Promise.all([
+      const [pdfUrl, previewImageUrl, materialesApoyo] = await Promise.all([
         saveFile(pdfPath, sourceFile),
-        saveFile(previewPath, parsed.previewImage)
+        saveFile(previewPath, parsed.previewImage),
+        materializeProductionAttachments(orderId, attachmentDrafts, { uid: profile.uid, nombre: profile.nombre })
       ]);
       const positions = await Promise.all(parsed.posiciones.map(async (position, index) => {
         const imageFile = parsed.positionImages[index];
@@ -357,6 +371,7 @@ function ProductionOrderModal({
         pdfUploadedAt: timestamp,
         previewImageUrl,
         previewImageStoragePath: previewPath,
+        materialesApoyo,
         posiciones: positions,
         createdAt: timestamp,
         createdBy: profile.uid
@@ -399,6 +414,7 @@ function ProductionOrderModal({
                 <label className="text-xs font-black uppercase text-next-muted">Responsable de taller *<select className="field mt-1" required value={form.assignedToUid} onChange={(event) => setForm({ ...form, assignedToUid: event.target.value })}><option value="">Elegir usuario...</option>{workers.map((worker) => <option key={worker.uid} value={worker.uid}>{worker.nombre} · {worker.role}</option>)}</select></label>
                 <label className="text-xs font-black uppercase text-next-muted md:col-span-2">Observaciones<textarea className="field mt-1 min-h-20" value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} /></label>
               </div>
+              <ProductionAttachmentsComposer drafts={attachmentDrafts} onChange={setAttachmentDrafts} disabled={busy} />
               <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-black text-next-text">Posiciones ({parsed.posiciones.length})</h3><button className="h-9 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue" type="button" onClick={addPosition}>+ Agregar posición</button></div>
               <div className="grid gap-3">{parsed.posiciones.map((position) => <PositionEditor key={position.id} position={position} onChange={(data) => updatePosition(position.id, data)} onRemove={() => removePosition(position.id)} />)}</div>
               <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row"><button className="h-11 rounded-xl border border-slate-200 px-4 text-xs font-black text-next-muted" type="button" onClick={onClose}>Cancelar</button><button className="h-11 rounded-xl bg-next-blue px-4 text-xs font-black text-white disabled:opacity-60" type="button" disabled={busy || !workers.length} onClick={() => void confirmOrder()}>{busy ? "Guardando PDF e imágenes..." : "Crear y asignar orden"}</button></div>
@@ -414,7 +430,7 @@ function PositionEditor({ position, onChange, onRemove }: { position: Production
   return <article className="grid gap-3 rounded-xl border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end"><Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} /><Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} /><Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} /><Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }); }} /><button className="inline-flex h-10 items-center justify-center rounded-lg border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button><div className="grid gap-2 text-xs font-semibold text-next-muted md:col-span-5 md:grid-cols-4"><span>Medida: {position.ancho ?? "-"} × {position.alto ?? "-"} mm</span><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div></article>;
 }
 
-function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
+function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMaterial, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; onAddMaterial: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
   const progress = getProductionOrderProgress(order.posiciones);
   const missingCount = order.posiciones.reduce((sum, position) => sum + getProductionMissingItems(position).length, 0);
 
@@ -427,6 +443,7 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissi
               <span className="rounded-full bg-next-light px-2.5 py-1 text-[11px] font-black uppercase text-next-blue">{priorityLabels[order.prioridad]}</span>
               <span className={`text-xs font-bold uppercase ${order.estado === "bloqueada" ? "text-next-orange" : "text-next-muted"}`}>{statusLabels[order.estado]}</span>
               {missingCount ? <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-black uppercase text-next-orange">{missingCount} faltante{missingCount === 1 ? "" : "s"}</span> : null}
+              {order.materialesApoyo?.length ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-black uppercase text-next-blue">{order.materialesApoyo.length} material{order.materialesApoyo.length === 1 ? "" : "es"}</span> : null}
             </div>
             <h2 className="mt-2 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2>
             <p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.origen === "manual" ? "Carga manual" : order.pdfFileName ?? "Orden desde PDF"}</p>
@@ -434,6 +451,9 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, savingMissi
           <div className="flex flex-wrap items-end justify-start gap-2 lg:justify-end">
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue transition hover:bg-next-light" type="button" onClick={onPreview} aria-label={`Ver vista de producción de ${order.obraNombre}`}>
               <Eye className="h-4 w-4" aria-hidden="true" /> Ver producción
+            </button>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black text-next-text transition hover:bg-next-bg" type="button" onClick={onAddMaterial} aria-label={`Agregar material a ${order.obraNombre}`}>
+              <Paperclip className="h-4 w-4" aria-hidden="true" /> Agregar material
             </button>
             <label className="min-w-0 text-xs font-black uppercase text-next-muted lg:w-72">
               Responsable de taller

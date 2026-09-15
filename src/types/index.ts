@@ -658,6 +658,21 @@ export type ProductionMissingItem = {
   resueltoAt?: string;
 };
 
+export type ProductionOrderAttachment = {
+  id: string;
+  tipo: "texto" | "archivo";
+  titulo: string;
+  descripcion?: string;
+  fileName?: string;
+  fileUrl?: string;
+  storagePath?: string;
+  mimeType?: string;
+  size?: number;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+};
+
 export type ProductionOrder = {
   id: string;
   origen?: "pdf" | "manual";
@@ -682,6 +697,7 @@ export type ProductionOrder = {
   pdfUploadedAt?: string;
   previewImageUrl?: string;
   previewImageStoragePath?: string;
+  materialesApoyo?: ProductionOrderAttachment[];
   posiciones: ProductionOrderPosition[];
   createdAt: string;
   createdBy: string;
