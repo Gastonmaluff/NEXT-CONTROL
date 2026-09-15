@@ -8,6 +8,7 @@ import {
   PackageCheck,
   Paperclip,
   Plus,
+  Trash2,
   UserRound,
   Upload,
   X,
@@ -21,7 +22,7 @@ import {
   subscribeToProductionOrders,
   updateProductionOrder
 } from "../lib/firestore";
-import { canManageProductionOrders } from "../lib/roles";
+import { canManageProductionOrders, isAdmin } from "../lib/roles";
 import {
   buildProductionPdfPath,
   buildProductionPositionImagePath,
@@ -42,6 +43,7 @@ import AddProductionMaterialsModal from "../components/production/AddProductionM
 import ProductionOrderPreviewDialog from "../components/production/ProductionOrderPreviewDialog";
 import ProductionAttachmentsComposer from "../components/production/ProductionAttachmentsComposer";
 import ManualProductionOrderModal from "../components/production/ManualProductionOrderModal";
+import DeleteProductionOrderModal from "../components/production/DeleteProductionOrderModal";
 
 const priorityLabels: Record<ProductionOrderPriority, string> = {
   urgente: "Urgente",
@@ -61,6 +63,7 @@ const statusLabels: Record<ProductionOrder["estado"], string> = {
 export default function ProductionPage() {
   const { profile } = useAuth();
   const canCreate = canManageProductionOrders(profile);
+  const canDeleteOrders = isAdmin(profile);
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [workers, setWorkers] = useState<SystemUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,10 +74,12 @@ export default function ProductionPage() {
   const [manualOpen, setManualOpen] = useState(false);
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
   const [materialOrderId, setMaterialOrderId] = useState<string | null>(null);
+  const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [assigningOrderId, setAssigningOrderId] = useState("");
   const [savingMissingId, setSavingMissingId] = useState("");
   const previewOrder = previewOrderId ? orders.find((order) => order.id === previewOrderId) ?? null : null;
   const materialOrder = materialOrderId ? orders.find((order) => order.id === materialOrderId) ?? null : null;
+  const deleteOrder = deleteOrderId ? orders.find((order) => order.id === deleteOrderId) ?? null : null;
 
   useEffect(() => {
     const unsubscribe = subscribeToProductionOrders(
@@ -205,6 +210,8 @@ export default function ProductionPage() {
               onAssign={(uid) => void assignOrder(order, uid)}
               onPreview={() => setPreviewOrderId(order.id)}
               onAddMaterial={() => setMaterialOrderId(order.id)}
+              canDelete={canDeleteOrders}
+              onDelete={() => setDeleteOrderId(order.id)}
               savingMissingId={savingMissingId}
               onResolveMissing={(position, missingItemId) => void resolveMissing(order, position, missingItemId)}
             />
@@ -216,7 +223,12 @@ export default function ProductionPage() {
 
       {materialOrder ? <AddProductionMaterialsModal order={materialOrder} onClose={() => setMaterialOrderId(null)} onUpdated={(updated) => {
         setOrders((current) => current.map((order) => order.id === updated.id ? updated : order));
-        setMessage("Material de apoyo agregado a la orden.");
+        setMessage("Documentos agregados a la orden.");
+      }} /> : null}
+
+      {deleteOrder && canDeleteOrders ? <DeleteProductionOrderModal order={deleteOrder} onClose={() => setDeleteOrderId(null)} onDeleted={(orderId) => {
+        setOrders((current) => current.filter((order) => order.id !== orderId));
+        setMessage("Orden de trabajo eliminada.");
       }} /> : null}
 
       {manualOpen ? <ManualProductionOrderModal
@@ -430,7 +442,7 @@ function PositionEditor({ position, onChange, onRemove }: { position: Production
   return <article className="grid gap-3 rounded-xl border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end"><Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} /><Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} /><Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} /><Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }); }} /><button className="inline-flex h-10 items-center justify-center rounded-lg border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button><div className="grid gap-2 text-xs font-semibold text-next-muted md:col-span-5 md:grid-cols-4"><span>Medida: {position.ancho ?? "-"} × {position.alto ?? "-"} mm</span><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div></article>;
 }
 
-function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMaterial, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; onAddMaterial: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
+function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMaterial, canDelete, onDelete, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; onAddMaterial: () => void; canDelete: boolean; onDelete: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
   const progress = getProductionOrderProgress(order.posiciones);
   const missingCount = order.posiciones.reduce((sum, position) => sum + getProductionMissingItems(position).length, 0);
 
@@ -443,7 +455,7 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMateri
               <span className="rounded-full bg-next-light px-2.5 py-1 text-[11px] font-black uppercase text-next-blue">{priorityLabels[order.prioridad]}</span>
               <span className={`text-xs font-bold uppercase ${order.estado === "bloqueada" ? "text-next-orange" : "text-next-muted"}`}>{statusLabels[order.estado]}</span>
               {missingCount ? <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-black uppercase text-next-orange">{missingCount} faltante{missingCount === 1 ? "" : "s"}</span> : null}
-              {order.materialesApoyo?.length ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-black uppercase text-next-blue">{order.materialesApoyo.length} material{order.materialesApoyo.length === 1 ? "" : "es"}</span> : null}
+              {order.materialesApoyo?.length ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-black uppercase text-next-blue">{order.materialesApoyo.length} adjunto{order.materialesApoyo.length === 1 ? "" : "s"}</span> : null}
             </div>
             <h2 className="mt-2 text-xl font-black text-next-text sm:text-2xl">{order.obraNombre}</h2>
             <p className="mt-1 text-sm font-semibold text-next-muted">{order.numero ? `Orden ${order.numero} · ` : ""}{order.origen === "manual" ? "Carga manual" : order.pdfFileName ?? "Orden desde PDF"}</p>
@@ -452,9 +464,10 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMateri
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-next-blue px-3 text-xs font-black text-next-blue transition hover:bg-next-light" type="button" onClick={onPreview} aria-label={`Ver vista de producción de ${order.obraNombre}`}>
               <Eye className="h-4 w-4" aria-hidden="true" /> Ver producción
             </button>
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black text-next-text transition hover:bg-next-bg" type="button" onClick={onAddMaterial} aria-label={`Agregar material a ${order.obraNombre}`}>
-              <Paperclip className="h-4 w-4" aria-hidden="true" /> Agregar material
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black text-next-text transition hover:bg-next-bg" type="button" onClick={onAddMaterial} aria-label={`Agregar documentos a ${order.obraNombre}`}>
+              <Paperclip className="h-4 w-4" aria-hidden="true" /> Agregar documentos
             </button>
+            {canDelete ? <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-100 px-3 text-xs font-black text-next-red transition hover:bg-red-50" type="button" onClick={onDelete} aria-label={`Eliminar orden de ${order.obraNombre}`}><Trash2 className="h-4 w-4" aria-hidden="true" /> Eliminar orden</button> : null}
             <label className="min-w-0 text-xs font-black uppercase text-next-muted lg:w-72">
               Responsable de taller
               <select className={`field mt-1 ${order.assignedToUid ? "" : "border-orange-300 bg-orange-50"}`} value={order.assignedToUid ?? ""} disabled={assigning || !workers.length} onChange={(event) => onAssign(event.target.value)}>

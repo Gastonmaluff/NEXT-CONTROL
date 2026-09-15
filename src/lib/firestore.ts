@@ -50,6 +50,7 @@ import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { getCurrentUserProfile } from "./auth";
 import { canManageFinances, canViewAllTasks, canViewAllWorks } from "./roles";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
+import { deleteStoredFile } from "./storageUpload";
 
 type ObraInput = Omit<Obra, "id" | "createdAt" | "updatedAt"> &
   Partial<Pick<Obra, "createdAt" | "updatedAt">>;
@@ -800,6 +801,18 @@ export async function updateProductionOrder(id: string, data: Partial<Production
     updatedAt: now(),
     updatedBy: profile?.uid ?? "produccion"
   });
+}
+
+export async function deleteProductionOrder(order: ProductionOrder): Promise<void> {
+  const storagePaths = [
+    order.pdfStoragePath,
+    order.previewImageStoragePath,
+    ...order.posiciones.map((position) => position.imagenStoragePath),
+    ...(order.materialesApoyo ?? []).map((material) => material.storagePath)
+  ].filter((path): path is string => Boolean(path));
+
+  await Promise.all(storagePaths.map((path) => deleteStoredFile(path)));
+  await deleteDocument<ProductionOrder>("ordenesProduccion", order.id);
 }
 
 export async function getInstallationEventsByWork(obraId: string): Promise<InstallationEvent[]> {

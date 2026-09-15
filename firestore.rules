@@ -273,7 +273,8 @@ service cloud.firestore {
 
     match /ordenesProduccion/{id} {
       allow read: if canReadProductionOrder(resource.data);
-      allow create, delete: if canManageProductionOrder();
+      allow create: if canManageProductionOrder();
+      allow delete: if isAdmin();
       allow update: if canManageProductionOrder()
         || (
           canReadProduction()

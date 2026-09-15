@@ -21,6 +21,10 @@ service firebase.storage {
         && userDoc().role in ["admin", "gerencia", "administracion"];
     }
 
+    function isAdmin() {
+      return active() && userDoc().role == "admin";
+    }
+
     function isAssignedToWork(obraId) {
       return active()
         && userDoc().assignedWorkIds is list
@@ -81,7 +85,7 @@ service firebase.storage {
       allow read: if active();
       allow create, update: if isManagement()
         && request.resource.size <= 15 * 1024 * 1024;
-      allow delete: if isManagement();
+      allow delete: if isAdmin();
     }
 
     match /ordenes-produccion/{orderId}/{allPaths=**} {
@@ -89,7 +93,7 @@ service firebase.storage {
       allow create, update: if isManagement()
         && request.resource.contentType in ["application/pdf", "image/png", "image/jpeg", "image/webp"]
         && request.resource.size <= 15 * 1024 * 1024;
-      allow delete: if isManagement();
+      allow delete: if isAdmin();
     }
 
     match /{allPaths=**} {

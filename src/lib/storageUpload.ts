@@ -1,5 +1,6 @@
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { firebaseStorage, isFirebaseConfigured } from "./firebase";
+import { isDemoSession } from "./storage";
 
 export function buildWorkRenderPath(obraId: string, file: File): string {
   return `obras/${obraId}/render/${Date.now()}-${sanitizeStorageFileName(file.name || "render.jpg")}`;
@@ -84,6 +85,15 @@ export async function getFileUrl(path: string): Promise<string> {
   }
 
   return getDownloadURL(ref(firebaseStorage, path));
+}
+
+export async function deleteStoredFile(path?: string): Promise<void> {
+  if (!path || !isFirebaseConfigured() || !firebaseStorage || isDemoSession()) return;
+  try {
+    await deleteObject(ref(firebaseStorage, path));
+  } catch (error) {
+    if (getStorageErrorCode(error) !== "storage/object-not-found") throw error;
+  }
 }
 
 function getStorageErrorCode(error: unknown) {

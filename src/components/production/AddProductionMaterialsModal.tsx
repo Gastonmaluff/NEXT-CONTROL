@@ -41,7 +41,7 @@ export default function AddProductionMaterialsModal({
           (draft.tipo === "texto" && !draft.descripcion.trim()),
       )
     ) {
-      setError("Completá el título y el contenido de cada material.");
+      setError("Completá el título y el contenido de cada documento o instrucción.");
       return;
     }
     setSaving(true);
@@ -61,7 +61,7 @@ export default function AddProductionMaterialsModal({
       setError(
         saveError instanceof Error
           ? saveError.message
-          : "No se pudo agregar el material.",
+          : "No se pudieron agregar los documentos.",
       );
     } finally {
       setSaving(false);
@@ -88,7 +88,7 @@ export default function AddProductionMaterialsModal({
               id="add-material-title"
               className="mt-1 text-2xl font-black text-next-text"
             >
-              Agregar material de apoyo
+              Agregar documentos a la orden
             </h2>
             <p className="mt-1 text-sm font-semibold text-next-muted">
               {order.obraNombre}
@@ -138,10 +138,10 @@ export default function AddProductionMaterialsModal({
             disabled={saving || !drafts.length}
           >
             {saving
-              ? "Guardando material..."
+              ? "Guardando documentos..."
               : drafts.length
-                ? `Agregar ${drafts.length} material${drafts.length === 1 ? "" : "es"}`
-                : "Agregar materiales"}
+                ? `Agregar ${drafts.length} elemento${drafts.length === 1 ? "" : "s"}`
+                : "Agregar documentos"}
           </button>
         </div>
       </form>

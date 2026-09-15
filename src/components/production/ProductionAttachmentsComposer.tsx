@@ -55,9 +55,9 @@ export default function ProductionAttachmentsComposer({
   return (
     <section className="rounded-2xl border border-slate-200 bg-next-bg p-3 sm:p-4" aria-labelledby="support-material-title">
       <div>
-        <p className="text-xs font-black uppercase text-next-blue">Material de apoyo</p>
+        <p className="text-xs font-black uppercase text-next-blue">Documentos de la orden</p>
         <h3 id="support-material-title" className="mt-1 text-base font-black text-next-text">Archivos e instrucciones adicionales</h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-next-muted">El encargado podrá abrir estos materiales desde su orden de trabajo.</p>
+        <p className="mt-1 text-xs font-semibold leading-5 text-next-muted">El encargado podrá consultar estos documentos desde esta orden de trabajo.</p>
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
