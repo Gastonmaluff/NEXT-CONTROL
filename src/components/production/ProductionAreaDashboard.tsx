@@ -6,7 +6,7 @@ import { formatAreaM2, getParaguayDayKey, getProductionAreaHistory, getProductio
 
 const emptyGoals: ProductionAreaGoals = { dailyM2: 0, weeklyM2: 0, monthlyM2: 0 };
 
-export default function ProductionAreaDashboard({ orders, workers, canEditGoals }: { orders: ProductionOrder[]; workers: SystemUser[]; canEditGoals: boolean }) {
+export default function ProductionAreaDashboard({ orders, workers, canEditGoals, onClose }: { orders: ProductionOrder[]; workers: SystemUser[]; canEditGoals: boolean; onClose: () => void }) {
   const [goals, setGoals] = useState<ProductionAreaGoals>(emptyGoals);
   const [selectedUid, setSelectedUid] = useState("");
   const [historyPeriod, setHistoryPeriod] = useState<ProductionAreaPeriod>("day");
@@ -22,6 +22,18 @@ export default function ProductionAreaDashboard({ orders, workers, canEditGoals 
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onClose]);
 
   const report = useMemo(() => getProductionAreaReport(orders, now, selectedUid || undefined), [orders, now, selectedUid]);
   const workshopReport = useMemo(() => getProductionAreaReport(orders, now), [orders, now]);
@@ -74,14 +86,16 @@ export default function ProductionAreaDashboard({ orders, workers, canEditGoals 
   }
 
   return (
-    <section className="rounded-2xl border border-blue-100 bg-white p-4 shadow-soft sm:p-5" aria-labelledby="production-area-title">
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-labelledby="production-area-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="relative mx-auto max-w-7xl rounded-2xl border border-blue-100 bg-white p-4 shadow-2xl sm:p-6">
+      <button autoFocus className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-next-muted transition hover:bg-slate-200 hover:text-next-text sm:right-5 sm:top-5" type="button" onClick={onClose} aria-label="Cerrar resultados de producción"><X className="h-5 w-5" aria-hidden="true" /></button>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="pr-12">
           <p className="inline-flex items-center gap-2 text-xs font-black uppercase text-next-blue"><BarChart3 className="h-4 w-4" aria-hidden="true" /> Rendimiento del taller</p>
           <h2 id="production-area-title" className="mt-1 text-xl font-black text-next-text">Metros cuadrados producidos</h2>
           <p className="mt-1 text-xs font-semibold text-next-muted">Cada unidad terminada se acredita al usuario que la marca. Fechas de Paraguay; semana de lunes a domingo.</p>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2 pr-12 sm:pr-14">
           <label className="text-xs font-black uppercase text-next-muted">Encargado
             <select className="field mt-1 min-w-48" value={selectedUid} onChange={(event) => { setSelectedUid(event.target.value); setGoals(emptyGoals); setEditing(false); setMessage(""); setError(""); }}>
               <option value="">Todo el taller</option>
@@ -149,5 +163,6 @@ export default function ProductionAreaDashboard({ orders, workers, canEditGoals 
         {history.length ? <div className="mt-3 divide-y divide-slate-100">{history.map((item) => <div key={item.key} className="flex items-center justify-between gap-3 py-2 text-sm"><span className="font-semibold text-next-text">{historyPeriod === "week" ? `Semana del ${item.key}` : historyPeriod === "month" ? `Mes ${item.key}` : item.key}</span><span className="font-black text-next-blue">{formatAreaM2(item.areaM2)} m²</span></div>)}</div> : <p className="mt-3 text-xs font-semibold text-next-muted">Todavía no hay unidades terminadas con registro de m² para esta selección.</p>}
       </div>
     </section>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  BarChart3,
   CheckCircle2,
   Clock3,
   Eye,
@@ -74,6 +75,7 @@ export default function ProductionPage() {
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [areaDashboardOpen, setAreaDashboardOpen] = useState(false);
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
   const [materialOrderId, setMaterialOrderId] = useState<string | null>(null);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
@@ -178,6 +180,9 @@ export default function ProductionPage() {
           </p>
         </div>
         {canCreate ? <div className="flex flex-wrap gap-2">
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-sm font-black text-indigo-700 shadow-sm transition hover:bg-indigo-100" type="button" onClick={() => setAreaDashboardOpen(true)}>
+            <BarChart3 className="h-4 w-4" aria-hidden="true" /> Ver resultados en m²
+          </button>
           <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-next-blue bg-white px-4 text-sm font-black text-next-blue shadow-sm" type="button" onClick={() => { setError(""); setMessage(""); setManualOpen(true); }}>
             <Plus className="h-4 w-4" aria-hidden="true" /> Carga manual
           </button>
@@ -201,8 +206,6 @@ export default function ProductionPage() {
         <Metric icon={AlertCircle} label="Faltantes" value={summary.missing} tone="orange" />
       </section>
 
-      <ProductionAreaDashboard orders={orders} workers={workers} canEditGoals={canCreate} />
-
       {loading ? <StateCard text="Cargando órdenes de producción..." /> : orders.length ? (
         <section className="grid gap-4">
           {orders.map((order) => (
@@ -224,6 +227,8 @@ export default function ProductionPage() {
       ) : <EmptyState text="Todavía no hay órdenes de producción cargadas." />}
 
       {previewOrder ? <ProductionOrderPreviewDialog order={previewOrder} onClose={() => setPreviewOrderId(null)} /> : null}
+
+      {areaDashboardOpen ? <ProductionAreaDashboard orders={orders} workers={workers} canEditGoals={canCreate} onClose={() => setAreaDashboardOpen(false)} /> : null}
 
       {materialOrder ? <AddProductionMaterialsModal order={materialOrder} onClose={() => setMaterialOrderId(null)} onUpdated={(updated) => {
         setOrders((current) => current.map((order) => order.id === updated.id ? updated : order));
