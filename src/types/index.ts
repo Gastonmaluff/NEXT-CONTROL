@@ -632,6 +632,7 @@ export type ProductionOrderPosition = {
   descripcion: string;
   ancho?: number;
   alto?: number;
+  areaM2Manual?: number;
   cantidadTotal: number;
   cantidadPendiente: number;
   cantidadEnProduccion: number;
@@ -645,6 +646,26 @@ export type ProductionOrderPosition = {
   faltantes?: ProductionMissingItem[];
   imagenUrl?: string;
   imagenStoragePath?: string;
+};
+
+export type ProductionAreaMovement = {
+  id: string;
+  positionId: string;
+  positionNumber: string;
+  type: "finished" | "correction";
+  areaM2: number;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+  revertsMovementId?: string;
+};
+
+export type ProductionAreaGoals = {
+  dailyM2: number;
+  weeklyM2: number;
+  monthlyM2: number;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type ProductionMissingItem = {
@@ -699,6 +720,7 @@ export type ProductionOrder = {
   previewImageStoragePath?: string;
   materialesApoyo?: ProductionOrderAttachment[];
   posiciones: ProductionOrderPosition[];
+  movimientosM2?: ProductionAreaMovement[];
   createdAt: string;
   createdBy: string;
   updatedAt?: string;

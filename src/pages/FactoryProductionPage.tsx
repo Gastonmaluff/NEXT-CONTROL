@@ -15,18 +15,17 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import ProductionPositionImage from "../components/production/ProductionPositionImage";
 import ProductionSupportMaterials from "../components/production/ProductionSupportMaterials";
 import { useAuth } from "../context/AuthContext";
-import { subscribeToProductionOrders, updateProductionOrder } from "../lib/firestore";
+import { recordProductionQuickAction, subscribeToProductionOrders, updateProductionOrderPosition } from "../lib/firestore";
 import type { ProductionOrder, ProductionOrderPosition } from "../types";
 import {
-  applyProductionQuickAction,
   addProductionMissingItem,
   getProductionOrderProgress,
-  getProductionOrderStatus,
   getProductionPositionCounts,
   getProductionMissingItems,
   resolveProductionMissingItem,
   type ProductionQuickAction
 } from "../utils/productionOrders";
+import { formatAreaM2, getProductionOrderArea, getProductionUnitAreaM2 } from "../utils/productionArea";
 
 export default function FactoryProductionPage() {
   const { profile } = useAuth();
@@ -66,17 +65,13 @@ export default function FactoryProductionPage() {
     { pending: 0, inProduction: 0, finished: 0 }
   ), [orders]);
 
-  async function updatePosition(order: ProductionOrder, nextPosition: ProductionOrderPosition, confirmation: string) {
+  async function updatePosition(order: ProductionOrder, positionId: string, transform: (position: ProductionOrderPosition) => ProductionOrderPosition, confirmation: string) {
     if (savingPositionId) return;
-    setSavingPositionId(nextPosition.id);
+    setSavingPositionId(positionId);
     setMessage("");
     setError("");
     try {
-      const positions = order.posiciones.map((position) => position.id === nextPosition.id ? nextPosition : position);
-      const updated = await updateProductionOrder(order.id, {
-        posiciones: positions,
-        estado: getProductionOrderStatus(positions)
-      });
+      const updated = await updateProductionOrderPosition(order.id, positionId, transform);
       setOrders((current) => current.map((item) => item.id === updated.id ? updated : item));
       setMessage(confirmation);
     } catch (saveError) {
@@ -87,24 +82,31 @@ export default function FactoryProductionPage() {
   }
 
   function runQuickAction(order: ProductionOrder, position: ProductionOrderPosition, action: ProductionQuickAction) {
-    const nextPosition = applyProductionQuickAction(position, action);
     const labels: Record<ProductionQuickAction, string> = {
       start: "Unidad marcada en producción.",
       finish: "Unidad terminada y guardada.",
       undo: "Corrección guardada. La unidad volvió a pendiente."
     };
-    void updatePosition(order, nextPosition, labels[action]);
+    if (savingPositionId) return;
+    setSavingPositionId(position.id);
+    setMessage("");
+    setError("");
+    void recordProductionQuickAction(order.id, position.id, action)
+      .then((updated) => {
+        setOrders((current) => current.map((item) => item.id === updated.id ? updated : item));
+        setMessage(labels[action]);
+      })
+      .catch((saveError) => setError(saveError instanceof Error ? saveError.message : "No se pudo guardar el avance."))
+      .finally(() => setSavingPositionId(""));
   }
 
   function reportMissing(order: ProductionOrder, position: ProductionOrderPosition, descripcion: string, observacion: string) {
-    const nextPosition = addProductionMissingItem(position, descripcion, observacion, profile?.nombre ?? "Taller");
-    if (nextPosition === position) return;
-    void updatePosition(order, nextPosition, "Faltante registrado para esta posición.");
+    if (!descripcion.trim()) return;
+    void updatePosition(order, position.id, (current) => addProductionMissingItem(current, descripcion, observacion, profile?.nombre ?? "Taller"), "Faltante registrado para esta posición.");
   }
 
   function resolveMissing(order: ProductionOrder, position: ProductionOrderPosition, missingItemId: string) {
-    const nextPosition = resolveProductionMissingItem(position, missingItemId, profile?.nombre ?? "Taller");
-    void updatePosition(order, nextPosition, "Faltante marcado como resuelto.");
+    void updatePosition(order, position.id, (current) => resolveProductionMissingItem(current, missingItemId, profile?.nombre ?? "Taller"), "Faltante marcado como resuelto.");
   }
 
   if (loading) return <StateCard text="Cargando tus órdenes de taller..." />;
@@ -133,7 +135,7 @@ export default function FactoryProductionPage() {
           savingPositionId={savingPositionId}
           onBack={() => setSelectedId("")}
           onAction={runQuickAction}
-          onSaveNote={(position, note) => void updatePosition(selected, { ...position, observaciones: note }, "Nota guardada.")}
+          onSaveNote={(position, note) => void updatePosition(selected, position.id, (current) => ({ ...current, observaciones: note }), "Nota guardada.")}
           onReportMissing={(position, descripcion, observacion) => reportMissing(selected, position, descripcion, observacion)}
           onResolveMissing={(position, missingItemId) => resolveMissing(selected, position, missingItemId)}
         />
@@ -175,6 +177,7 @@ function OrderWorkView({
   onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void;
 }) {
   const progress = getProductionOrderProgress(order.posiciones);
+  const area = getProductionOrderArea(order);
   return (
     <section className="space-y-4 sm:space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
@@ -184,7 +187,7 @@ function OrderWorkView({
           <span className="text-4xl font-black text-next-blue">{progress.percentage}%</span>
         </div>
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-next-blue to-cyan-400 transition-[width] duration-500" style={{ width: `${progress.percentage}%` }} /></div>
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.finished}/{progress.total} terminadas</span><span>{progress.inProduction} en proceso</span><span>{progress.pending} pendientes</span></div>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.finished}/{progress.total} terminadas</span><span>{progress.inProduction} en proceso</span><span>{progress.pending} pendientes</span><span>{formatAreaM2(area.finishedM2)} / {formatAreaM2(area.plannedM2)} m²</span></div>
         {order.observaciones ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-xs font-black uppercase text-next-blue">Instrucciones del trabajo</p><p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-next-text">{order.observaciones}</p></div> : null}
       </div>
 
@@ -211,6 +214,7 @@ function OrderWorkView({
 function PositionWorkCard({ position, busy, saving, onAction, onSaveNote, onReportMissing, onResolveMissing }: { position: ProductionOrderPosition; busy: boolean; saving: boolean; onAction: (action: ProductionQuickAction) => void; onSaveNote: (note: string) => void; onReportMissing: (descripcion: string, observacion: string) => void; onResolveMissing: (missingItemId: string) => void }) {
   const counts = getProductionPositionCounts(position);
   const progress = getProductionOrderProgress([position]);
+  const unitArea = getProductionUnitAreaM2(position);
   const missingItems = getProductionMissingItems(position);
   const [note, setNote] = useState(position.observaciones ?? "");
   const [missingOpen, setMissingOpen] = useState(false);
@@ -235,6 +239,7 @@ function PositionWorkCard({ position, busy, saving, onAction, onSaveNote, onRepo
         <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-next-light px-2.5 py-1 text-xs font-black text-next-blue">POS. {position.numero}</span><span className="text-xs font-bold uppercase text-next-muted">{position.codigo}</span></div>
         <h3 className="mt-3 text-base font-black uppercase text-next-text">{position.descripcion}</h3>
         <p className="mt-1 text-sm font-semibold text-next-muted">{position.ancho || position.alto ? `${position.ancho ?? "-"} × ${position.alto ?? "-"} mm` : "Sin medidas especificadas"}{position.color ? ` · ${position.color}` : ""}{position.linea ? ` · ${position.linea}` : ""}</p>
+        <p className="mt-1 text-xs font-bold text-next-blue">{unitArea === null ? "Sin m²: falta medida o área manual" : `${formatAreaM2(unitArea)} m² por unidad · ${formatAreaM2(unitArea * counts.finished)} m² terminados`}</p>
         {position.vidrio || position.detalles ? <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm font-semibold text-next-text">{position.vidrio ? <p><strong>Vidrio:</strong> {position.vidrio}</p> : null}{position.detalles ? <p className="mt-1 whitespace-pre-wrap"><strong>Indicaciones:</strong> {position.detalles}</p> : null}</div> : null}
 
         <div className="mt-4 rounded-2xl bg-next-bg p-4 text-center">

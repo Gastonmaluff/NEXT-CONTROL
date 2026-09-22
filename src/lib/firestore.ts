@@ -7,6 +7,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   setDoc,
   updateDoc,
   where,
@@ -28,7 +29,10 @@ import type {
   Obra,
   OportunidadCRM,
   ProductionEvent,
+  ProductionAreaGoals,
+  ProductionAreaMovement,
   ProductionOrder,
+  ProductionOrderPosition,
   Proveedor,
   ProgressActivityLog,
   ProgressMaterialReport,
@@ -45,6 +49,8 @@ import {
   calculateRubricProgress
 } from "../utils/progress";
 import { normalizeUnit } from "../utils/units";
+import { findLastActiveCompletion, getProductionUnitAreaM2 } from "../utils/productionArea";
+import { applyProductionQuickAction, getProductionOrderStatus, getProductionPositionCounts, type ProductionQuickAction } from "../utils/productionOrders";
 import { getOperationalItemState, normalizeInstallationStatus, normalizeProductionStatus, roundMeasure } from "../utils/workBreakdown";
 import { firestoreDb, isFirebaseConfigured } from "./firebase";
 import { getCurrentUserProfile } from "./auth";
@@ -112,6 +118,14 @@ async function getActiveProfile() {
     throw new Error("Tu usuario esta inactivo. Contacta al administrador.");
   }
   return profile;
+}
+
+async function getProductionActor() {
+  if (!shouldUseFirebase()) {
+    const demo = getStoredData().users.find((user) => user.uid === "demo-admin");
+    if (demo?.active) return demo;
+  }
+  return getActiveProfile();
 }
 
 async function getCollection<T extends { id: string }>(name: keyof typeof collections): Promise<T[]> {
@@ -801,6 +815,158 @@ export async function updateProductionOrder(id: string, data: Partial<Production
     updatedAt: now(),
     updatedBy: profile?.uid ?? "produccion"
   });
+}
+
+export async function recordProductionQuickAction(
+  orderId: string,
+  positionId: string,
+  action: ProductionQuickAction
+): Promise<ProductionOrder> {
+  const profile = await getProductionActor();
+  const apply = (order: ProductionOrder): Partial<ProductionOrder> => {
+    if (!(["admin", "gerencia"].includes(profile.role) || order.assignedToUid === profile.uid)) {
+      throw new Error("Esta orden no está asignada a tu usuario.");
+    }
+    const position = order.posiciones.find((item) => item.id === positionId);
+    if (!position) throw new Error("Esta posición ya no existe en la orden.");
+    const counts = getProductionPositionCounts(position);
+    if ((action === "start" && counts.pending === 0)
+      || (action === "finish" && counts.finished === counts.total)
+      || (action === "undo" && counts.finished === 0)) {
+      throw new Error("El avance cambió. Actualizá la orden antes de volver a tocar.");
+    }
+    const nextPosition = applyProductionQuickAction(position, action);
+    const positions = order.posiciones.map((item) => item.id === positionId ? nextPosition : item);
+    const movements = order.movimientosM2 ?? [];
+    let nextMovements = movements;
+    if (action !== "start") {
+      const lastCompletion = action === "undo" ? findLastActiveCompletion(movements, positionId) : undefined;
+      const areaM2 = action === "finish" ? getProductionUnitAreaM2(position) : lastCompletion?.areaM2;
+      if (areaM2 !== null && areaM2 !== undefined) {
+        const movement: ProductionAreaMovement = {
+          id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : generateId("m2"),
+          positionId,
+          positionNumber: position.numero,
+          type: action === "finish" ? "finished" : "correction",
+          areaM2,
+          createdAt: now(),
+          createdBy: profile.uid,
+          createdByName: profile.nombre,
+          ...(lastCompletion ? { revertsMovementId: lastCompletion.id } : {})
+        };
+        nextMovements = [...movements, movement];
+      }
+    }
+    return {
+      posiciones: positions,
+      estado: getProductionOrderStatus(positions),
+      ...(nextMovements !== movements ? { movimientosM2: nextMovements } : {}),
+      updatedAt: now(),
+      updatedBy: profile.uid
+    };
+  };
+
+  if (!shouldUseFirebase() || !firestoreDb) {
+    const current = getStoredData().ordenesProduccion.find((item) => item.id === orderId);
+    if (!current) throw new Error("No se encontró la orden de trabajo.");
+    return updateDocument<ProductionOrder>("ordenesProduccion", orderId, apply(current));
+  }
+
+  try {
+    const reference = doc(firestoreDb, collections.ordenesProduccion, orderId);
+    return await runTransaction(firestoreDb, async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists()) throw new Error("No se encontró la orden de trabajo.");
+      const current = { id: snapshot.id, ...snapshot.data() } as ProductionOrder;
+      const update = apply(current);
+      transaction.update(reference, sanitizeForFirestore(update) as Record<string, unknown>);
+      return { ...current, ...update };
+    });
+  } catch (error) {
+    throw withError(error, "No se pudo registrar el avance de producción.");
+  }
+}
+
+export async function updateProductionOrderPosition(
+  orderId: string,
+  positionId: string,
+  transform: (position: ProductionOrderPosition) => ProductionOrderPosition
+): Promise<ProductionOrder> {
+  const profile = await getProductionActor();
+  const apply = (order: ProductionOrder): Partial<ProductionOrder> => {
+    if (!(["admin", "gerencia"].includes(profile.role) || order.assignedToUid === profile.uid)) {
+      throw new Error("Esta orden no está asignada a tu usuario.");
+    }
+    if (!order.posiciones.some((position) => position.id === positionId)) {
+      throw new Error("Esta posición ya no existe en la orden.");
+    }
+    const positions = order.posiciones.map((position) => position.id === positionId ? transform(position) : position);
+    return { posiciones: positions, estado: getProductionOrderStatus(positions), updatedAt: now(), updatedBy: profile.uid };
+  };
+  if (!shouldUseFirebase() || !firestoreDb) {
+    const current = getStoredData().ordenesProduccion.find((item) => item.id === orderId);
+    if (!current) throw new Error("No se encontró la orden de trabajo.");
+    return updateDocument<ProductionOrder>("ordenesProduccion", orderId, apply(current));
+  }
+  try {
+    const reference = doc(firestoreDb, collections.ordenesProduccion, orderId);
+    return await runTransaction(firestoreDb, async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists()) throw new Error("No se encontró la orden de trabajo.");
+      const current = { id: snapshot.id, ...snapshot.data() } as ProductionOrder;
+      const update = apply(current);
+      transaction.update(reference, sanitizeForFirestore(update) as Record<string, unknown>);
+      return { ...current, ...update };
+    });
+  } catch (error) {
+    throw withError(error, "No se pudo actualizar la posición de producción.");
+  }
+}
+
+const defaultProductionAreaGoals: ProductionAreaGoals = { dailyM2: 0, weeklyM2: 0, monthlyM2: 0 };
+const demoProductionGoalsKey = "next-control-production-area-goals";
+
+export function subscribeToProductionAreaGoals(
+  workerUid: string,
+  onGoals: (goals: ProductionAreaGoals) => void,
+  onError: (error: Error) => void
+): () => void {
+  if (!workerUid) {
+    onGoals(defaultProductionAreaGoals);
+    return () => undefined;
+  }
+  if (!shouldUseFirebase() || !firestoreDb) {
+    try {
+      const stored = localStorage.getItem(`${demoProductionGoalsKey}:${workerUid}`);
+      onGoals(stored ? { ...defaultProductionAreaGoals, ...JSON.parse(stored) } : defaultProductionAreaGoals);
+    } catch {
+      onGoals(defaultProductionAreaGoals);
+    }
+    return () => undefined;
+  }
+  return onSnapshot(
+    doc(firestoreDb, "configuracionProduccion", workerUid),
+    (snapshot) => onGoals(snapshot.exists() ? { ...defaultProductionAreaGoals, ...snapshot.data() } as ProductionAreaGoals : defaultProductionAreaGoals),
+    (error) => onError(withError(error, "No se pudieron cargar las metas de producción."))
+  );
+}
+
+export async function saveProductionAreaGoals(workerUid: string, goals: Pick<ProductionAreaGoals, "dailyM2" | "weeklyM2" | "monthlyM2">): Promise<void> {
+  const profile = await getProductionActor();
+  if (!["admin", "gerencia"].includes(profile.role)) throw new Error("Solo administración puede cambiar las metas.");
+  if (!workerUid) throw new Error("Elegí al encargado de producción.");
+  const values = [goals.dailyM2, goals.weeklyM2, goals.monthlyM2];
+  if (values.some((value) => !Number.isFinite(value) || value < 0)) throw new Error("Las metas deben ser números no negativos.");
+  const record: ProductionAreaGoals = { ...goals, updatedAt: now(), updatedBy: profile.uid };
+  if (!shouldUseFirebase() || !firestoreDb) {
+    localStorage.setItem(`${demoProductionGoalsKey}:${workerUid}`, JSON.stringify(record));
+    return;
+  }
+  try {
+    await setDoc(doc(firestoreDb, "configuracionProduccion", workerUid), record);
+  } catch (error) {
+    throw withError(error, "No se pudieron guardar las metas de producción.");
+  }
 }
 
 export async function deleteProductionOrder(order: ProductionOrder): Promise<void> {

@@ -44,6 +44,8 @@ import ProductionOrderPreviewDialog from "../components/production/ProductionOrd
 import ProductionAttachmentsComposer from "../components/production/ProductionAttachmentsComposer";
 import ManualProductionOrderModal from "../components/production/ManualProductionOrderModal";
 import DeleteProductionOrderModal from "../components/production/DeleteProductionOrderModal";
+import ProductionAreaDashboard from "../components/production/ProductionAreaDashboard";
+import { formatAreaM2, getProductionOrderArea, getProductionUnitAreaM2 } from "../utils/productionArea";
 
 const priorityLabels: Record<ProductionOrderPriority, string> = {
   urgente: "Urgente",
@@ -199,6 +201,8 @@ export default function ProductionPage() {
         <Metric icon={AlertCircle} label="Faltantes" value={summary.missing} tone="orange" />
       </section>
 
+      <ProductionAreaDashboard orders={orders} workers={workers} canEditGoals={canCreate} />
+
       {loading ? <StateCard text="Cargando órdenes de producción..." /> : orders.length ? (
         <section className="grid gap-4">
           {orders.map((order) => (
@@ -342,6 +346,11 @@ function ProductionOrderModal({
       onError("Elegí el responsable de Producción / Taller que recibirá esta orden.");
       return;
     }
+    if (parsed.posiciones.some((position) => !Number.isInteger(position.cantidadTotal) || position.cantidadTotal < 1
+      || [position.ancho, position.alto].some((value) => value !== undefined && (!Number.isFinite(value) || value <= 0)))) {
+      onError("Revisá las cantidades y medidas: deben ser números positivos.");
+      return;
+    }
 
     setBusy(true);
     onError("");
@@ -439,11 +448,26 @@ function ProductionOrderModal({
 }
 
 function PositionEditor({ position, onChange, onRemove }: { position: ProductionOrderPosition; onChange: (data: Partial<ProductionOrderPosition>) => void; onRemove: () => void }) {
-  return <article className="grid gap-3 rounded-xl border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end"><Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} /><Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} /><Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} /><Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }); }} /><button className="inline-flex h-10 items-center justify-center rounded-lg border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button><div className="grid gap-2 text-xs font-semibold text-next-muted md:col-span-5 md:grid-cols-4"><span>Medida: {position.ancho ?? "-"} × {position.alto ?? "-"} mm</span><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div></article>;
+  const area = getProductionUnitAreaM2(position);
+  const setMeasure = (key: "ancho" | "alto", value: string) => onChange({ [key]: value.trim() ? Number(value) : undefined });
+  return <article className="grid gap-3 rounded-xl border border-slate-200 bg-next-bg p-3 md:grid-cols-[90px_150px_minmax(0,1fr)_130px_44px] md:items-end">
+    <Field label="Posición" value={position.numero} onChange={(value) => onChange({ numero: value })} />
+    <Field label="Código" value={position.codigo ?? ""} onChange={(value) => onChange({ codigo: value })} />
+    <Field label="Descripción" value={position.descripcion} onChange={(value) => onChange({ descripcion: value })} />
+    <Field label="Cantidad" type="number" value={String(position.cantidadTotal)} onChange={(value) => { const quantity = Math.max(0, Number(value) || 0); onChange({ cantidadTotal: quantity, cantidadPendiente: quantity, cantidadEnProduccion: 0, cantidadTerminada: 0, estado: "pendiente" }); }} />
+    <button className="inline-flex h-10 items-center justify-center rounded-lg border border-red-100 text-next-red" type="button" onClick={onRemove} aria-label="Eliminar posición"><X className="h-4 w-4" /></button>
+    <div className="grid gap-3 md:col-span-5 md:grid-cols-[140px_140px_minmax(0,1fr)] md:items-end">
+      <Field label="Ancho (mm)" type="number" value={position.ancho === undefined ? "" : String(position.ancho)} onChange={(value) => setMeasure("ancho", value)} />
+      <Field label="Alto (mm)" type="number" value={position.alto === undefined ? "" : String(position.alto)} onChange={(value) => setMeasure("alto", value)} />
+      <p className="pb-2 text-xs font-bold text-next-blue">{area === null ? "Falta medida para calcular m²" : `${formatAreaM2(area)} m² por unidad · ${formatAreaM2(area * position.cantidadTotal)} m² en la posición`}</p>
+    </div>
+    <div className="grid gap-2 text-xs font-semibold text-next-muted md:col-span-5 md:grid-cols-3"><span>Color: {position.color ?? "-"}</span><span>Línea: {position.linea ?? "-"}</span><span>Imagen de referencia guardada</span></div>
+  </article>;
 }
 
 function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMaterial, canDelete, onDelete, savingMissingId, onResolveMissing }: { order: ProductionOrder; workers: SystemUser[]; assigning: boolean; onAssign: (uid: string) => void; onPreview: () => void; onAddMaterial: () => void; canDelete: boolean; onDelete: () => void; savingMissingId: string; onResolveMissing: (position: ProductionOrderPosition, missingItemId: string) => void }) {
   const progress = getProductionOrderProgress(order.posiciones);
+  const area = getProductionOrderArea(order);
   const missingCount = order.posiciones.reduce((sum, position) => sum + getProductionMissingItems(position).length, 0);
 
   return (
@@ -484,17 +508,20 @@ function OrderCard({ order, workers, assigning, onAssign, onPreview, onAddMateri
             <span className="text-3xl font-black text-next-blue">{progress.percentage}%</span>
           </div>
           <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-next-blue to-cyan-400 transition-[width]" style={{ width: `${progress.percentage}%` }} /></div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.pending} pendientes</span><span>{progress.inProduction} en producción</span><span className="text-next-green">{progress.finished} terminadas</span></div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-next-muted"><span>{progress.pending} pendientes</span><span>{progress.inProduction} en producción</span><span className="text-next-green">{progress.finished} terminadas</span><span className="text-next-blue">{formatAreaM2(area.finishedM2)} / {formatAreaM2(area.plannedM2)} m²</span></div>
+          {area.unitsWithoutArea > 0 ? <p className="mt-2 text-xs font-bold text-next-orange">{area.unitsWithoutArea} unidad{area.unitsWithoutArea === 1 ? "" : "es"} sin área definida</p> : null}
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {order.posiciones.map((position) => {
             const itemProgress = getProductionOrderProgress([position]);
+            const positionArea = getProductionOrderArea({ ...order, posiciones: [position] });
             const missingItems = getProductionMissingItems(position);
             return (
               <div key={position.id} className="rounded-xl border border-slate-100 px-3 py-3">
                 <div className="flex items-start justify-between gap-2"><p className="text-xs font-black text-next-text">POS. {position.numero} · {position.descripcion}</p><span className="shrink-0 text-sm font-black text-next-blue">{itemProgress.percentage}%</span></div>
                 <p className="mt-1 text-xs font-semibold text-next-muted">{position.ancho || position.alto ? `${position.ancho ?? "-"} × ${position.alto ?? "-"} mm · ` : ""}{itemProgress.finished}/{itemProgress.total} terminadas</p>
+                <p className="mt-1 text-xs font-bold text-next-blue">{formatAreaM2(positionArea.finishedM2)} / {formatAreaM2(positionArea.plannedM2)} m²</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-next-blue" style={{ width: `${itemProgress.percentage}%` }} /></div>
                 {missingItems.length ? (
                   <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-2.5">

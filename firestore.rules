@@ -53,6 +53,16 @@ service cloud.firestore {
       return isManagement();
     }
 
+    function isProductionMovementAppendOnly() {
+      let before = resource.data.get("movimientosM2", []);
+      let after = request.resource.data.get("movimientosM2", []);
+      return before is list
+        && after is list
+        && after.size() == before.size() + 1
+        && after == before.concat([after[before.size()]])
+        && after[before.size()].createdBy == request.auth.uid;
+    }
+
     function canWriteOperational() {
       return isActiveUser()
         && userRole() in ["admin", "gerencia", "administracion", "supervisor", "fiscalizador", "encargado", "equipo_campo", "campo", "instalador", "produccion", "taller"];
@@ -280,8 +290,17 @@ service cloud.firestore {
           canReadProduction()
           && resource.data.assignedToUid == request.auth.uid
           && request.resource.data.assignedToUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["posiciones", "estado", "updatedAt", "updatedBy"])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["posiciones", "estado", "movimientosM2", "updatedAt", "updatedBy"])
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(["movimientosM2"])
+            || isProductionMovementAppendOnly()
+          )
         );
+    }
+
+    match /configuracionProduccion/{id} {
+      allow read: if isManagement() || (canReadProduction() && id == request.auth.uid);
+      allow write: if isManagement();
     }
 
     match /instalacionEventos/{id} {

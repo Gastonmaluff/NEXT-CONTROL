@@ -16,6 +16,7 @@ type ManualItem = {
   codigo: string;
   ancho: string;
   alto: string;
+  areaM2Manual: string;
   color: string;
   linea: string;
   vidrio: string;
@@ -32,7 +33,7 @@ type Props = {
 function emptyItem(): ManualItem {
   return {
     id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random()}`,
-    descripcion: "", cantidad: "1", codigo: "", ancho: "", alto: "", color: "", linea: "", vidrio: "", detalles: "", imagen: null
+    descripcion: "", cantidad: "1", codigo: "", ancho: "", alto: "", areaM2Manual: "", color: "", linea: "", vidrio: "", detalles: "", imagen: null
   };
 }
 
@@ -72,6 +73,10 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
       setError("Las medidas, cuando se indiquen, deben ser mayores a cero.");
       return;
     }
+    if (items.some((item) => item.areaM2Manual !== "" && (!Number.isFinite(Number(item.areaM2Manual)) || Number(item.areaM2Manual) <= 0))) {
+      setError("Los m² manuales por unidad deben ser mayores a cero.");
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -92,6 +97,7 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
           codigo: item.codigo.trim() || undefined,
           ancho: item.ancho ? Number(item.ancho) : undefined,
           alto: item.alto ? Number(item.alto) : undefined,
+          areaM2Manual: item.areaM2Manual ? Number(item.areaM2Manual) : undefined,
           color: item.color.trim() || undefined,
           linea: item.linea.trim() || undefined,
           vidrio: item.vidrio.trim() || undefined,
@@ -165,6 +171,8 @@ export default function ManualProductionOrderModal({ workers, onClose, onCreated
               <TextField label="Código o referencia" value={item.codigo} onChange={(value) => updateItem(item.id, { codigo: value })} />
               <TextField label="Ancho (mm)" type="number" min="0.01" step="any" value={item.ancho} onChange={(value) => updateItem(item.id, { ancho: value })} />
               <TextField label="Alto (mm)" type="number" min="0.01" step="any" value={item.alto} onChange={(value) => updateItem(item.id, { alto: value })} />
+              <TextField label="m² por unidad (opcional)" type="number" min="0.000001" step="any" value={item.areaM2Manual} onChange={(value) => updateItem(item.id, { areaM2Manual: value })} />
+              <p className="self-end pb-2 text-xs font-semibold text-next-muted sm:col-span-2 lg:col-span-4">Si indicás m² manuales, se usarán en vez de ancho × alto. Dejalo vacío para calcular automáticamente con las medidas en mm.</p>
               <TextField label="Color / acabado" value={item.color} onChange={(value) => updateItem(item.id, { color: value })} />
               <TextField label="Línea / material" value={item.linea} onChange={(value) => updateItem(item.id, { linea: value })} />
               <TextField label="Vidrio (si aplica)" value={item.vidrio} onChange={(value) => updateItem(item.id, { vidrio: value })} />
