@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import type { ReactElement } from "react";
+import { lazy, Suspense, type ReactElement } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { canManageFinancesForUser, canManageProductionOrders, canManageUsers, canViewModule, getOperationalPathByRole } from "./lib/roles";
@@ -19,6 +19,9 @@ import SupervisorPage from "./pages/SupervisorPage";
 import SuppliersPage from "./pages/SuppliersPage";
 import TasksPage from "./pages/TasksPage";
 import UsersPage from "./pages/UsersPage";
+
+// Load the 3D view only when its guarded route is opened, including deployed builds.
+const InteractiveFacilityView = lazy(() => import("./experimental/facility/InteractiveFacilityView"));
 
 export default function App() {
   return (
@@ -64,6 +67,7 @@ function AppRoutes() {
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to={operationalHome} replace />} />
             <Route path="/control" element={<ModuleGuard moduleName="control"><DashboardPage /></ModuleGuard>} />
+            <Route path="/vista-interactiva" element={<ModuleGuard moduleName="control"><Suspense fallback={<p role="status" className="p-6 text-sm text-next-muted">Cargando Vista Interactiva…</p>}><InteractiveFacilityView /></Suspense></ModuleGuard>} />
             <Route path="/dashboard" element={<Navigate to="/control" replace />} />
             <Route path="/clientes" element={<ModuleGuard moduleName="clientes"><CrmPage /></ModuleGuard>} />
             <Route path="/crm" element={<Navigate to="/clientes" replace />} />

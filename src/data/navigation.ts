@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Scan,
   Boxes,
   BriefcaseBusiness,
   Calculator,
@@ -38,6 +39,7 @@ export const navigationItems: Array<{
   { label: "Produccion / avances", path: "/produccion", icon: Factory, animClass: "icon-produccion", moduleName: "produccion", roles: ["produccion", "taller"] },
   { label: "Inventario",      path: "/inventario",          icon: Boxes,            animClass: "icon-inventario",    moduleName: "inventario" },
   { label: "Reportes",        path: "/reportes",            icon: BarChart3,        animClass: "icon-reportes",      moduleName: "reportes" },
+  { label: "Vista Interactiva", path: "/vista-interactiva", icon: Scan, animClass: "icon-control", moduleName: "control" },
   { label: "Configuracion",   path: "/configuracion",       icon: Settings,         animClass: "icon-settings",      moduleName: "configuracion" },
   { label: "Usuarios",        path: "/usuarios",            icon: UserCog,          animClass: "icon-usuarios",      moduleName: "usuarios", adminOnly: true }
 ];
