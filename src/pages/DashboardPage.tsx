@@ -25,6 +25,7 @@ import type { Cobro, Cuadrilla, Obra, ProgressReport, WorkProgressRubric } from 
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, isDashboardMonth } from "../utils/dashboard";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -38,6 +39,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [newWorkOpen, setNewWorkOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => getCurrentDashboardMonth());
 
   useEffect(() => {
     async function load() {
@@ -68,8 +70,7 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const activeObras = obras.filter((obra) => !["Finalizada", "Cobrado"].includes(obra.estado));
-    const totalMonto = obras.reduce((sum, obra) => sum + obra.montoAprobado, 0);
-    const totalCobrado = cobros.reduce((sum, cobro) => sum + cobro.monto, 0);
+    const monthlyTotals = calculateMonthlyDashboardTotals(obras, cobros, selectedMonth);
     const saldoPendiente = obras.reduce((sum, obra) => sum + obra.saldoPendienteCobro, 0);
     const atrasadas = obras.filter((obra) => obra.estado === "Atrasada");
     const pendienteProduccion = obras.filter((obra) =>
@@ -78,8 +79,8 @@ export default function DashboardPage() {
 
     return {
       activeObras,
-      totalMonto,
-      totalCobrado,
+      totalMonto: monthlyTotals.ventas,
+      totalCobrado: monthlyTotals.cobrado,
       saldoPendiente,
       atrasadas,
       pendienteProduccion,
@@ -88,7 +89,7 @@ export default function DashboardPage() {
       m2InstaladosSemana: calculateInstalledM2ThisWeek(progressReports, progressRubrics),
       flujoProyectado: saldoPendiente
     };
-  }, [cobros, obras, progressReports, progressRubrics]);
+  }, [cobros, obras, progressReports, progressRubrics, selectedMonth]);
 
   const statusRows = useMemo(() => {
     const total = Math.max(obras.length, 1);
@@ -143,6 +144,27 @@ export default function DashboardPage() {
           {message}
         </div>
       ) : null}
+
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <label htmlFor="control-month" className="text-sm font-bold text-next-text">Mes de ventas y cobros</label>
+          <p className="mt-1 text-xs leading-5 text-next-muted">
+            Ventas por fecha de inicio de la obra; cobros por fecha del cobro. Los saldos y las alertas son generales.
+          </p>
+        </div>
+        <input
+          id="control-month"
+          className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-next-text sm:w-auto"
+          type="month"
+          required
+          min="0001-01"
+          max="9999-12"
+          value={selectedMonth}
+          onChange={(event) => {
+            if (isDashboardMonth(event.target.value)) setSelectedMonth(event.target.value);
+          }}
+        />
+      </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} />
