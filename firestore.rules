@@ -283,9 +283,9 @@ service cloud.firestore {
 
     match /ordenesProduccion/{id} {
       allow read: if canReadProductionOrder(resource.data);
-      allow create: if canManageProductionOrder();
-      allow delete: if isAdmin();
-      allow update: if canManageProductionOrder()
+      allow create: if canManageProductionOrder() && (isAdmin() || request.resource.data.get("fieldReferencesApproved", false) == false);
+      allow delete: if isAdmin() && !exists(/databases/$(database)/documents/importacionesInstalacion/$(id));
+      allow update: if (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(["fieldReferencesApproved"])) && (canManageProductionOrder()
         || (
           canReadProduction()
           && resource.data.assignedToUid == request.auth.uid
@@ -295,7 +295,7 @@ service cloud.firestore {
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(["movimientosM2"])
             || isProductionMovementAppendOnly()
           )
-        );
+        ));
     }
 
     match /configuracionProduccion/{id} {
@@ -314,6 +314,128 @@ service cloud.firestore {
       allow create: if isActiveUser() && canCreateOperationalRecord();
       allow update, delete: if isManagement();
     }
+
+    function installationAdmin() {
+      return isAdmin();
+    }
+    function installationReader(data) {
+      return installationAdmin() || (isActiveUser()
+        && userRole() in ["instalador", "equipo_campo", "campo"]
+        && isAssignedToWork(data.obraId)
+        && (isAssignedTeam(data.get("teamId", "")) || isAssignedTeam(data.get("creditedTeamId", ""))));
+    }
+    function installationWorker(data) {
+      return installationReader(data) && isAssignedTeam(data.teamId);
+    }
+    function installationStagesDone(data) {
+      return (!data.required.s0 || data.stages.s0)
+        && (!data.required.s1 || data.stages.s1)
+        && (!data.required.s2 || data.stages.s2)
+        && (!data.required.s3 || data.stages.s3);
+    }
+    function installationAuditAppend() {
+      let before = resource.data.history;
+      let after = request.resource.data.history;
+      return after is list && before is list && after.size() == before.size() + 1
+        && after == before.concat([after[before.size()]])
+        && after[before.size()].by == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+    }
+    function installationStageChange() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status in ["pendiente", "en_proceso"]
+        && after.status in ["pendiente", "en_proceso"]
+        && after.stages.keys().hasOnly(["s0", "s1", "s2", "s3"])
+        && after.stages.s0 is bool && after.stages.s1 is bool
+        && after.stages.s2 is bool && after.stages.s3 is bool
+        && (!after.stages.diff(before.stages).affectedKeys().hasAny(["s0"]) || before.required.s0)
+        && (!after.stages.diff(before.stages).affectedKeys().hasAny(["s1"]) || before.required.s1)
+        && (!after.stages.diff(before.stages).affectedKeys().hasAny(["s2"]) || before.required.s2)
+        && (!after.stages.diff(before.stages).affectedKeys().hasAny(["s3"]) || before.required.s3)
+        && after.diff(before).affectedKeys().hasOnly(["stages", "status", "photoUrl", "history", "updatedAt", "updatedBy"]);
+    }
+    function installationCompletion() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status in ["pendiente", "en_proceso"]
+        && installationStagesDone(before)
+        && before.photoUrl is string && before.photoUrl.size() > 0
+        && before.teamId.size() > 0
+        && after.status == (before.approvalRequired ? "declarado" : "validado")
+        && after.completedAt == request.time
+        && after.completedBy == request.auth.uid
+        && after.creditedTeamId == before.teamId && after.creditedTeamName == before.teamName
+        && (before.approvalRequired ? (after.validatedAt == "" && after.validatedBy == "")
+          : (after.validatedAt == request.time && after.validatedBy == request.auth.uid))
+        && after.diff(before).affectedKeys().hasOnly(["status", "completedAt", "completedBy", "creditedTeamId", "creditedTeamName", "validatedAt", "validatedBy", "updatedAt", "updatedBy", "history"]);
+    }
+    match /unidadesInstalacion/{id} {
+      allow read: if installationReader(resource.data);
+      allow create: if installationAdmin()
+        && request.resource.data.id == id
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.value is number && request.resource.data.value > 0
+        && request.resource.data.measure in ["m2", "ml", "un"]
+        && request.resource.data.status == "pendiente"
+        && request.resource.data.completedAt == ""
+        && request.resource.data.completedBy == ""
+        && request.resource.data.creditedTeamId == ""
+        && request.resource.data.validatedAt == ""
+        && (request.resource.data.required.s0 || request.resource.data.required.s1 || request.resource.data.required.s2 || request.resource.data.required.s3)
+        && (!exists(/databases/$(database)/documents/configuracionInstalaciones/metas)
+          || !get(/databases/$(database)/documents/configuracionInstalaciones/metas).data.get("approvalByWork", {}).get(request.resource.data.obraId, false)
+          || request.resource.data.approvalRequired)
+        && request.resource.data.stages == {"s0": false, "s1": false, "s2": false, "s3": false};
+      allow update: if installationAuditAppend()
+        && ((installationAdmin()
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.obraId == resource.data.obraId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.value > 0)
+        || (installationWorker(resource.data) && (installationStageChange() || installationCompletion())));
+      allow delete: if false;
+    }
+    match /configuracionInstalaciones/{id} {
+      allow read: if installationAdmin() || (isActiveUser() && userRole() in ["instalador", "equipo_campo", "campo"]);
+      allow create, update: if installationAdmin();
+      allow delete: if false;
+    }
+    match /importacionesInstalacion/{id} {
+      allow read, create, update: if installationAdmin();
+      allow delete: if false;
+    }
+    function installationLogistics(data) {
+      return isActiveUser() && userRole() == "encargado" && isAssignedToWork(data.obraId) && data.material == true;
+    }
+    match /problemasInstalacion/{id} {
+      allow read: if installationReader(resource.data) || installationLogistics(resource.data);
+      // An idempotent create reads its random target before writing. Missing records
+      // contain no work data; existing records retain the scoped read rules above.
+      allow get: if !exists(/databases/$(database)/documents/problemasInstalacion/$(id))
+        && isActiveUser() && userRole() in ["admin", "instalador", "equipo_campo", "campo"];
+      allow create: if (installationAdmin()
+        || installationWorker(get(/databases/$(database)/documents/unidadesInstalacion/$(request.resource.data.unitId)).data))
+        && request.resource.data.id == id
+        && request.resource.data.obraId == get(/databases/$(database)/documents/unidadesInstalacion/$(request.resource.data.unitId)).data.obraId
+        && request.resource.data.teamId == get(/databases/$(database)/documents/unidadesInstalacion/$(request.resource.data.unitId)).data.teamId
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.status == "pendiente"
+        && request.resource.data.delivery == "pendiente"
+        && request.resource.data.reason in ["Falta vidrio", "Falta carpintería", "Falta material", "Falta accesorios", "Problema fabricación", "Medidas incorrectas", "Obra no preparada", "Problema cliente", "Otro"]
+        && request.resource.data.material == (request.resource.data.reason in ["Falta vidrio", "Falta carpintería", "Falta material", "Falta accesorios"]);
+      allow update: if (installationAdmin() || installationLogistics(resource.data))
+        && installationAuditAppend()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "delivery", "neededOn", "updatedBy", "updatedAt", "history"])
+        && request.resource.data.status in ["pendiente", "en_gestion", "resuelto"]
+        && request.resource.data.delivery in ["pendiente", "preparado", "entregado", "no_disponible"];
+      allow delete: if false;
+    }
+
 
     match /{document=**} {
       allow read, write: if false;

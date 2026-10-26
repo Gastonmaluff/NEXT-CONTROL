@@ -40,6 +40,15 @@ service firebase.storage {
     function canUseWork(obraId) {
       return isManagement() || isAssignedToWork(obraId) || isWorkCreator(obraId);
     }
+    function canReadProductionArtifact(orderId) {
+      return isManagement() || (active()
+        && firestore.exists(/databases/(default)/documents/ordenesProduccion/$(orderId))
+        && ((userDoc().role in ["produccion", "taller"] && firestore.get(/databases/(default)/documents/ordenesProduccion/$(orderId)).data.get("assignedToUid", "") == request.auth.uid)
+          || (firestore.get(/databases/(default)/documents/ordenesProduccion/$(orderId)).data.get("fieldReferencesApproved", false) == true && isAssignedToWork(firestore.get(/databases/(default)/documents/ordenesProduccion/$(orderId)).data.get("obraId", "")))));
+    }
+    function productionFilesUnreferenced(orderId) {
+      return !firestore.exists(/databases/(default)/documents/importacionesInstalacion/$(orderId));
+    }
 
     function canUploadWorkImage(obraId) {
       return isManagement()
@@ -82,19 +91,46 @@ service firebase.storage {
     }
 
     match /ordenes-produccion/{orderId}/adjuntos/{fileName} {
-      allow read: if active();
-      allow create, update: if isManagement()
+      allow read: if canReadProductionArtifact(orderId);
+      allow create, update: if request.resource != null && isManagement() && (resource == null || productionFilesUnreferenced(orderId))
         && request.resource.size <= 15 * 1024 * 1024;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && productionFilesUnreferenced(orderId);
     }
 
     match /ordenes-produccion/{orderId}/{allPaths=**} {
-      allow read: if active();
-      allow create, update: if isManagement()
+      allow read: if canReadProductionArtifact(orderId);
+      allow create, update: if request.resource != null && isManagement() && (resource == null || productionFilesUnreferenced(orderId))
         && request.resource.contentType in ["application/pdf", "image/png", "image/jpeg", "image/webp"]
         && request.resource.size <= 15 * 1024 * 1024;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && productionFilesUnreferenced(orderId);
     }
+
+    match /installation-evidence/{unitId}/{fileName} {
+      function unit() {
+        return firestore.get(/databases/(default)/documents/unidadesInstalacion/$(unitId)).data;
+      }
+      function assignedInstallationWorker() {
+        return active() && userDoc().role in ["instalador", "equipo_campo", "campo"]
+          && isAssignedToWork(unit().obraId)
+          && userDoc().assignedTeamIds is list
+          && unit().teamId in userDoc().assignedTeamIds;
+      }
+      allow read: if isAdmin() || (active() && isAssignedToWork(unit().obraId)
+        && userDoc().role in ["instalador", "equipo_campo", "campo"]
+        && userDoc().assignedTeamIds is list
+        && (unit().teamId in userDoc().assignedTeamIds || unit().creditedTeamId in userDoc().assignedTeamIds));
+      allow create: if resource == null && (isAdmin() || assignedInstallationWorker())
+        && isAllowedImage() && isAllowedImageSize();
+      allow update, delete: if false;
+    }
+    match /installation-support/{unitId}/{fileName} {
+      allow read: if isAdmin() || (active() && firestore.get(/databases/(default)/documents/unidadesInstalacion/$(unitId)).data.get("fieldReferencesApproved", false) == true && isAssignedToWork(firestore.get(/databases/(default)/documents/unidadesInstalacion/$(unitId)).data.obraId));
+      allow create: if resource == null && isAdmin() && request.resource != null
+        && request.resource.contentType in ["application/pdf", "image/jpeg", "image/png", "image/webp"]
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
 
     match /{allPaths=**} {
       allow read, write: if false;

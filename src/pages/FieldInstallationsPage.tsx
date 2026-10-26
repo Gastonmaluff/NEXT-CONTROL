@@ -1,3 +1,5 @@
+import InstallationLogisticsPanel from "../components/installations/InstallationLogisticsPanel";
+import InstallationUnitsPanel from "../components/installations/InstallationUnitsPanel";
 import {
   Bell,
   BriefcaseBusiness,
@@ -461,6 +463,8 @@ export default function FieldInstallationsPage() {
   return (
     <main className="min-h-screen bg-[#f6f7f9] px-4 py-4 text-next-text">
       <div className="mx-auto max-w-xl space-y-4 pb-8 lg:max-w-3xl">
+
+
         <header className="flex items-center justify-between rounded-[1.35rem] border border-white/80 bg-white/90 px-4 py-3 shadow-[0_18px_44px_rgba(15,23,42,0.06)] backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
             <BrandLogo variant="compact" className="shrink-0 rounded-2xl bg-next-navy p-1 shadow-sm" />
@@ -479,6 +483,9 @@ export default function FieldInstallationsPage() {
             </button>
           </div>
         </header>
+        <InstallationUnitsPanel field />
+        <InstallationLogisticsPanel />
+        <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-bold text-next-blue">Jornadas y tareas existentes</summary><div className="mt-4 space-y-4">
 
         {message ? <Notice tone="success" text={message} /> : null}
         {warning ? <Notice tone="warning" text={warning} /> : null}
@@ -691,6 +698,8 @@ export default function FieldInstallationsPage() {
             )) : <EmptyState text="Todavia no hay actividad registrada hoy." />}
           </div>
         </section>
+        </div>
+        </details>
       </div>
 
       {selectedTask && !pendingLocationAction ? (

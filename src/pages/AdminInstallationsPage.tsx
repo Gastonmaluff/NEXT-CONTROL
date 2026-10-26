@@ -1,3 +1,5 @@
+import InstallationLogisticsPanel from "../components/installations/InstallationLogisticsPanel";
+import InstallationUnitsPanel from "../components/installations/InstallationUnitsPanel";
 import { Camera, CheckCircle2, Clock3, ExternalLink, MapPin, Plus, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import DataCard from "../components/ui/DataCard";
@@ -134,6 +136,8 @@ export default function AdminInstallationsPage() {
 
   return (
     <div className="min-w-0 space-y-6">
+
+
       <div className="min-w-0">
         <p className="text-sm font-black uppercase text-next-blue">Campo admin</p>
         <h1 className="mt-1 text-3xl font-black tracking-normal">INSTALACIONES</h1>
@@ -141,6 +145,8 @@ export default function AdminInstallationsPage() {
           Seguimiento administrativo de cuadrillas, jornadas, ubicaciones, fotos y tareas ejecutadas en obra.
         </p>
       </div>
+      <InstallationUnitsPanel />
+      <InstallationLogisticsPanel />
       <div className="flex justify-end">
         <button className="inline-flex h-10 items-center gap-2 rounded-md bg-next-blue px-4 text-xs font-black text-white" type="button" onClick={() => setShowAssignment(true)}>
           <Plus className="h-4 w-4" aria-hidden="true" />

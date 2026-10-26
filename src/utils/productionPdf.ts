@@ -1,3 +1,4 @@
+import { fieldText } from "./installationUnits";
 import { GlobalWorkerOptions, getDocument, type PDFPageProxy } from "pdfjs-dist";
 import type { ProductionOrderPosition } from "../types";
 
@@ -24,7 +25,7 @@ export async function parseProductionPdf(file: File): Promise<ParsedProductionPd
     .join("\n");
 
   const header = parseHeader(text);
-  const positions = parsePositions(text);
+  const positions = parsePositions(text).map(position => ({...position,descripcion:fieldText(position.descripcion),detalles:fieldText(position.detalles ?? ""),observaciones:fieldText(position.observaciones ?? "")}));
   if (!positions.length) {
     throw new Error("No se encontraron posiciones de fabricación en el PDF. Revisá que tenga el formato de items.");
   }

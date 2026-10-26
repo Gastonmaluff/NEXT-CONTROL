@@ -1,3 +1,4 @@
+import InstallationLogisticsPanel from "./components/installations/InstallationLogisticsPanel";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { lazy, Suspense, type ReactElement } from "react";
 import AppLayout from "./components/layout/AppLayout";
@@ -63,6 +64,7 @@ function AppRoutes() {
         <>
           <Route path="/instalaciones/mobile" element={<FieldInstallationsPage />} />
           <Route path="/instalaciones/campo" element={<FieldInstallationsPage />} />
+          <Route path="/instalaciones/logistica" element={<main className="min-h-screen bg-next-bg p-4"><InstallationLogisticsPanel /></main>} />
           <Route path="/campo" element={<FieldInstallationsPage />} />
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to={operationalHome} replace />} />

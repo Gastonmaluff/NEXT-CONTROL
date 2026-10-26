@@ -1,4 +1,61 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "problemasInstalacion",
+      "fields": [
+        {
+          "fieldPath": "obraId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "material",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION"
+    },
+    {
+      "collectionGroup": "unidadesInstalacion",
+      "fields": [
+        {
+          "fieldPath": "obraId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "teamId",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION"
+    },
+    {
+      "collectionGroup": "unidadesInstalacion",
+      "fields": [
+        {
+          "fieldPath": "obraId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "creditedTeamId",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION"
+    },
+    {
+      "collectionGroup": "problemasInstalacion",
+      "fields": [
+        {
+          "fieldPath": "obraId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "teamId",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION"
+    }
+  ],
   "fieldOverrides": []
 }

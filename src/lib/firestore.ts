@@ -970,6 +970,11 @@ export async function saveProductionAreaGoals(workerUid: string, goals: Pick<Pro
 }
 
 export async function deleteProductionOrder(order: ProductionOrder): Promise<void> {
+  // Installation units keep original PDF/drawing URLs: do not delete their source files.
+  const hasInstallations = shouldUseFirebase() && firestoreDb
+    ? !(await getDocs(query(collection(firestoreDb, "unidadesInstalacion"), where("sourceOrderId", "==", order.id)))).empty
+    : (JSON.parse(localStorage.getItem("next-control-installation-units-v1") || "[]") as { sourceOrderId?: string }[]).some(unit => unit.sourceOrderId === order.id);
+  if (hasInstallations) throw new Error("Esta orden tiene unidades de Instalaciones. Conserva la orden y sus archivos originales para no perder referencias ni avances.");
   const storagePaths = [
     order.pdfStoragePath,
     order.previewImageStoragePath,
