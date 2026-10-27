@@ -1,6 +1,6 @@
 import InstallationLogisticsPanel from "../components/installations/InstallationLogisticsPanel";
 import InstallationUnitsPanel from "../components/installations/InstallationUnitsPanel";
-import { Camera, CheckCircle2, Clock3, ExternalLink, MapPin, Plus, UsersRound } from "lucide-react";
+import { Camera, CheckCircle2, ChevronDown, ClipboardList, Clock3, ExternalLink, MapPin, Package, Plus, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
@@ -130,33 +130,61 @@ export default function AdminInstallationsPage() {
     }
   }
 
-  if (loading) {
-    return <StateCard text="Cargando instalaciones..." />;
-  }
-
   return (
     <div className="min-w-0 space-y-6">
-
-
-      <div className="min-w-0">
-        <p className="text-sm font-black uppercase text-next-blue">Campo admin</p>
-        <h1 className="mt-1 text-3xl font-black tracking-normal">INSTALACIONES</h1>
-        <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-next-muted">
-          Seguimiento administrativo de cuadrillas, jornadas, ubicaciones, fotos y tareas ejecutadas en obra.
+      <header className="min-w-0">
+        <h1 className="text-3xl font-black tracking-tight text-next-text">Instalaciones</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-next-muted">
+          Cargá los trabajos, asigná una cuadrilla y seguí su instalación en obra.
         </p>
-      </div>
+      </header>
+
       <InstallationUnitsPanel />
-      <InstallationLogisticsPanel />
-      <div className="flex justify-end">
-        <button className="inline-flex h-10 items-center gap-2 rounded-md bg-next-blue px-4 text-xs font-black text-white" type="button" onClick={() => setShowAssignment(true)}>
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Nueva asignacion de campo
-        </button>
-      </div>
+
+      <details className="group rounded-2xl border border-slate-200 bg-white">
+        <summary className="flex min-h-24 cursor-pointer list-none items-center justify-between gap-4 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-next-blue sm:p-5 [&::-webkit-details-marker]:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><Package className="h-5 w-5" aria-hidden="true" /></span>
+            <div className="min-w-0">
+              <h2 className="font-bold text-next-text">Problemas y materiales</h2>
+              <p className="mt-1 text-sm leading-5 text-next-muted">Faltantes, entregas y bloqueos reportados por las cuadrillas.</p>
+            </div>
+          </div>
+          <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="border-t border-slate-100 p-4 sm:p-5 [&>section]:border-0 [&>section]:p-0">
+          <InstallationLogisticsPanel />
+        </div>
+      </details>
+
+      <details className="group rounded-2xl border border-slate-200 bg-white">
+        <summary className="flex min-h-24 cursor-pointer list-none items-center justify-between gap-4 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-next-blue sm:p-5 [&::-webkit-details-marker]:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><ClipboardList className="h-5 w-5" aria-hidden="true" /></span>
+            <div className="min-w-0">
+              <h2 className="font-bold text-next-text">Jornadas y tareas anteriores</h2>
+              <p className="mt-1 text-sm leading-5 text-next-muted">Consultá el registro de actividad existente: horarios, ubicación y fotos.</p>
+            </div>
+          </div>
+          <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="space-y-5 border-t border-slate-100 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-next-text">Registro de actividad en obra</h3>
+              <p className="mt-1 text-sm text-next-muted">Horarios, ubicaciones, fotos y asignaciones del seguimiento existente.</p>
+            </div>
+            <button className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-next-text transition hover:bg-slate-50 disabled:opacity-50" type="button" disabled={loading} onClick={() => setShowAssignment(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nueva asignación de campo
+            </button>
+          </div>
 
       {error ? <Notice text={error} /> : null}
       {message ? <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-next-green">{message}</div> : null}
 
+          {loading ? <StateCard text="Cargando el registro de jornadas..." /> : (
+            <>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {stats.map((item) => (
           <DataCard key={item.label} title={item.label}>
@@ -239,6 +267,11 @@ export default function AdminInstallationsPage() {
           );
         }) : <EmptyState text="Todavia no hay jornadas cargadas hoy." />}
       </section>
+
+            </>
+          )}
+        </div>
+      </details>
 
       {selected ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/55 px-3 py-4">
