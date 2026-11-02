@@ -1,9 +1,11 @@
+import { installationWorks, type InstallationWork } from "../utils/installationWorks";
+import { loadInstallationUnits } from "../lib/installationRepository";
 import { KeyRound, Link2, Save, UserPlus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import DataCard from "../components/ui/DataCard";
 import StatusBadge from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import { getObras } from "../lib/firestore";
+import { getObras, getProductionOrders } from "../lib/firestore";
 import { canManageUsers, getOperationalUrlForUser } from "../lib/roles";
 import {
   assignWorksToUser,
@@ -17,7 +19,7 @@ import {
   setSystemUserRole,
   updateSystemUser
 } from "../lib/users";
-import type { Obra, SystemUser, UserRole } from "../types";
+import type { SystemUser, UserRole } from "../types";
 import { formatDateTime } from "../utils/formatters";
 
 const roles: UserRole[] = [
@@ -75,7 +77,7 @@ const emptyForm = {
 export default function UsersPage() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<SystemUser[]>([]);
-  const [works, setWorks] = useState<Obra[]>([]);
+  const [works, setWorks] = useState<InstallationWork[]>([]);
   const [mode, setMode] = useState<"create" | "link">("create");
   const [form, setForm] = useState(emptyForm);
   const [selectedUser, setSelectedUser] = useState<SystemUser | null>(null);
@@ -92,9 +94,9 @@ export default function UsersPage() {
     setLoading(true);
     setError("");
     try {
-      const [loadedUsers, loadedWorks] = await Promise.all([getSystemUsers(), getObras()]);
+      const [loadedUsers, loadedWorks, orders, units] = await Promise.all([getSystemUsers(), getObras(), getProductionOrders(), profile ? loadInstallationUnits(profile) : Promise.resolve([])]);
       setUsers(loadedUsers);
-      setWorks(loadedWorks);
+      setWorks(installationWorks(loadedWorks, orders, units));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los usuarios.");
     } finally {
@@ -298,7 +300,7 @@ export default function UsersPage() {
                   assignedWorkIds: Array.from(event.target.selectedOptions).map((option) => option.value)
                 })}
               >
-                {works.map((work) => <option key={work.id} value={work.id}>{work.nombre}</option>)}
+                {works.map((work) => <option key={work.id} value={work.id}>{work.nombre}{work.production ? " · Producción" : ""}</option>)}
               </select>
             </label>
             <button className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-next-blue px-4 text-sm font-black text-white disabled:opacity-60 sm:col-span-2" type="submit" disabled={saving}>

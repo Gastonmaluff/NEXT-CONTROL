@@ -166,7 +166,7 @@ export async function setUserLastLogin(uid: string): Promise<void> {
   }));
 }
 
-export function countAssignedWorks(user: SystemUser, works: Obra[]) {
+export function countAssignedWorks(user: SystemUser, works: Pick<Obra, "id">[]) {
   if (!user.assignedWorkIds?.length) return "Todas";
   return `${works.filter((obra) => user.assignedWorkIds.includes(obra.id)).length}`;
 }

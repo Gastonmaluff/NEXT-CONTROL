@@ -1,13 +1,14 @@
+import type { InstallationWork } from "../../utils/installationWorks";
 import { useState } from "react";
 import { CalendarDays, ChevronDown, ClipboardCheck, Target, UsersRound } from "lucide-react";
 import type { InstallationGoals } from "../../lib/installationRepository";
-import type { Cuadrilla, Obra } from "../../types";
+import type { Cuadrilla } from "../../types";
 import InstallationDialog from "./InstallationDialog";
 
 type Props = {
   goals: InstallationGoals;
   teams: Cuadrilla[];
-  works: Obra[];
+  works: InstallationWork[];
   busy: boolean;
   error?: string;
   onChange: (goals: InstallationGoals) => void;

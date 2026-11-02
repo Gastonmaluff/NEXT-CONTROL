@@ -9,8 +9,10 @@ import { actOnInstallationUnit, createInstallationUnits, loadInstallationGoals, 
 import { isDemoSession } from "../../lib/storage";
 import { problemReasons, reportInstallationProblem } from "../../lib/installationProblems";
 import { sanitizeStorageFileName, uploadFile } from "../../lib/storageUpload";
-import type { Cuadrilla, Obra, ProductionOrder } from "../../types";
+import type { Cuadrilla, ProductionOrder } from "../../types";
 import { fieldText, importDifferences, buildManualUnits, buildProductionUnits, canComplete, installationTypes, paraguayDay, periodBounds, stageKeys, stageTemplate, summarizeUnits, type InstallationDraft, type InstallationUnit, type StageKey, type UnitAction, type AdminUnitEdit, type AttachmentAction } from "../../utils/installationUnits";
+
+import { installationWorks, productionWorkId, type InstallationWork } from "../../utils/installationWorks";
 
 const fmt = (v: number) => v.toLocaleString("es-PY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-next-blue px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200 disabled:opacity-50";
@@ -21,7 +23,7 @@ const freshDraft = (): InstallationDraft => ({ jobId: crypto.randomUUID(), obraI
 
 export default function InstallationUnitsPanel({ field = false }: { field?: boolean }) {
   const { profile } = useAuth(); const admin = profile?.role === "admin" && !field;
-  const [units, setUnits] = useState<InstallationUnit[]>([]); const [works, setWorks] = useState<Obra[]>([]);
+  const [units, setUnits] = useState<InstallationUnit[]>([]); const [works, setWorks] = useState<InstallationWork[]>([]);
   const [teams, setTeams] = useState<Cuadrilla[]>([]); const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [error, setError] = useState(""); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
   const lock = useRef(false); const retryOperations = useRef(new Map<string, string>());
@@ -50,7 +52,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     if (!profile) return;
     try {
       const [nextUnits, nextWorks, nextTeams, nextGoals, nextOrders] = await Promise.all([loadInstallationUnits(profile), getObras(), getCuadrillas(), loadInstallationGoals(), admin ? getProductionOrders() : Promise.resolve([])]);
-      setUnits(nextUnits); setWorks(nextWorks); setTeams(nextTeams); setGoals(nextGoals); setOrders(nextOrders); setLoaded(true);
+      setUnits(nextUnits); setWorks(installationWorks(nextWorks, nextOrders, nextUnits)); setTeams(nextTeams); setGoals(nextGoals); setOrders(nextOrders); setLoaded(true);
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo cargar el seguimiento por unidades."); }
   }
   useEffect(() => { void load(); }, [profile?.uid, admin]);
@@ -100,7 +102,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   function previewProduction() {
     try {
       setError(""); if (!selectedOrder || !draft.obraId) throw new Error("Selecciona obra y orden de Producción.");
-      if (selectedOrder.obraId && selectedOrder.obraId !== draft.obraId) throw new Error("La orden corresponde a otra obra.");
+      if (productionWorkId(selectedOrder, units) !== draft.obraId) throw new Error("La orden corresponde a otra obra.");
       setPreview(buildProductionUnits(selectedOrder, draft, profile!.uid)); setMergeChoices({}); setMergeReason(""); setMergeArea(false);
     } catch (e) { setError((e as Error).message); }
   }
@@ -227,13 +229,13 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
           <button type="button" className="flex min-h-28 items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-next-blue hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100" onClick={() => setCreateMode("manual")}><span className="rounded-xl bg-blue-50 p-3 text-next-blue"><PenLine className="h-6 w-6" aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block text-base font-bold text-slate-900">Cargar manualmente</span><span className="mt-1 block text-sm leading-6 text-next-muted">Para parasoles, barandas u otros trabajos. Indicá las medidas y las etapas que debe completar la cuadrilla.</span></span><ArrowRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" /></button>
           <button type="button" className="flex min-h-28 items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-next-blue hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100" onClick={() => setCreateMode("production")}><span className="rounded-xl bg-blue-50 p-3 text-next-blue"><FileInput className="h-6 w-6" aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block text-base font-bold text-slate-900">Desde una orden de Producción</span><span className="mt-1 block text-sm leading-6 text-next-muted">Elegí una orden ya cargada y aprovechá sus ventanas, medidas, PDF y referencias.</span></span><ArrowRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" /></button>
         </div> : !preview.length ? <fieldset disabled={busy} className="min-w-0 space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2"><label>Obra<select className="field" value={draft.obraId} onChange={e => { const work = works.find(w => w.id === e.target.value); setDraft({ ...draft, obraId: work?.id ?? "", obraNombre: work?.nombre ?? "", approvalRequired: goals.approvalByWork?.[work?.id ?? ''] ?? false }); setOrderId(""); setPreview([]); }}><option value="">Seleccionar obra</option>{works.map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
+      <div className="grid gap-3 sm:grid-cols-2"><label>Obra<select className="field" value={draft.obraId} onChange={e => { const work = works.find(w => w.id === e.target.value); setDraft({ ...draft, obraId: work?.id ?? "", obraNombre: work?.nombre ?? "", approvalRequired: goals.approvalByWork?.[work?.id ?? ''] ?? false }); setOrderId(""); setPreview([]); }}><option value="">Seleccionar obra</option>{works.filter(w => createMode !== "production" || orders.some(o => productionWorkId(o, units) === w.id)).map(w => <option key={w.id} value={w.id}>{w.nombre}{w.production ? " · Producción" : ""}</option>)}</select></label>
         <label>Cuadrilla<select className="field" value={draft.teamId} onChange={e => { const t = teams.find(t => t.id === e.target.value); setDraft({ ...draft, teamId: t?.id ?? "", teamName: t?.nombre ?? "" }); setPreview([]); }}><option value="">Pendiente de asignación</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label></div>
       <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-semibold text-slate-600">Revisión administrativa · {draft.approvalRequired ? "activada" : "opcional"}</summary><label className="mt-3 flex items-start gap-3 text-sm"><input type="checkbox" checked={draft.approvalRequired} onChange={e => { setDraft({ ...draft, approvalRequired: e.target.checked }); setPreview([]); }} />El administrador revisará la finalización antes de validarla</label></details>
 
           {!works.length && <p className="rounded-xl bg-amber-50 p-3 text-sm">Primero necesitás una obra. <Link className="font-bold text-next-blue underline" to="/obras">Ir a Obras</Link></p>}
           {!teams.length && <p className="rounded-xl bg-amber-50 p-3 text-sm">Podés guardar el trabajo sin cuadrilla y asignarla después. Para finalizarlo, debe tener una cuadrilla asignada.</p>}
-          {createMode === "production" ? <div className="space-y-3 rounded-2xl border border-slate-200 p-4"><label className="block text-sm font-bold">Orden de Producción<select className="field" disabled={!draft.obraId} value={orderId} onChange={e => { setOrderId(e.target.value); setPreview([]); }}><option value="">{draft.obraId ? "Seleccionar una orden" : "Elegí primero la obra"}</option>{orders.filter(o => !o.obraId || o.obraId === draft.obraId).map(o => <option key={o.id} value={o.id}>{o.numero ?? o.id} · {o.obraNombre}</option>)}</select></label><p className="text-sm leading-6 text-next-muted">Se crearán unidades de instalación usando las cantidades y medidas de la orden. Podrás revisar las etapas antes de confirmar.</p>{draft.obraId && !orders.some(o => !o.obraId || o.obraId === draft.obraId) && <p className="text-sm">Esta obra todavía no tiene órdenes disponibles. <Link className="font-bold text-next-blue underline" to="/produccion">Cargar una orden en Producción</Link></p>}</div> : <>
+          {createMode === "production" ? <div className="space-y-3 rounded-2xl border border-slate-200 p-4"><label className="block text-sm font-bold">Orden de Producción<select className="field" disabled={!draft.obraId} value={orderId} onChange={e => { setOrderId(e.target.value); setPreview([]); }}><option value="">{draft.obraId ? "Seleccionar una orden" : "Elegí primero la obra"}</option>{orders.filter(o => productionWorkId(o, units) === draft.obraId).map(o => <option key={o.id} value={o.id}>{o.numero ?? o.id} · {o.obraNombre}</option>)}</select></label><p className="text-sm leading-6 text-next-muted">Se crearán unidades de instalación usando las cantidades y medidas de la orden. Podrás revisar las etapas antes de confirmar.</p>{draft.obraId && !orders.some(o => productionWorkId(o, units) === draft.obraId) && <p className="text-sm">Esta obra todavía no tiene órdenes disponibles. <Link className="font-bold text-next-blue underline" to="/produccion">Cargar una orden en Producción</Link></p>}</div> : <>
       <h4 className="font-bold text-slate-900">Qué hay que instalar</h4><div className="grid gap-3 sm:grid-cols-2">
         <label>Tipo de trabajo<input className="field" list="installation-type-options" value={draft.type} onChange={e => { const type = e.target.value; const labels = stageTemplate(type); setDraft({ ...draft, type }); setRequired(Object.fromEntries(stageKeys.map(k => [k, Boolean(labels[k])])) as Record<StageKey, boolean>); setPreview([]); }} /><datalist id="installation-type-options">{installationTypes.map(t => <option key={t} value={t} />)}</datalist></label>
         <label>Código opcional<input className="field" value={draft.code} onChange={e => { setDraft({ ...draft, code: e.target.value }); setPreview([]); }} /></label>
