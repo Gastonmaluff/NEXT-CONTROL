@@ -22,7 +22,7 @@ export type InstallationUnit = {
 };
 export type InstallationDraft = {
   jobId: string; obraId: string; obraNombre: string; code: string; description: string; type: string;
-  quantity: number; width: number; height: number; length: number; dimensionUnit: "mm" | "cm" | "m";
+  details?: string; quantity: number; width: number; height: number; length: number; dimensionUnit: "mm" | "cm" | "m";
   measure: Measure; manualTotal?: number; distribution?: number[]; criterion: string;
   teamId: string; teamName: string; approvalRequired: boolean; required?: Record<StageKey, boolean>;
 };
@@ -42,7 +42,7 @@ function positive(value: number, label: string) {
   return value;
 }
 export function buildManualUnits(draft: InstallationDraft, actor: string, now = new Date().toISOString()): InstallationUnit[] {
-  if (!draft.obraId || !draft.description.trim() || !draft.jobId || !draft.type.trim()) throw new Error("Obra, descripción y tipo son obligatorios.");
+  if (!draft.obraId || !draft.obraNombre.trim() || !draft.description.trim() || !draft.jobId || !draft.type.trim()) throw new Error("Obra, descripción y tipo son obligatorios.");
   if (!Number.isInteger(draft.quantity) || draft.quantity < 1 || draft.quantity > 10000) throw new Error("Cantidad: entre 1 y 10000 unidades enteras; se guardan por lotes.");
   const scale = draft.dimensionUnit === "mm" ? 0.001 : draft.dimensionUnit === "cm" ? 0.01 : 1;
   const labels = stageTemplate(draft.type);
@@ -58,12 +58,12 @@ export function buildManualUnits(draft: InstallationDraft, actor: string, now = 
   if (Math.abs(distribution.reduce((sum, v) => sum + v, 0) - expected) > 1e-8 * Math.max(1, expected)) throw new Error("Los sectores deben sumar exactamente el total.");
   if (draft.manualTotal !== undefined && !draft.criterion.trim()) throw new Error("Indica el criterio de superficie manual.");
   return distribution.map((unitValue, i) => ({
-    id: `${draft.jobId}--${i + 1}`, jobId: draft.jobId, obraId: draft.obraId, obraNombre: draft.obraNombre,
+    id: `${draft.jobId}--${i + 1}`, jobId: draft.jobId, obraId: draft.obraId, obraNombre: draft.obraNombre.trim(),
     code: draft.code.trim() || `INST-${draft.jobId}`, description: draft.description.trim(), type: draft.type,
     origin: "manual", reference: draft.jobId, sourceOrderId: "", sourcePositionId: "", sourcePositionNumber: "", sourceSignature: "",
-    pdfUrl: "", drawingUrl: "", details: "", width: draft.width * scale, height: draft.height * scale,
+    pdfUrl: "", drawingUrl: "", details: draft.details?.trim() ?? "", width: draft.width * scale, height: draft.height * scale,
     measure: draft.measure, value: unitValue, areaMode: draft.manualTotal !== undefined ? "manual" : draft.measure === "un" ? "count" : "dimensions",
-    criterion: draft.criterion || (draft.type === "parasol" ? "Área frontal" : "Dimensiones"), ordinal: i + 1, quantity: draft.quantity,
+    criterion: draft.criterion || (draft.measure === "un" ? "Por unidades" : draft.measure === "ml" ? "Longitud" : draft.type === "parasol" ? "Área frontal" : "Dimensiones"), ordinal: i + 1, quantity: draft.quantity,
     teamId: draft.teamId, teamName: draft.teamName, labels, required, stages: blankStages(), approvalRequired: draft.approvalRequired,
     status: "pendiente", photoUrl: "", completedAt: "", completedBy: "", creditedTeamId: "", creditedTeamName: "",
     validatedAt: "", validatedBy: "", createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor,

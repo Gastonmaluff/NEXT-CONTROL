@@ -48,3 +48,8 @@ test('encoded names produce stable Firestore-safe document references', () => {
   assert.ok(!id.includes('/'));
   assert.equal(id, productionWorkId(order('2', 'Casa / Patio'), []));
 });
+test('a work created with a manual installation appears in the catalog for subsequent jobs', () => {
+ const units=[{obraId:'instalacion:abc',obraNombre:'Casa de Fulano',origin:'manual',sourceOrderId:''}];
+ const works=installationWorks([],[],units);
+ assert.equal(works.length,1); assert.equal(works[0].id,'instalacion:abc'); assert.equal(works[0].nombre,'Casa de Fulano');
+});
