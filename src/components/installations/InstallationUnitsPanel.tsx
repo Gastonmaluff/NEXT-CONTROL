@@ -5,7 +5,7 @@ import InstallationDialog from "./InstallationDialog";
 import InstallationGoalsDialog from "./InstallationGoalsDialog";
 import { useAuth } from "../../context/AuthContext";
 import { getCuadrillas, getObras, getProductionOrders } from "../../lib/firestore";
-import { actOnInstallationUnit, setProductionOrderArchived, assignInstallationWorkTeam, createInstallationUnits, loadInstallationGoals, loadInstallationUnits, saveInstallationGoals, type InstallationGoals } from "../../lib/installationRepository";
+import { actOnInstallationUnit, setProductionOrderArchived, setProductionOrderRemoved, assignInstallationWorkTeam, createInstallationUnits, loadInstallationGoals, loadInstallationUnits, saveInstallationGoals, type InstallationGoals } from "../../lib/installationRepository";
 import { getSystemUsers, grantInstallerWork } from "../../lib/users";
 import { isDemoSession } from "../../lib/storage";
 import { problemReasons, reportInstallationProblem } from "../../lib/installationProblems";
@@ -31,6 +31,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   const [loaded, setLoaded] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "production" | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [showRemoved, setShowRemoved] = useState(false);
   const [showAssignment, setShowAssignment] = useState(false); const [assignmentWork, setAssignmentWork] = useState(""); const [assignmentTeam, setAssignmentTeam] = useState("");
   const [showOrders, setShowOrders] = useState(false); const [orderProgress, setOrderProgress] = useState("");
   const [goalDraft, setGoalDraft] = useState<InstallationGoals>({ weeklyByTeam: {}, monthly: 600 });
@@ -78,12 +79,12 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     && (!stateFilter || u.status === stateFilter) && (!originFilter || u.origin === originFilter) && (!typeFilter || u.type === typeFilter)
     && `${u.code} ${u.description} ${u.obraNombre}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => Number(["declarado", "validado"].includes(a.status)) - Number(["declarado", "validado"].includes(b.status)) || a.code.localeCompare(b.code) || a.ordinal - b.ordinal), [units, workFilter, teamFilter, stateFilter, originFilter, typeFilter, search, field, profile]);
-  const filtered = matched.filter(u => !u.installationArchived);
-  const reportUnits = matched.filter(u => !u.installationArchived || ["declarado", "validado"].includes(u.status));
-  const visibleUnits = units.filter(u => !u.installationArchived);
+  const filtered = matched.filter(u => !u.installationArchived && !u.installationRemoved);
+  const reportUnits = matched.filter(u => (!u.installationArchived && !u.installationRemoved) || ["declarado", "validado"].includes(u.status));
+  const visibleUnits = units.filter(u => !u.installationArchived && !u.installationRemoved);
   const productionGroups = [...new Set(units.filter(u => u.origin === "produccion" && u.sourceOrderId).map(u => u.sourceOrderId))].map(id => {
     const items = units.filter(u => u.sourceOrderId === id);
-    return { id, items, name: items[0].obraNombre, order: orders.find(o => o.id === id), active: items.filter(u => !u.installationArchived).length, archived: items.filter(u => u.installationArchived).length };
+    return { id, items, name: items[0].obraNombre, order: orders.find(o => o.id === id), active: items.filter(u => !u.installationArchived && !u.installationRemoved).length, archived: items.filter(u => u.installationArchived && !u.installationRemoved).length, removed: items.filter(u => u.installationRemoved && u.installationRemovalScope === "order").length };
   });
   const bounds = period === "rango" ? { start: rangeStart, end: rangeEnd } : periodBounds(period, new Date(), goals.weekStartsOn ?? 1);
   const report = summarizeUnits(reportUnits, base, bounds.start, bounds.end);
@@ -157,6 +158,18 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     if (saved) setShowAssignment(false);
   }
 
+  async function removeOrder(id: string, removed: boolean) {
+    if (!profile) return;
+    const group = productionGroups.find(item => item.id === id);
+    if (!group || !window.confirm(removed ? `¿Eliminar de Instalaciones la orden ${group.order?.numero || group.id} y sus unidades? La orden de Producción y los avances se conservan; podrás recuperarla.` : `¿Recuperar la orden ${group.order?.numero || group.id}? Se conservan las piezas eliminadas por separado.`)) return;
+    setOrderProgress("");
+    await perform(async () => { try { await setProductionOrderRemoved(id, removed, profile, (done, total) => setOrderProgress(`${done} de ${total} unidades procesadas`)); } catch (e) { await load(); throw e; } setOrderProgress(""); setMessage(removed ? "Orden eliminada de Instalaciones; podés recuperarla desde Gestionar órdenes." : "Orden recuperada con sus avances."); });
+  }
+  async function removeUnit(unit: InstallationUnit, removed: boolean) {
+    if (!window.confirm(removed ? `¿Eliminar ${unit.code}, unidad ${unit.ordinal} de Instalaciones? Se conservará el historial y podrás recuperarla.` : `¿Recuperar ${unit.code}, unidad ${unit.ordinal}?`)) return;
+    await act(unit, { type:"remove", removed, scope:"unit", reason: removed ? "Unidad eliminada de Instalaciones" : "Unidad recuperada en Instalaciones" });
+  }
+
   async function changeOrder(id: string, archived: boolean) {
     if (!profile) return;
     const group = productionGroups.find(item => item.id === id);
@@ -195,6 +208,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         <button type="button" className={secondaryButton + " !px-3"} aria-label="Actualizar trabajos" title="Actualizar trabajos" disabled={busy} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
         {!field && <button type="button" className={secondaryButton + " flex-1 sm:flex-none"} onClick={() => { setError(""); setShowResults(true); }}><BarChart3 className="h-4 w-4" aria-hidden="true" />Ver resultados</button>}
         {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowAssignment(true); }}>Asignar obra completa</button>}
+        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setShowRemoved(true); }}>Unidades eliminadas</button>}
         {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowOrders(true); }}>Gestionar órdenes</button>}
         {admin && <button type="button" className={button + " order-first w-full sm:order-none sm:w-auto"} disabled={busy} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar trabajo</button>}
       </div>
@@ -203,16 +217,19 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     {isDemoSession() && <p className="rounded-lg bg-amber-50 p-3 text-sm">Modo demo local: los cambios de este panel no escriben en Firebase.</p>}
     {showAssignment && admin && <InstallationDialog title="Asignar obra completa" description="Asigná todas las unidades pendientes y en proceso de una obra a un instalador o cuadrilla." onClose={() => { setShowAssignment(false); setError(""); }} busy={busy} error={error} size="md" footer={<><button className={secondaryButton} disabled={busy} onClick={() => setShowAssignment(false)}>Cancelar</button><button className={button} disabled={busy} onClick={() => void assignWholeWork()}>Asignar unidades</button></>}>
       <div className="space-y-4">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{orderProgress && <p role="status" className="text-sm">{orderProgress}</p>}
-      <label className="block">Obra<select className="field" value={assignmentWork} onChange={e => setAssignmentWork(e.target.value)}><option value="">Seleccionar obra</option>{works.filter(w => units.some(u => u.obraId === w.id && !u.installationArchived && !["declarado", "validado"].includes(u.status))).map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
+      <label className="block">Obra<select className="field" value={assignmentWork} onChange={e => setAssignmentWork(e.target.value)}><option value="">Seleccionar obra</option>{works.filter(w => units.some(u => u.obraId === w.id && !u.installationArchived && !u.installationRemoved && !["declarado", "validado"].includes(u.status))).map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
       <label className="block">Instalador o cuadrilla<select className="field" value={assignmentTeam} onChange={e => setAssignmentTeam(e.target.value)}><option value="">Seleccionar responsable</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label>
       <p className="text-sm text-next-muted">Se asignan las unidades actuales pendientes o en proceso, incluso si tenían otro responsable. Las terminadas y las órdenes retiradas se conservan. Las nuevas unidades deberán asignarse al agregarlas.</p>
       </div></InstallationDialog>}
-    {showOrders && admin && <InstallationDialog title="Gestionar órdenes de Producción" description="Retirá una orden de Instalaciones o volvé a incorporarla. Se conservan las unidades, fotos y avances." onClose={() => { setShowOrders(false); setError(""); }} busy={busy} error={error} size="lg">
+    {showRemoved && admin && <InstallationDialog title="Unidades eliminadas" description="Recuperá una pieza eliminada individualmente. Para recuperar una orden completa, entrá en Gestionar órdenes." onClose={() => { setShowRemoved(false); setError(""); }} busy={busy} error={error} size="lg"><div className="space-y-3">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{!units.some(u => u.installationRemoved && u.installationRemovalScope === "unit") && <p>No hay unidades eliminadas individualmente.</p>}{units.filter(u => u.installationRemoved && u.installationRemovalScope === "unit").map(u => <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><div><p className="font-bold">{u.obraNombre} · {u.code} · unidad {u.ordinal}/{u.quantity}</p><p className="text-sm">{u.description}</p></div><button type="button" className={secondaryButton} disabled={busy} onClick={() => void removeUnit(u, false)}>Recuperar unidad</button></div>)}</div></InstallationDialog>}
+    {showOrders && admin && <InstallationDialog title="Gestionar órdenes de Producción" description="Retirá, eliminá o recuperá una orden de Instalaciones. Se conservan las unidades, fotos y avances." onClose={() => { setShowOrders(false); setError(""); }} busy={busy} error={error} size="lg">
       <div className="space-y-3">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{orderProgress && <p role="status" className="text-sm">{orderProgress}</p>}
         {!productionGroups.length && <p className="text-sm text-next-muted">Todavía no hay órdenes de Producción incorporadas a Instalaciones.</p>}
-        {productionGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold">{group.name}</p><p className="text-sm text-next-muted">Orden {group.order?.numero || group.id} · {group.items.length} unidades</p><p className="text-sm">{group.active && group.archived ? `Cambio incompleto: ${group.active} activas, ${group.archived} retiradas` : group.active ? "En Instalaciones" : "Retirada de Instalaciones"}</p></div><div className="flex flex-wrap gap-2">
+        {productionGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold">{group.name}</p><p className="text-sm text-next-muted">Orden {group.order?.numero || group.id} · {group.items.length} unidades</p><p className="text-sm">{group.removed ? `${group.removed} unidades eliminadas con la orden` : group.active && group.archived ? `Cambio incompleto: ${group.active} activas, ${group.archived} retiradas` : group.active ? "En Instalaciones" : group.archived ? "Retirada de Instalaciones" : "Unidades eliminadas individualmente"}</p></div><div className="flex flex-wrap gap-2">
           {group.active > 0 && <button type="button" className={secondaryButton} disabled={busy} onClick={() => void changeOrder(group.id, true)}>Retirar de Instalaciones</button>}
           {group.archived > 0 && <button type="button" className={secondaryButton} disabled={busy} onClick={() => void changeOrder(group.id, false)}>Volver a incorporar</button>}
+          {(group.active > 0 || group.archived > 0) && <button type="button" className={secondaryButton + " text-red-700"} disabled={busy} onClick={() => void removeOrder(group.id, true)}>Eliminar orden</button>}
+          {group.removed > 0 && <button type="button" className={secondaryButton} disabled={busy} onClick={() => void removeOrder(group.id, false)}>Recuperar orden</button>}
         </div></div></div>)}
       </div></InstallationDialog>}
     {editing && admin && <InstallationDialog title={"Editar unidad · " + editing.unit.code} onClose={() => { setEditing(null); setError(""); }} busy={busy} error={error}><div className="space-y-4">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<p className="text-sm">Cambiar el nombre o la obligatoriedad de una etapa reinicia esa etapa. Las dimensiones recalculan el área cuando el criterio es dimensional. La superficie manual se corrige por separado.</p>
@@ -233,7 +250,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         }
         await reportInstallationProblem(problemUnit, problemReason, problemComment, url, profile, problemId.current); setProblemUnit(null); setMessage("Problema registrado; los avances se conservan. Los faltantes aparecen en Logística.");
       })}>Guardar problema</button><button className={button} disabled={busy} onClick={() => setProblemUnit(null)}>Cancelar</button></div></div></InstallationDialog>}
-    {error && !showCreate && !showGoals && !editing && !problemUnit && !showOrders && !showAssignment && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}{message && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+    {error && !showCreate && !showGoals && !editing && !problemUnit && !showOrders && !showAssignment && !showRemoved && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}{message && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
     {!loaded && !error && <p>Cargando unidades…</p>}
 
     {field && <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -357,6 +374,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         }} /></label><button className={button} disabled={busy || !canComplete(unit)} onClick={() => { if (window.confirm(`¿Confirmar unidad ${unit.ordinal} completamente terminada? Se acreditarán ${fmt(unit.value)} ${unit.measure} una sola vez.`)) void act(unit, { type: "complete" }); }}>Confirmar finalización</button></div>}
         {mayEdit && <button className="min-h-11 rounded-lg border border-amber-300 bg-amber-50 px-4 text-sm font-bold" disabled={busy} onClick={() => { setProblemUnit(unit); setProblemReason(problemReasons[0]); setProblemComment(""); setProblemPhoto(null); problemId.current = crypto.randomUUID(); }}>Reportar problema</button>}
         {closed && <p className="text-sm">Finalizó {unit.completedBy} · {new Date(unit.completedAt).toLocaleString("es-PY", { timeZone: "America/Asuncion" })} · crédito: {unit.creditedTeamName}</p>}
+        {admin && <button type="button" className="min-h-11 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-700" disabled={busy} onClick={() => void removeUnit(unit, true)}>Eliminar unidad</button>}
         {admin && <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-bold text-next-blue">Administrar unidad y referencias</summary><div className="mt-4 flex flex-wrap items-end gap-3"><button className={secondaryButton} disabled={busy} onClick={() => { if(window.confirm("Confirma que revisaste TODOS los PDFs, dibujos y adjuntos de esta unidad y que no contienen precios, importes ni datos económicos. La aprobación del original se aplica a toda su orden.")) void act(unit,{type:"references",approved:!unit.fieldReferencesApproved,reason:unit.fieldReferencesApproved ? "Retirar aprobación de referencias" : "Referencias revisadas sin datos económicos"}); }}>{unit.fieldReferencesApproved ? "Retirar referencias de campo" : "Autorizar referencias para campo"}</button>{unit.status === "declarado" && <button className={button} disabled={busy} onClick={() => void act(unit, { type: "validate" })}>Validar finalización</button>}
           {!closed && <button className={button} disabled={busy} onClick={() => setEditing({ unit, edit: { type: 'edit', description: unit.description, code: unit.code, typeName: unit.type, details: unit.details, width: unit.width, height: unit.height, labels: { ...unit.labels }, required: { ...unit.required }, approvalRequired: unit.approvalRequired, reason: '' } })}>Editar ficha y etapas</button>}
           <label className="text-sm font-bold">Agregar referencia (PDF / imagen)<input className="block max-w-full" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; void perform(async () => { if (!['application/pdf','image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 15*1024*1024) throw new Error('Referencia: PDF / imagen de hasta 15 MB.'); const path = `installation-support/${unit.id}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`; let url: string; if (isDemoSession()) url = await new Promise<string>((resolve,reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsDataURL(file); }); else url = await uploadFile(path,file); await actOnInstallationUnit(unit.id, { type:'attach', attachment: { id:crypto.randomUUID(),url,path,name:file.name,createdAt:new Date().toISOString(),createdBy:profile.uid },reason:'Referencia administrativa' },profile,crypto.randomUUID()); setMessage('Referencia agregada con historial.'); }); }} /></label>

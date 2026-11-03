@@ -17,7 +17,7 @@ export type InstallationUnit = {
   photoUrl: string; completedAt: string; completedBy: string; creditedTeamId: string; creditedTeamName: string;
   validatedAt: string; validatedBy: string; createdAt: string; createdBy: string;
   updatedAt: string; updatedBy: string; history: UnitAudit[];
-  sourceMissing?: boolean; fieldReferencesApproved?: boolean; installationArchived?: boolean;
+  sourceMissing?: boolean; fieldReferencesApproved?: boolean; installationArchived?: boolean; installationRemoved?: boolean; installationRemovalScope?: "unit" | "order";
   attachments?: { id: string; url: string; path: string; name: string; createdAt: string; createdBy: string }[];
 };
 export type InstallationDraft = {
@@ -99,6 +99,7 @@ export type UnitAction = { type: "stage"; key: StageKey; value: boolean } | { ty
   | { type: "complete" } | { type: "validate" } | { type: "reopen"; reason: string }
   | { type: "assign"; teamId: string; teamName: string; reason: string; onlyOpen?: boolean }
   | { type: "archive"; archived: boolean; reason: string }
+  | { type: "remove"; removed: boolean; reason: string; scope: "unit" | "order" }
   | { type: "area"; value: number; reason: string }
   | { type: "references"; approved: boolean; reason: string };
 export type AdminUnitEdit = { type: "edit"; description: string; code: string; typeName: string; details: string; width: number; height: number; labels: Record<StageKey, string>; required: Record<StageKey, boolean>; approvalRequired: boolean; reason: string };
@@ -106,8 +107,8 @@ export type AttachmentAction = { type: "attach"; attachment: NonNullable<Install
 export function transitionUnit(unit: InstallationUnit, action: UnitAction | AdminUnitEdit | AttachmentAction, actor: string, admin: boolean, operationId: string, now = new Date().toISOString()): InstallationUnit {
   if (unit.history.some(e => e.id === operationId)) return unit;
   const closed = ["declarado", "validado"].includes(unit.status);
-  if (["validate", "reopen", "assign", "area", "edit", "attach", "references", "archive"].includes(action.type) && !admin) throw new Error("Esta acción requiere administrador.");
-  if (unit.installationArchived && !admin) throw new Error("Esta orden fue retirada de Instalaciones.");
+  if (["validate", "reopen", "assign", "area", "edit", "attach", "references", "archive", "remove"].includes(action.type) && !admin) throw new Error("Esta acción requiere administrador.");
+  if ((unit.installationArchived || unit.installationRemoved) && !admin) throw new Error("Esta orden fue retirada de Instalaciones.");
   if ((action.type === "stage" || action.type === "photo") && closed) throw new Error("Reabre la unidad antes de cambiar etapas o foto.");
   let next = { ...unit };
   let reason = "";
@@ -123,12 +124,17 @@ export function transitionUnit(unit: InstallationUnit, action: UnitAction | Admi
     case "reopen":
       reason = action.reason.trim(); if (!reason) throw new Error("Justifica la reapertura.");
       next = { ...next, status: "en_proceso", completedAt: "", completedBy: "", creditedTeamId: "", creditedTeamName: "", validatedAt: "", validatedBy: "" }; break;
-    case "assign": if (action.onlyOpen && (unit.installationArchived || closed || unit.teamId === action.teamId)) return unit; reason = action.reason.trim(); if (!reason) throw new Error("Justifica la asignación."); next.teamId = action.teamId; next.teamName = action.teamName; break;
+    case "assign": if (action.onlyOpen && (unit.installationArchived || unit.installationRemoved || closed || unit.teamId === action.teamId)) return unit; reason = action.reason.trim(); if (!reason) throw new Error("Justifica la asignación."); next.teamId = action.teamId; next.teamName = action.teamName; break;
     case "archive":
       if (unit.origin !== "produccion" || !unit.sourceOrderId) throw new Error("Solo se pueden retirar órdenes de Producción.");
       reason = action.reason.trim(); if (!reason) throw new Error("Justifica el cambio.");
       if (Boolean(unit.installationArchived) === action.archived) return unit;
       next.installationArchived = action.archived; break;
+    case "remove":
+      reason = action.reason.trim(); if (!reason) throw new Error("Indica el motivo de la eliminación o recuperación.");
+      if (action.removed && unit.installationRemoved) return unit;
+      if (!action.removed && (!unit.installationRemoved || (action.scope === "order" && unit.installationRemovalScope !== "order"))) return unit;
+      next.installationRemoved = action.removed; next.installationRemovalScope = action.scope; break;
     case "area": reason = action.reason.trim(); if (!reason) throw new Error("Justifica la corrección de superficie."); next.value = positive(action.value, "Superficie"); next.areaMode = "manual"; next.criterion = reason; break;
     case "edit":
       reason = action.reason.trim(); if (!reason) throw new Error("Justifica la edición.");
@@ -145,7 +151,7 @@ export function transitionUnit(unit: InstallationUnit, action: UnitAction | Admi
     case "references": reason = action.reason.trim(); if (!reason) throw new Error("Justifica la revisión de referencias."); next.fieldReferencesApproved = action.approved; break;
     case "attach": reason = action.reason.trim(); if (!reason || !action.attachment.url) throw new Error("Archivo y motivo son obligatorios."); next.attachments = [...(unit.attachments ?? []), action.attachment]; next.fieldReferencesApproved = false; break;
   }
-  const snapshot = (u: InstallationUnit) => JSON.stringify({ installationArchived: Boolean(u.installationArchived), value: u.value, teamId: u.teamId, teamName: u.teamName, status: u.status, stages: u.stages, photoUrl: u.photoUrl, completedAt: u.completedAt, creditedTeamId: u.creditedTeamId, fieldReferencesApproved:u.fieldReferencesApproved ?? false, description: u.description, code: u.code, type: u.type, details: u.details, labels: u.labels, required: u.required, approvalRequired: u.approvalRequired, attachments: u.attachments });
+  const snapshot = (u: InstallationUnit) => JSON.stringify({ installationArchived: Boolean(u.installationArchived), installationRemoved: Boolean(u.installationRemoved), installationRemovalScope: u.installationRemovalScope ?? "", value: u.value, teamId: u.teamId, teamName: u.teamName, status: u.status, stages: u.stages, photoUrl: u.photoUrl, completedAt: u.completedAt, creditedTeamId: u.creditedTeamId, fieldReferencesApproved:u.fieldReferencesApproved ?? false, description: u.description, code: u.code, type: u.type, details: u.details, labels: u.labels, required: u.required, approvalRequired: u.approvalRequired, attachments: u.attachments });
   return { ...next, updatedAt: now, updatedBy: actor, history: [...unit.history, { id: operationId, action: action.type, by: actor, at: now, reason, before: snapshot(unit), after: snapshot(next) }] };
 }
 export function paraguayDay(date: string | Date): string {

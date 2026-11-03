@@ -31,3 +31,14 @@ test('asignación de obra conserva avances y omite unidades retiradas y terminad
  assert.equal(assign(assigned),assigned);
  assert.throws(()=>transitionUnit(unit,{type:'assign',teamId:'x',teamName:'X',reason:'x',onlyOpen:true},'worker',false,'x'),/administrador/);
 });
+test('eliminar pieza conserva historial y no se recupera junto con la orden', () => {
+ const remove=(u,removed,scope,id)=>transitionUnit(u,{type:'remove',removed,scope,reason:'Cambio del cliente'},'admin',true,id);
+ const started=transitionUnit(unit,{type:'stage',key:'s0',value:true},'installer',false,'stage');
+ const piece=remove(started,true,'unit','one'); assert.equal(piece.installationRemoved,true); assert.deepEqual(piece.stages,started.stages);
+ assert.equal(remove(piece,true,'order','order'),piece); assert.equal(remove(piece,false,'order','restore-order'),piece);
+ const restored=remove(piece,false,'unit','restore-piece'); assert.equal(restored.installationRemoved,false); assert.deepEqual(restored.stages,started.stages);
+ const all=remove(unit,true,'order','whole'); assert.equal(remove(all,false,'order','undo').installationRemoved,false);
+ assert.throws(()=>transitionUnit(piece,{type:'stage',key:'s0',value:false},'worker',false,'x'),/retirada/);
+ const assign=transitionUnit(piece,{type:'assign',teamId:'x',teamName:'X',reason:'obra',onlyOpen:true},'admin',true,'assign'); assert.equal(assign,piece);
+ assert.throws(()=>transitionUnit(unit,{type:'remove',removed:true,scope:'unit',reason:'x'},'worker',false,'x'),/administrador/);
+});

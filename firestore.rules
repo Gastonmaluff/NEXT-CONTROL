@@ -325,7 +325,7 @@ service cloud.firestore {
         && (isAssignedTeam(data.get("teamId", "")) || isAssignedTeam(data.get("creditedTeamId", ""))));
     }
     function installationWorker(data) {
-      return installationReader(data) && data.get("installationArchived", false) == false && isAssignedTeam(data.teamId);
+      return installationReader(data) && data.get("installationArchived", false) == false && data.get("installationRemoved", false) == false && isAssignedTeam(data.teamId);
     }
     function installationStagesDone(data) {
       return (!data.required.s0 || data.stages.s0)
