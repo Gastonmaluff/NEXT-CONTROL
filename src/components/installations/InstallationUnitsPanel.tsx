@@ -5,7 +5,8 @@ import InstallationDialog from "./InstallationDialog";
 import InstallationGoalsDialog from "./InstallationGoalsDialog";
 import { useAuth } from "../../context/AuthContext";
 import { getCuadrillas, getObras, getProductionOrders } from "../../lib/firestore";
-import { actOnInstallationUnit, createInstallationUnits, loadInstallationGoals, loadInstallationUnits, saveInstallationGoals, type InstallationGoals } from "../../lib/installationRepository";
+import { actOnInstallationUnit, setProductionOrderArchived, assignInstallationWorkTeam, createInstallationUnits, loadInstallationGoals, loadInstallationUnits, saveInstallationGoals, type InstallationGoals } from "../../lib/installationRepository";
+import { getSystemUsers, grantInstallerWork } from "../../lib/users";
 import { isDemoSession } from "../../lib/storage";
 import { problemReasons, reportInstallationProblem } from "../../lib/installationProblems";
 import { sanitizeStorageFileName, uploadFile } from "../../lib/storageUpload";
@@ -30,6 +31,8 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   const [loaded, setLoaded] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "production" | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [showAssignment, setShowAssignment] = useState(false); const [assignmentWork, setAssignmentWork] = useState(""); const [assignmentTeam, setAssignmentTeam] = useState("");
+  const [showOrders, setShowOrders] = useState(false); const [orderProgress, setOrderProgress] = useState("");
   const [goalDraft, setGoalDraft] = useState<InstallationGoals>({ weeklyByTeam: {}, monthly: 600 });
   const [draft, setDraft] = useState(freshDraft); const [manualArea, setManualArea] = useState(false);
   const [totalArea, setTotalArea] = useState(""); const [distribution, setDistribution] = useState("");
@@ -51,8 +54,12 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   async function load() {
     if (!profile) return;
     try {
-      const [nextUnits, nextWorks, nextTeams, nextGoals, nextOrders] = await Promise.all([loadInstallationUnits(profile), getObras(), getCuadrillas(), loadInstallationGoals(), admin ? getProductionOrders() : Promise.resolve([])]);
-      setUnits(nextUnits); setWorks(installationWorks(nextWorks, nextOrders, nextUnits)); setTeams(nextTeams); setGoals(nextGoals); setOrders(nextOrders); setLoaded(true);
+      const [nextUnits, nextWorks, nextTeams, nextGoals, nextOrders, nextUsers] = await Promise.all([loadInstallationUnits(profile), getObras(), getCuadrillas(), loadInstallationGoals(), admin ? getProductionOrders() : Promise.resolve([]), admin ? getSystemUsers() : Promise.resolve([])]);
+      const people = nextUsers.filter(u => u.active && ["instalador", "equipo_campo", "campo"].includes(u.role)).map(u => ({ id: `instalador:${u.uid}`, nombre: `${u.nombre} (instalador)`, responsable: u.nombre, personas: 1, obraId: "", estado: "Disponible", horaInicio: "", horaFin: "" }));
+      const known = new Set([...nextTeams, ...people].map(t => t.id));
+      const historical = nextUnits.filter(u => u.teamId.startsWith("instalador:") && !known.has(u.teamId)).map(u => ({ id: u.teamId, nombre: u.teamName, responsable: u.teamName, personas: 1, obraId: "", estado: "Disponible", horaInicio: "", horaFin: "" }));
+      const allTeams = [...new Map([...nextTeams, ...people, ...historical].map(t => [t.id, t])).values()];
+      setUnits(nextUnits); setWorks(installationWorks(nextWorks, nextOrders, nextUnits)); setTeams(allTeams); setGoals(nextGoals); setOrders(nextOrders); setLoaded(true);
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo cargar el seguimiento por unidades."); }
   }
   useEffect(() => { void load(); }, [profile?.uid, admin]);
@@ -67,19 +74,26 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     const operationId = retryOperations.current.get(key) ?? crypto.randomUUID(); retryOperations.current.set(key, operationId);
     return perform(async () => { await actOnInstallationUnit(unit.id, action, profile, operationId); retryOperations.current.delete(key); setMessage("Cambio guardado con historial."); });
   }
-  const filtered = useMemo(() => units.filter(u => (!field || profile?.role === "admin" || profile?.assignedTeamIds?.includes(u.teamId)) && (!workFilter || u.obraId === workFilter) && (!teamFilter || u.teamId === teamFilter || u.creditedTeamId === teamFilter)
+  const matched = useMemo(() => units.filter(u => (!field || profile?.role === "admin" || profile?.assignedTeamIds?.includes(u.teamId)) && (!workFilter || u.obraId === workFilter) && (!teamFilter || u.teamId === teamFilter || u.creditedTeamId === teamFilter)
     && (!stateFilter || u.status === stateFilter) && (!originFilter || u.origin === originFilter) && (!typeFilter || u.type === typeFilter)
     && `${u.code} ${u.description} ${u.obraNombre}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => Number(["declarado", "validado"].includes(a.status)) - Number(["declarado", "validado"].includes(b.status)) || a.code.localeCompare(b.code) || a.ordinal - b.ordinal), [units, workFilter, teamFilter, stateFilter, originFilter, typeFilter, search, field, profile]);
+  const filtered = matched.filter(u => !u.installationArchived);
+  const reportUnits = matched.filter(u => !u.installationArchived || ["declarado", "validado"].includes(u.status));
+  const visibleUnits = units.filter(u => !u.installationArchived);
+  const productionGroups = [...new Set(units.filter(u => u.origin === "produccion" && u.sourceOrderId).map(u => u.sourceOrderId))].map(id => {
+    const items = units.filter(u => u.sourceOrderId === id);
+    return { id, items, name: items[0].obraNombre, order: orders.find(o => o.id === id), active: items.filter(u => !u.installationArchived).length, archived: items.filter(u => u.installationArchived).length };
+  });
   const bounds = period === "rango" ? { start: rangeStart, end: rangeEnd } : periodBounds(period, new Date(), goals.weekStartsOn ?? 1);
-  const report = summarizeUnits(filtered, base, bounds.start, bounds.end);
+  const report = summarizeUnits(reportUnits, base, bounds.start, bounds.end);
   const activePending = summarizeUnits(filtered.filter(u => works.some(w => w.id === u.obraId && w.estado !== "Finalizada")), base);
   const weekly = periodBounds("semana", new Date(), goals.weekStartsOn ?? 1);
   const previousWeek = periodBounds("anterior", new Date(), goals.weekStartsOn ?? 1);
-  const currentWeekArea = summarizeUnits(filtered, base, weekly.start, weekly.end).finishedM2;
-  const previousWeekArea = summarizeUnits(filtered, base, previousWeek.start, previousWeek.end).finishedM2;
-  const daily = [...new Set(filtered.map(u => u.completedAt ? paraguayDay(u.completedAt) : "").filter(day => day && day >= bounds.start && day <= bounds.end))].sort()
-    .map(day => ({ day, area: summarizeUnits(filtered, base, day, day).finishedM2 }));
+  const currentWeekArea = summarizeUnits(reportUnits, base, weekly.start, weekly.end).finishedM2;
+  const previousWeekArea = summarizeUnits(reportUnits, base, previousWeek.start, previousWeek.end).finishedM2;
+  const daily = [...new Set(reportUnits.map(u => u.completedAt ? paraguayDay(u.completedAt) : "").filter(day => day && day >= bounds.start && day <= bounds.end))].sort()
+    .map(day => ({ day, area: summarizeUnits(reportUnits, base, day, day).finishedM2 }));
   const dailyMax = Math.max(1, ...daily.map(d => d.area));
   const selectedOrder = orders.find(o => o.id === orderId);
   const template = stageTemplate(draft.type);
@@ -117,6 +131,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   async function saveWork() {
     if (!profile) return;
     const saved = await perform(async () => {
+      if (draft.teamId.startsWith("instalador:")) await grantInstallerWork(draft.teamId.slice("instalador:".length), draft.obraId);
       const inserted = await createInstallationUnits(preview, profile, sourceChanges.length ? {
         decisions: mergeChoices, revisions: Object.fromEntries(differences.filter(d => d.existing).map(d => [d.id, d.revision])),
         reason: mergeReason, confirmArea: mergeArea
@@ -124,6 +139,36 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       setMessage(inserted ? "Trabajo guardado: " + inserted + " unidades listas para seguir su instalación." : "Trabajo actualizado. Se conservaron las unidades y sus avances.");
     });
     if (saved) { setPreview([]); setShowCreate(false); setCreateMode(null); setDraft(freshDraft()); }
+  }
+
+  async function assignWholeWork() {
+    if (!profile) return;
+    const work = works.find(w => w.id === assignmentWork); const team = teams.find(t => t.id === assignmentTeam);
+    if (!work || !team) { setError("Elegí una obra y un instalador o cuadrilla."); return; }
+    if (!window.confirm(`¿Asignar todas las unidades pendientes de ${work.nombre} a ${team.nombre}? Las unidades ya terminadas conservan su asignación y crédito.`)) return;
+    setOrderProgress("");
+    const saved = await perform(async () => {
+      try {
+        if (team.id.startsWith("instalador:")) await grantInstallerWork(team.id.slice("instalador:".length), work.id);
+        await assignInstallationWorkTeam(work.id, team.id, team.nombre, profile, (done, total) => setOrderProgress(`${done} de ${total} unidades procesadas`));
+      } catch (e) { await load(); throw e; }
+      setOrderProgress(""); setMessage(`Unidades pendientes de ${work.nombre} asignadas a ${team.nombre}.`);
+    });
+    if (saved) setShowAssignment(false);
+  }
+
+  async function changeOrder(id: string, archived: boolean) {
+    if (!profile) return;
+    const group = productionGroups.find(item => item.id === id);
+    if (!group || !window.confirm(archived
+      ? `¿Retirar la orden ${group.order?.numero || group.id} de Instalaciones? Sus unidades dejarán de aparecer a la cuadrilla; se conservarán los avances y podrás volver a incorporarla.`
+      : `¿Volver a incorporar la orden ${group.order?.numero || group.id} a Instalaciones con sus avances?`)) return;
+    setOrderProgress("");
+    await perform(async () => {
+      try { await setProductionOrderArchived(id, archived, profile, (done, total) => setOrderProgress(`${done} de ${total} unidades procesadas`)); }
+      catch (e) { await load(); throw e; }
+      setOrderProgress(""); setMessage(archived ? "Orden retirada de Instalaciones. Podés volver a incorporarla desde Gestionar órdenes." : "Orden incorporada nuevamente con sus avances.");
+    });
   }
 
   async function saveGoals() {
@@ -138,7 +183,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   function exportReport() {
     const cell = (value: string | number) => `"${String(value).replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`;
     const rows = [["Obra", "Código", "Unidad", "Origen", "Tipo", "Medición", "Valor", "Estado", "Cuadrilla acreditada", "Fecha Paraguay", "Base", "Desde", "Hasta", "m2 acreditados en período"],
-      ...filtered.map(u => [u.obraNombre, u.code, u.ordinal, u.origin, u.type, u.measure, u.value, statusLabels[u.status], u.creditedTeamName, u.completedAt ? paraguayDay(u.completedAt) : "", base, bounds.start, bounds.end, summarizeUnits([u], base, bounds.start, bounds.end).finishedM2])];
+      ...reportUnits.map(u => [u.obraNombre, u.code, u.ordinal, u.origin, u.type, u.measure, u.value, statusLabels[u.status], u.creditedTeamName, u.completedAt ? paraguayDay(u.completedAt) : "", base, bounds.start, bounds.end, summarizeUnits([u], base, bounds.start, bounds.end).finishedM2])];
     const url = URL.createObjectURL(new Blob(["\uFEFF" + rows.map(r => r.map(cell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a"); link.href = url; link.download = `instalaciones-${bounds.start}-${bounds.end}.csv`; link.click(); URL.revokeObjectURL(url);
   }
@@ -149,11 +194,27 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto">
         <button type="button" className={secondaryButton + " !px-3"} aria-label="Actualizar trabajos" title="Actualizar trabajos" disabled={busy} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
         {!field && <button type="button" className={secondaryButton + " flex-1 sm:flex-none"} onClick={() => { setError(""); setShowResults(true); }}><BarChart3 className="h-4 w-4" aria-hidden="true" />Ver resultados</button>}
+        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowAssignment(true); }}>Asignar obra completa</button>}
+        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowOrders(true); }}>Gestionar órdenes</button>}
         {admin && <button type="button" className={button + " order-first w-full sm:order-none sm:w-auto"} disabled={busy} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar trabajo</button>}
       </div>
     </div>
     {preview.length > 0 && batchProgress && !showCreate && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm text-amber-900">Hay una carga pendiente de completar. Podés continuar sin duplicar las unidades guardadas.</p><button type="button" className={secondaryButton} onClick={() => openCreate()}>Continuar carga</button></div>}
     {isDemoSession() && <p className="rounded-lg bg-amber-50 p-3 text-sm">Modo demo local: los cambios de este panel no escriben en Firebase.</p>}
+    {showAssignment && admin && <InstallationDialog title="Asignar obra completa" description="Asigná todas las unidades pendientes y en proceso de una obra a un instalador o cuadrilla." onClose={() => { setShowAssignment(false); setError(""); }} busy={busy} error={error} size="md" footer={<><button className={secondaryButton} disabled={busy} onClick={() => setShowAssignment(false)}>Cancelar</button><button className={button} disabled={busy} onClick={() => void assignWholeWork()}>Asignar unidades</button></>}>
+      <div className="space-y-4">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{orderProgress && <p role="status" className="text-sm">{orderProgress}</p>}
+      <label className="block">Obra<select className="field" value={assignmentWork} onChange={e => setAssignmentWork(e.target.value)}><option value="">Seleccionar obra</option>{works.filter(w => units.some(u => u.obraId === w.id && !u.installationArchived && !["declarado", "validado"].includes(u.status))).map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
+      <label className="block">Instalador o cuadrilla<select className="field" value={assignmentTeam} onChange={e => setAssignmentTeam(e.target.value)}><option value="">Seleccionar responsable</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label>
+      <p className="text-sm text-next-muted">Se asignan las unidades actuales pendientes o en proceso, incluso si tenían otro responsable. Las terminadas y las órdenes retiradas se conservan. Las nuevas unidades deberán asignarse al agregarlas.</p>
+      </div></InstallationDialog>}
+    {showOrders && admin && <InstallationDialog title="Gestionar órdenes de Producción" description="Retirá una orden de Instalaciones o volvé a incorporarla. Se conservan las unidades, fotos y avances." onClose={() => { setShowOrders(false); setError(""); }} busy={busy} error={error} size="lg">
+      <div className="space-y-3">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{orderProgress && <p role="status" className="text-sm">{orderProgress}</p>}
+        {!productionGroups.length && <p className="text-sm text-next-muted">Todavía no hay órdenes de Producción incorporadas a Instalaciones.</p>}
+        {productionGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold">{group.name}</p><p className="text-sm text-next-muted">Orden {group.order?.numero || group.id} · {group.items.length} unidades</p><p className="text-sm">{group.active && group.archived ? `Cambio incompleto: ${group.active} activas, ${group.archived} retiradas` : group.active ? "En Instalaciones" : "Retirada de Instalaciones"}</p></div><div className="flex flex-wrap gap-2">
+          {group.active > 0 && <button type="button" className={secondaryButton} disabled={busy} onClick={() => void changeOrder(group.id, true)}>Retirar de Instalaciones</button>}
+          {group.archived > 0 && <button type="button" className={secondaryButton} disabled={busy} onClick={() => void changeOrder(group.id, false)}>Volver a incorporar</button>}
+        </div></div></div>)}
+      </div></InstallationDialog>}
     {editing && admin && <InstallationDialog title={"Editar unidad · " + editing.unit.code} onClose={() => { setEditing(null); setError(""); }} busy={busy} error={error}><div className="space-y-4">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<p className="text-sm">Cambiar el nombre o la obligatoriedad de una etapa reinicia esa etapa. Las dimensiones recalculan el área cuando el criterio es dimensional. La superficie manual se corrige por separado.</p>
       <div className="grid gap-3 sm:grid-cols-2">{([['description', 'Descripción'], ['code', 'Código'], ['typeName', 'Tipo extensible'], ['details', 'Instrucciones / detalles'], ['reason', 'Justificación obligatoria']] as const).map(([key,label]) => <label key={key}>{label}<input className="field" value={editing.edit[key]} onChange={e => setEditing({ ...editing, edit: { ...editing.edit, [key]: e.target.value } })} /></label>)}
       {(['width', 'height'] as const).map(key => <label key={key}>{key === 'width' ? 'Ancho' : 'Alto'} (m)<input className="field" type="number" min={0} step="any" value={editing.edit[key]} onChange={e => setEditing({ ...editing, edit: { ...editing.edit, [key]: Number(e.target.value) } })} /></label>)}</div>
@@ -172,7 +233,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         }
         await reportInstallationProblem(problemUnit, problemReason, problemComment, url, profile, problemId.current); setProblemUnit(null); setMessage("Problema registrado; los avances se conservan. Los faltantes aparecen en Logística.");
       })}>Guardar problema</button><button className={button} disabled={busy} onClick={() => setProblemUnit(null)}>Cancelar</button></div></div></InstallationDialog>}
-    {error && !showCreate && !showGoals && !editing && !problemUnit && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}{message && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+    {error && !showCreate && !showGoals && !editing && !problemUnit && !showOrders && !showAssignment && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}{message && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
     {!loaded && !error && <p>Cargando unidades…</p>}
 
     {field && <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -185,7 +246,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         return <div key={team.id} className="rounded-xl bg-white p-3"><p className="text-sm font-bold">{team.nombre}</p><p className="mt-1 text-sm">{fmt(amount)} / {goal === undefined ? "Meta sin configurar" : fmt(goal) + " m²"}</p>{goal > 0 && <progress className="mt-2 w-full accent-next-blue" value={Math.min(100, amount / goal * 100)} max={100} aria-label={"Meta semanal de " + team.nombre} />}</div>;
       })}
     </div>}
-    {!field && units.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+    {!field && visibleUnits.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
       ["Sin iniciar", filtered.filter(u => u.status === "pendiente").length],
       ["En proceso", filtered.filter(u => u.status === "en_proceso").length],
       ["Por revisar", filtered.filter(u => u.status === "declarado").length],
@@ -207,8 +268,8 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       return <div key={team.id} className="rounded-lg bg-white p-3"><p className="font-bold">{team.nombre}</p><p className="text-sm">Semana: {fmt(amount)} / {goal === undefined ? "Sin configurar" : fmt(goal)} m² · {fmt(percentage)}%{goal > 0 ? ` · faltan ${fmt(Math.max(0,goal-amount))} m²` : ''}</p><progress className="w-full accent-next-blue" max={100} value={Math.min(100, percentage)} /></div>;
     })}</div>
 
-        <p className="text-xs leading-5 text-next-muted">{base === "declarado" ? "Se cuentan todos los cierres de la cuadrilla, incluidos los que esperan revisión." : "Se cuentan los cierres validados por el administrador y los automáticos de trabajos que no requieren revisión."} Las finalizaciones corresponden al período elegido; los pendientes y el avance por obra son acumulados.</p>
-    {admin && <><div className="overflow-x-auto rounded-lg bg-white p-3"><table className="min-w-[560px] w-full text-left text-sm"><caption className="mb-2 text-left font-bold">Avance acumulado por obra</caption><thead><tr><th>Obra</th><th>Total m²</th><th>Finalizado</th><th>Pendiente</th><th>Avance</th></tr></thead><tbody>{[...new Set(filtered.map(u => u.obraId))].map(id => { const r = summarizeUnits(filtered.filter(u => u.obraId === id), base); return <tr key={id} className="border-t"><td className="py-3">{filtered.find(u => u.obraId === id)?.obraNombre}</td><td>{fmt(r.totalM2)}</td><td>{fmt(r.finishedM2)}</td><td>{fmt(r.pendingM2)}</td><td>{fmt(r.totalM2 ? r.finishedM2 / r.totalM2 * 100 : 0)}%</td></tr>; })}</tbody></table></div></>}
+        <p className="text-xs leading-5 text-next-muted">{base === "declarado" ? "Se cuentan todos los cierres de la cuadrilla, incluidos los que esperan revisión." : "Se cuentan los cierres validados por el administrador y los automáticos de trabajos que no requieren revisión."} Las finalizaciones corresponden al período elegido; los pendientes y el avance por obra son acumulados. Se conservan las finalizaciones de órdenes retiradas.</p>
+    {admin && <><div className="overflow-x-auto rounded-lg bg-white p-3"><table className="min-w-[560px] w-full text-left text-sm"><caption className="mb-2 text-left font-bold">Avance acumulado por obra</caption><thead><tr><th>Obra</th><th>Total m²</th><th>Finalizado</th><th>Pendiente</th><th>Avance</th></tr></thead><tbody>{[...new Set(reportUnits.map(u => u.obraId))].map(id => { const r = summarizeUnits(reportUnits.filter(u => u.obraId === id), base); return <tr key={id} className="border-t"><td className="py-3">{reportUnits.find(u => u.obraId === id)?.obraNombre}</td><td>{fmt(r.totalM2)}</td><td>{fmt(r.finishedM2)}</td><td>{fmt(r.pendingM2)}</td><td>{fmt(r.totalM2 ? r.finishedM2 / r.totalM2 * 100 : 0)}%</td></tr>; })}</tbody></table></div></>}
 
       </div>
     </InstallationDialog>}
@@ -230,7 +291,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
           <button type="button" className="flex min-h-28 items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-next-blue hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100" onClick={() => setCreateMode("production")}><span className="rounded-xl bg-blue-50 p-3 text-next-blue"><FileInput className="h-6 w-6" aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block text-base font-bold text-slate-900">Desde una orden de Producción</span><span className="mt-1 block text-sm leading-6 text-next-muted">Elegí una orden ya cargada y aprovechá sus ventanas, medidas, PDF y referencias.</span></span><ArrowRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" /></button>
         </div> : !preview.length ? <fieldset disabled={busy} className="min-w-0 space-y-5">
       <div className="grid gap-3 sm:grid-cols-2"><label>Obra<select className="field" value={draft.obraId} onChange={e => { const work = works.find(w => w.id === e.target.value); setDraft({ ...draft, obraId: work?.id ?? "", obraNombre: work?.nombre ?? "", approvalRequired: goals.approvalByWork?.[work?.id ?? ''] ?? false }); setOrderId(""); setPreview([]); }}><option value="">Seleccionar obra</option>{works.filter(w => createMode !== "production" || orders.some(o => productionWorkId(o, units) === w.id)).map(w => <option key={w.id} value={w.id}>{w.nombre}{w.production ? " · Producción" : ""}</option>)}</select></label>
-        <label>Cuadrilla<select className="field" value={draft.teamId} onChange={e => { const t = teams.find(t => t.id === e.target.value); setDraft({ ...draft, teamId: t?.id ?? "", teamName: t?.nombre ?? "" }); setPreview([]); }}><option value="">Pendiente de asignación</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label></div>
+        <label>Instalador o cuadrilla<select className="field" value={draft.teamId} onChange={e => { const t = teams.find(t => t.id === e.target.value); setDraft({ ...draft, teamId: t?.id ?? "", teamName: t?.nombre ?? "" }); setPreview([]); }}><option value="">Pendiente de asignación</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label></div>
       <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-semibold text-slate-600">Revisión administrativa · {draft.approvalRequired ? "activada" : "opcional"}</summary><label className="mt-3 flex items-start gap-3 text-sm"><input type="checkbox" checked={draft.approvalRequired} onChange={e => { setDraft({ ...draft, approvalRequired: e.target.checked }); setPreview([]); }} />El administrador revisará la finalización antes de validarla</label></details>
 
           {!works.length && <p className="rounded-xl bg-amber-50 p-3 text-sm">Primero necesitás una obra. <Link className="font-bold text-next-blue underline" to="/obras">Ir a Obras</Link></p>}
@@ -254,7 +315,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
 
           </>}
         </fieldset> : <fieldset disabled={busy || Boolean(batchProgress)} className="min-w-0 space-y-4">
-      <dl className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><div><dt className="text-xs font-semibold text-next-muted">Obra</dt><dd className="mt-1 font-bold">{preview[0].obraNombre}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Cuadrilla asignada</dt><dd className="mt-1 font-bold">{preview[0].teamName || "Pendiente de asignación"}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Origen</dt><dd className="mt-1">{preview[0].origin === "manual" ? "Carga manual" : "Orden de Producción"}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Revisión al finalizar</dt><dd className="mt-1">{preview[0].approvalRequired ? "Requiere revisión administrativa" : "Se valida con el cierre de la cuadrilla"}</dd></div></dl>
+      <dl className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><div><dt className="text-xs font-semibold text-next-muted">Obra</dt><dd className="mt-1 font-bold">{preview[0].obraNombre}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Responsable asignado</dt><dd className="mt-1 font-bold">{preview[0].teamName || "Pendiente de asignación"}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Origen</dt><dd className="mt-1">{preview[0].origin === "manual" ? "Carga manual" : "Orden de Producción"}</dd></div><div><dt className="text-xs font-semibold text-next-muted">Revisión al finalizar</dt><dd className="mt-1">{preview[0].approvalRequired ? "Requiere revisión administrativa" : "Se valida con el cierre de la cuadrilla"}</dd></div></dl>
       {batchProgress && <p role="status" className="rounded-lg bg-blue-50 p-3">{batchProgress}. Si hubo una interrupción, tocá Confirmar trabajo para continuar la misma carga. Las unidades guardadas se conservan sin duplicarse.</p>}
       {preview.length > 0 && sourceChanges.length > 0 && <div className="space-y-3 rounded-lg border border-amber-300 bg-white p-4"><h3 className="font-black">Revisión de diferencias</h3><label>Decisión para todas las diferencias<select className="field" defaultValue="" onChange={e=>{ const choice=e.target.value as "keep"|"apply"; if(choice) setMergeChoices(Object.fromEntries(sourceChanges.filter(d=>d.incoming).map(d=>[d.id,choice]))); }}><option value="">Elegir individualmente</option><option value="keep">Conservar todas las fichas actuales</option><option value="apply">Aplicar todos los datos de origen revisados</option></select></label><p>Los avances, fotos, etapas, cuadrilla acreditada e historial se conservan. Las unidades omitidas no se borran. Aplicar superficie recalcula el crédito existente.</p>{sourceChanges.map(d=><div key={d.id} className="rounded-lg border p-3"><p className="break-all font-bold">{d.existing?.code} · unidad {d.existing?.ordinal}: {d.kind === 'missing' ? 'Omitida: conservar y señalar' : 'Datos de origen cambiados'}</p>{d.incoming && <><p>{d.existing?.description} → {d.incoming.description}; área {fmt(d.existing?.value ?? 0)} → {fmt(d.incoming.value)}; cantidad {d.existing?.quantity} → {d.incoming.quantity}</p><label>Decisión<select className="field" value={mergeChoices[d.id] ?? ''} onChange={e=>setMergeChoices({...mergeChoices,[d.id]:e.target.value as 'keep'|'apply'})}><option value="">Elegir</option><option value="keep">Conservar ficha y superficie actuales</option><option value="apply">Aplicar datos de origen revisados</option></select></label></>}</div>)}<label>Justificación obligatoria<input className="field" value={mergeReason} onChange={e=>setMergeReason(e.target.value)} /></label><label className="flex gap-2"><input type="checkbox" checked={mergeArea} onChange={e=>setMergeArea(e.target.checked)} />Confirmo las correcciones de superficie seleccionadas y su efecto en productividad.</label></div>}
       {preview.length > 0 && <div className="space-y-3 border-t pt-3"><h4 className="font-bold">Vista previa: {preview.length} unidades · {fmt(preview.reduce((s, u) => s + u.value, 0))} {preview[0].measure === 'm2' ? 'm²' : preview[0].measure}</h4>
@@ -267,7 +328,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       </div>
     </InstallationDialog>}
 
-    {units.length > 0 && <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+    {visibleUnits.length > 0 && <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-slate-900">{field ? "Mis unidades de instalación" : "Unidades de instalación"}</h3><span className="text-xs font-semibold text-next-muted">{filtered.length} {filtered.length === 1 ? "unidad" : "unidades"} · pendientes primero</span></div>
       <div className="grid gap-3 md:grid-cols-3"><label className="block text-xs font-bold text-slate-600">Buscar trabajo<div className="relative mt-1"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" /><input className="field !mt-0 !pl-9" placeholder="Código, descripción u obra" value={search} onChange={e => setSearch(e.target.value)} /></div></label>
         <label className="block text-xs font-bold text-slate-600">Obra<select className="field" value={workFilter} onChange={e => setWorkFilter(e.target.value)}><option value="">Todas mis obras</option>{works.map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
@@ -276,7 +337,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       <div className="flex flex-wrap gap-2" aria-label="Filtrar por estado">{[["", "Todos"], ...Object.entries(statusLabels)].map(([key, label]) => <button key={key} type="button" aria-pressed={stateFilter === key} className={"min-h-10 rounded-full px-4 text-xs font-bold transition " + (stateFilter === key ? "bg-blue-50 text-next-blue ring-1 ring-blue-200" : "bg-slate-50 text-slate-600 hover:bg-slate-100")} onClick={() => setStateFilter(key)}>{label}</button>)}</div>
       {admin && <details className="text-sm"><summary className="w-fit cursor-pointer font-semibold text-next-muted">Más filtros</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><label>Origen<select className="field" value={originFilter} onChange={e => setOriginFilter(e.target.value)}><option value="">Todos los orígenes</option><option value="manual">Carga manual</option><option value="produccion">Producción / PDF</option></select></label><label>Tipo de trabajo<select className="field" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">Todos los tipos</option>{installationTypes.map(t => <option key={t}>{t}</option>)}</select></label></div></details>}
     </div>}
-    {!filtered.length && loaded && <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-next-blue"><ClipboardList className="h-7 w-7" aria-hidden="true" /></span><h3 className="mt-4 text-lg font-bold text-slate-900">{units.length ? "No hay trabajos con estos filtros" : "Todo listo para tu primer trabajo"}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-next-muted">{units.length ? "Probá otra obra, cuadrilla o estado para encontrar lo que buscás." : admin ? "Empezá cargando un trabajo manual o trayendo una orden de Producción. Después podrás asignar la cuadrilla y seguir cada unidad." : "Los trabajos asignados a tu obra y cuadrilla aparecerán aquí."}</p>{admin && !units.length && <button type="button" className={button + " mt-5"} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar primer trabajo</button>}{units.length > 0 && <button type="button" className={secondaryButton + " mt-5"} onClick={() => { setSearch(""); setWorkFilter(""); setTeamFilter(""); setStateFilter(""); setOriginFilter(""); setTypeFilter(""); }}>Limpiar filtros</button>}</div>}
+    {!filtered.length && loaded && <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-next-blue"><ClipboardList className="h-7 w-7" aria-hidden="true" /></span><h3 className="mt-4 text-lg font-bold text-slate-900">{visibleUnits.length ? "No hay trabajos con estos filtros" : "Todo listo para tu primer trabajo"}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-next-muted">{visibleUnits.length ? "Probá otra obra, cuadrilla o estado para encontrar lo que buscás." : admin ? "Empezá cargando un trabajo manual o trayendo una orden de Producción. Después podrás asignar la cuadrilla y seguir cada unidad." : "Los trabajos asignados a tu obra y cuadrilla aparecerán aquí."}</p>{admin && !visibleUnits.length && <button type="button" className={button + " mt-5"} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar primer trabajo</button>}{visibleUnits.length > 0 && <button type="button" className={secondaryButton + " mt-5"} onClick={() => { setSearch(""); setWorkFilter(""); setTeamFilter(""); setStateFilter(""); setOriginFilter(""); setTypeFilter(""); }}>Limpiar filtros</button>}</div>}
     <div className="space-y-3">{filtered.map(unit => {
       const closed = ["declarado", "validado"].includes(unit.status);
       const mayEdit = profile.role === "admin" || (profile.assignedWorkIds.includes(unit.obraId) && profile.assignedTeamIds?.includes(unit.teamId));
@@ -300,7 +361,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
           {!closed && <button className={button} disabled={busy} onClick={() => setEditing({ unit, edit: { type: 'edit', description: unit.description, code: unit.code, typeName: unit.type, details: unit.details, width: unit.width, height: unit.height, labels: { ...unit.labels }, required: { ...unit.required }, approvalRequired: unit.approvalRequired, reason: '' } })}>Editar ficha y etapas</button>}
           <label className="text-sm font-bold">Agregar referencia (PDF / imagen)<input className="block max-w-full" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; void perform(async () => { if (!['application/pdf','image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 15*1024*1024) throw new Error('Referencia: PDF / imagen de hasta 15 MB.'); const path = `installation-support/${unit.id}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`; let url: string; if (isDemoSession()) url = await new Promise<string>((resolve,reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsDataURL(file); }); else url = await uploadFile(path,file); await actOnInstallationUnit(unit.id, { type:'attach', attachment: { id:crypto.randomUUID(),url,path,name:file.name,createdAt:new Date().toISOString(),createdBy:profile.uid },reason:'Referencia administrativa' },profile,crypto.randomUUID()); setMessage('Referencia agregada con historial.'); }); }} /></label>
           {closed && <button className={button} disabled={busy} onClick={() => { const reason = window.prompt("Motivo de reapertura (retira el crédito actual y conserva historial)"); if (reason) void act(unit, { type: "reopen", reason }); }}>Reabrir</button>}
-          <label className="text-sm">Reasignar cuadrilla<select className="field" disabled={busy} value={unit.teamId} onChange={e => { const team = teams.find(t => t.id === e.target.value); const reason = window.prompt("Motivo de reasignación. El crédito anterior no cambia si ya finalizó."); if (reason) void act(unit, { type: "assign", teamId: team?.id ?? "", teamName: team?.nombre ?? "", reason }); }}><option value="">Sin asignar</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label>
+          <label className="text-sm">Reasignar instalador o cuadrilla<select className="field" disabled={busy} value={unit.teamId} onChange={e => { const team = teams.find(t => t.id === e.target.value); const reason = window.prompt("Motivo de reasignación. El crédito anterior no cambia si ya finalizó."); if (reason) void perform(async () => { if (team?.id.startsWith("instalador:")) await grantInstallerWork(team.id.slice("instalador:".length), unit.obraId); await actOnInstallationUnit(unit.id, { type: "assign", teamId: team?.id ?? "", teamName: team?.nombre ?? "", reason }, profile, crypto.randomUUID()); setMessage("Asignación guardada con historial."); }); }}><option value="">Sin asignar</option>{teams.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label>
           {unit.measure === "m2" && <button className={button} disabled={busy} onClick={() => { const value = window.prompt("Nueva superficie de esta unidad en m²", String(unit.value)); if (value === null) return; const reason = window.prompt("Justificación obligatoria. Se recalcularán los reportes, incluso si ya finalizó."); if (reason && window.confirm("¿Confirmar corrección de superficie y recalcular productividad con historial?")) void act(unit, { type: "area", value: Number(value.replace(",", ".")), reason }); }}>Corregir superficie</button>}
           <button className={button} onClick={() => setDetail(detail === unit.id ? "" : unit.id)}>Historial</button></div></details>}
         {detail === unit.id && admin && <ol className="space-y-2 text-xs">{unit.history.map(entry => <li key={entry.id} className="break-words">{entry.at} · {entry.by} · {entry.action} · {entry.reason}{entry.before && <details><summary>Valores antes / después</summary><p>{entry.before}</p><p>{entry.after}</p></details>}</li>)}</ol>}

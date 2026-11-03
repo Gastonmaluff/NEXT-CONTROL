@@ -47,6 +47,7 @@ export async function createInstallationUnits(units: InstallationUnit[], profile
   if (orders.length > 1) throw new Error("Revisa una orden por importación.");
   const database = demo() ? null : db();
   const current = demo() ? localUnits() : orders.length ? (await getDocs(query(collection(database!,name),where("sourceOrderId","==",orders[0])))).docs.map(d=>normalize(d.data())) : [];
+  if (orders.length && current.some(u => u.sourceOrderId === orders[0] && u.installationArchived)) throw new Error("Esta orden fue retirada de Instalaciones. Recupérala antes de volver a importarla.");
   const differences=importDifferences(units,current);
   if (differences.some(d=>d.kind === "changed" || d.kind === "missing") && !review) throw new Error("Revisa las diferencias antes de fusionar; se conservan todos los avances.");
   const fingerprintBytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify(units.map(u=>[u.id,u.sourceSignature,u.value,u.quantity,u.obraId,u.pdfUrl,u.drawingUrl]).sort())));
@@ -117,6 +118,40 @@ export async function actOnInstallationUnit(id: string, action: UnitAction | Adm
       }
       throw error;
     }
+  }
+}
+// Processes a whole imported order without deleting units. Retrying after an interrupted
+// operation skips units already at the target state and preserves their audit trail.
+export async function setProductionOrderArchived(orderId: string, archived: boolean, profile: SystemUser, onProgress?: (done: number, total: number) => void): Promise<void> {
+  if (!isAdmin(profile)) throw new Error("Solo el administrador puede retirar o recuperar órdenes.");
+  if (!orderId) throw new Error("Falta la orden de Producción.");
+  const units = demo() ? localUnits().filter(u => u.sourceOrderId === orderId && u.origin === "produccion")
+    : (await getDocs(query(collection(db(), name), where("sourceOrderId", "==", orderId)))).docs.map(d => normalize(d.data())).filter(u => u.origin === "produccion");
+  if (!units.length) throw new Error("No se encontraron unidades de esta orden.");
+  let done = 0;
+  for (let offset = 0; offset < units.length; offset += 10) {
+    const batch = units.slice(offset, offset + 10);
+    const results = await Promise.allSettled(batch.map(unit => actOnInstallationUnit(unit.id, {
+      type: "archive", archived, reason: archived ? "Orden retirada de Instalaciones" : "Orden recuperada en Instalaciones"
+    }, profile, crypto.randomUUID())));
+    done += results.filter(result => result.status === "fulfilled").length;
+    onProgress?.(done, units.length);
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) throw new Error(`Se procesaron ${done} de ${units.length} unidades. Vuelve a intentar para completar: ${failure.reason instanceof Error ? failure.reason.message : "error al guardar"}`);
+  }
+}
+// Each unit is rechecked in its transaction, allowing safe retry if a connection fails.
+export async function assignInstallationWorkTeam(workId: string, teamId: string, teamName: string, profile: SystemUser, onProgress?: (done: number, total: number) => void): Promise<void> {
+  if (!isAdmin(profile) || !workId || !teamId) throw new Error("Elegí una obra y un responsable con una cuenta administradora.");
+  const units = demo() ? localUnits().filter(u => u.obraId === workId) : (await getDocs(query(collection(db(), name), where("obraId", "==", workId)))).docs.map(d => normalize(d.data()));
+  const candidates = units.filter(u => !u.installationArchived && !["declarado", "validado"].includes(u.status));
+  if (!candidates.length) throw new Error("Esta obra no tiene unidades pendientes o en proceso.");
+  let done = 0;
+  for (let offset = 0; offset < candidates.length; offset += 10) {
+    const results = await Promise.allSettled(candidates.slice(offset, offset + 10).map(unit => actOnInstallationUnit(unit.id, { type: "assign", teamId, teamName, onlyOpen: true, reason: "Asignación de obra completa" }, profile, crypto.randomUUID())));
+    done += results.filter(result => result.status === "fulfilled").length; onProgress?.(done, candidates.length);
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) throw new Error(`Se procesaron ${done} de ${candidates.length} unidades. Volvé a intentar para completar: ${failure.reason instanceof Error ? failure.reason.message : "error al guardar"}`);
   }
 }
 export type InstallationGoals = { weeklyByTeam: Record<string, number>; monthly: number; weekStartsOn?: number; workDays?: number[]; holidays?: string[]; approvalByWork?: Record<string, boolean> };

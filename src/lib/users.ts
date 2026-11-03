@@ -1,8 +1,8 @@
 import { httpsCallable } from "firebase/functions";
-import { collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDocs, runTransaction, updateDoc } from "firebase/firestore";
 import type { Obra, SystemUser, UserRole } from "../types";
 import { sanitizeForFirestore } from "../utils/firestore";
-import { firebaseFunctions, firestoreDb, isFirebaseConfigured } from "./firebase";
+import { firebaseAuth, firebaseFunctions, firestoreDb, isFirebaseConfigured } from "./firebase";
 import { generateId, getStoredData, isDemoSession, saveStoredData } from "./storage";
 
 export type CreateSystemUserInput = {
@@ -169,4 +169,28 @@ export async function setUserLastLogin(uid: string): Promise<void> {
 export function countAssignedWorks(user: SystemUser, works: Pick<Obra, "id">[]) {
   if (!user.assignedWorkIds?.length) return "Todas";
   return `${works.filter((obra) => user.assignedWorkIds.includes(obra.id)).length}`;
+}
+
+// Grant this installer a personal team identity and the selected work without replacing existing assignments.
+export async function grantInstallerWork(uid: string, workId: string): Promise<void> {
+  if (!uid || !workId) throw new Error("Seleccioná un instalador y una obra.");
+  const teamId = `instalador:${uid}`;
+  const allowed = (user: SystemUser | undefined) => Boolean(user?.active && ["instalador", "equipo_campo", "campo"].includes(user.role));
+  if (!isFirebaseConfigured() || !firestoreDb || isDemoSession()) {
+    const stored = getStoredData();
+    const user = stored.users.find(item => item.uid === uid);
+    if (!allowed(user) || !user) throw new Error("El instalador no está activo o no tiene un rol de campo.");
+    user.assignedWorkIds = [...new Set([...(user.assignedWorkIds ?? []), workId])];
+    user.assignedTeamIds = [...new Set([...(user.assignedTeamIds ?? []), teamId])];
+    user.updatedAt = new Date().toISOString();
+    saveStoredData(stored); return;
+  }
+  const database = firestoreDb;
+  if (!firebaseAuth?.currentUser) throw new Error("Iniciá sesión como administrador.");
+  const reference = doc(database, "users", uid);
+  await runTransaction(database, async tx => {
+    const snapshot = await tx.get(reference);
+    if (!snapshot.exists() || !allowed(snapshot.data() as SystemUser)) throw new Error("El instalador no está activo o no tiene un rol de campo.");
+    tx.update(reference, { assignedWorkIds: arrayUnion(workId), assignedTeamIds: arrayUnion(teamId), updatedAt: new Date().toISOString() });
+  });
 }
