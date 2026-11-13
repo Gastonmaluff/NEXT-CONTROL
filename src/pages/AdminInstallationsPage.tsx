@@ -132,13 +132,6 @@ export default function AdminInstallationsPage() {
 
   return (
     <div className="min-w-0 space-y-6">
-      <header className="min-w-0">
-        <h1 className="text-3xl font-black tracking-tight text-next-text">Instalaciones</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-next-muted">
-          Cargá los trabajos, asigná una cuadrilla y seguí su instalación en obra.
-        </p>
-      </header>
-
       <InstallationUnitsPanel />
 
       <details className="group rounded-2xl border border-slate-200 bg-white">

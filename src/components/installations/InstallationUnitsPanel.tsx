@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BarChart3, ChevronDown, ClipboardList, FileInput, PenLine, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, ChevronDown, ClipboardList, FileInput, MoreHorizontal, PenLine, Plus, RefreshCw, Search, Settings2, Trash2, UsersRound } from "lucide-react";
 import { Link } from "react-router-dom";
 import InstallationDialog from "./InstallationDialog";
 import InstallationGoalsDialog from "./InstallationGoalsDialog";
@@ -31,6 +31,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   const [loaded, setLoaded] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<"manual" | "production" | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [showActions, setShowActions] = useState(false); const actionsRef = useRef<HTMLDivElement>(null);
   const [showRemoved, setShowRemoved] = useState(false);
   const [showAssignment, setShowAssignment] = useState(false); const [assignmentWork, setAssignmentWork] = useState(""); const [assignmentTeam, setAssignmentTeam] = useState("");
   const [showOrders, setShowOrders] = useState(false); const [orderProgress, setOrderProgress] = useState("");
@@ -64,6 +65,19 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo cargar el seguimiento por unidades."); }
   }
   useEffect(() => { void load(); }, [profile?.uid, admin]);
+  useEffect(() => {
+    if (!showActions) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!actionsRef.current?.contains(event.target as Node)) setShowActions(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") { setShowActions(false); actionsRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); };
+  }, [showActions]);
+  function closeActions() { actionsRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); setShowActions(false); }
   async function perform(action: () => Promise<void>) {
     if (lock.current) return false; lock.current = true; setBusy(true); setError(""); setMessage("");
     try { await action(); await load(); return true; } catch (e) { setError(e instanceof Error ? e.message : "No se pudo guardar."); return false; }
@@ -208,14 +222,21 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
   }
   if (!profile) return null;
   return <section className="min-w-0 space-y-5" aria-label="Seguimiento de instalaciones por unidad">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div><h2 className="text-xl font-bold text-slate-900">{field ? "Mi trabajo de instalación" : "Trabajos de instalación"}</h2><p className="mt-1 text-sm leading-6 text-next-muted">{field ? "Marcá las etapas de cada unidad y confirmá su finalización con una foto." : "Cargá o traé un trabajo de Producción, asigná la cuadrilla y seguí el avance."}</p></div>
-      <div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto">
-        <button type="button" className={secondaryButton + " !px-3"} aria-label="Actualizar trabajos" title="Actualizar trabajos" disabled={busy} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
+    <div className={`flex flex-col gap-4 ${field ? "sm:flex-row sm:items-center sm:justify-between" : "xl:flex-row xl:items-end xl:justify-between"}`}>
+      {field ? <div><h2 className="text-xl font-bold text-slate-900">Mi trabajo de instalación</h2><p className="mt-1 text-sm leading-6 text-next-muted">Marcá las etapas de cada unidad y confirmá su finalización con una foto.</p></div> : <header className="min-w-0"><h1 className="text-3xl font-black tracking-tight text-next-text">Instalaciones</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-next-muted">Cargá los trabajos, asigná una cuadrilla y seguí su instalación en obra.</p></header>}
+      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:self-end xl:self-auto">
+        {field && <button type="button" className={secondaryButton + " !px-3"} aria-label="Actualizar trabajos" title="Actualizar trabajos" disabled={busy} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>}
         {!field && <button type="button" className={secondaryButton + " flex-1 sm:flex-none"} onClick={() => { setError(""); setShowResults(true); }}><BarChart3 className="h-4 w-4" aria-hidden="true" />Ver resultados</button>}
-        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowAssignment(true); }}>Asignar obra completa</button>}
-        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setShowRemoved(true); }}>Unidades eliminadas</button>}
-        {admin && <button type="button" className={secondaryButton} disabled={busy} onClick={() => { setError(""); setOrderProgress(""); setShowOrders(true); }}>Gestionar órdenes</button>}
+        {admin && <div ref={actionsRef} className="relative flex-1 sm:flex-none">
+          <button type="button" className={secondaryButton + " w-full !px-3 !gap-1.5 whitespace-nowrap"} disabled={busy} aria-expanded={showActions} aria-controls="installation-more-actions" onClick={() => setShowActions(value => !value)}><MoreHorizontal className="h-4 w-4" aria-hidden="true" />Más acciones<ChevronDown className={`h-4 w-4 transition-transform ${showActions ? "rotate-180" : ""}`} aria-hidden="true" /></button>
+          {showActions && <div id="installation-more-actions" className="absolute right-0 z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
+            <button type="button" className="flex min-h-14 w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300" onClick={() => { closeActions(); setError(""); setOrderProgress(""); setShowAssignment(true); }}><UsersRound className="mt-0.5 h-4 w-4 shrink-0 text-next-blue" aria-hidden="true" /><span><span className="block text-sm font-bold text-slate-800">Asignar obra completa</span><span className="mt-0.5 block text-xs leading-5 text-next-muted">Asigná sus unidades pendientes a un responsable.</span></span></button>
+            <button type="button" className="flex min-h-14 w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300" onClick={() => { closeActions(); setError(""); setOrderProgress(""); setShowOrders(true); }}><ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-next-blue" aria-hidden="true" /><span><span className="block text-sm font-bold text-slate-800">Gestionar órdenes</span><span className="mt-0.5 block text-xs leading-5 text-next-muted">Retirá, eliminá o recuperá órdenes de Producción.</span></span></button>
+            <button type="button" className="flex min-h-14 w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300" onClick={() => { closeActions(); setError(""); setShowRemoved(true); }}><Trash2 className="mt-0.5 h-4 w-4 shrink-0 text-next-blue" aria-hidden="true" /><span><span className="block text-sm font-bold text-slate-800">Unidades eliminadas</span><span className="mt-0.5 block text-xs leading-5 text-next-muted">Recuperá piezas eliminadas individualmente.</span></span></button>
+            <div className="mx-3 border-t border-slate-100" />
+            <button type="button" className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300" onClick={() => { closeActions(); void load(); }}><RefreshCw className="h-4 w-4 text-next-blue" aria-hidden="true" />Actualizar trabajos</button>
+          </div>}
+        </div>}
         {admin && <button type="button" className={button + " order-first w-full sm:order-none sm:w-auto"} disabled={busy} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar trabajo</button>}
       </div>
     </div>
@@ -269,12 +290,15 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
         return <div key={team.id} className="rounded-xl bg-white p-3"><p className="text-sm font-bold">{team.nombre}</p><p className="mt-1 text-sm">{fmt(amount)} / {goal === undefined ? "Meta sin configurar" : fmt(goal) + " m²"}</p>{goal > 0 && <progress className="mt-2 w-full accent-next-blue" value={Math.min(100, amount / goal * 100)} max={100} aria-label={"Meta semanal de " + team.nombre} />}</div>;
       })}
     </div>}
-    {!field && visibleUnits.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
-      ["Sin iniciar", filtered.filter(u => u.status === "pendiente").length],
-      ["En proceso", filtered.filter(u => u.status === "en_proceso").length],
-      ["Por revisar", filtered.filter(u => u.status === "declarado").length],
-      ["Terminadas", filtered.filter(u => u.status === "validado").length]
-    ].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold text-next-muted">{label}</p><p className="mt-1 text-2xl font-black text-slate-900">{value}</p></div>)}</div>}
+    {!field && visibleUnits.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5"><h2 className="text-sm font-bold text-slate-800">Estado de las unidades</h2><span className="text-xs text-next-muted">Según los filtros</span></div>
+      <div className="grid grid-cols-2 divide-x divide-slate-100 lg:grid-cols-4">{[
+        ["Sin iniciar", filtered.filter(u => u.status === "pendiente").length, "bg-slate-400"],
+        ["En proceso", filtered.filter(u => u.status === "en_proceso").length, "bg-blue-500"],
+        ["Por revisar", filtered.filter(u => u.status === "declarado").length, "bg-amber-500"],
+        ["Terminadas", filtered.filter(u => u.status === "validado").length, "bg-emerald-500"]
+      ].map(([label, value, dot]) => <div key={label} className="border-b border-slate-100 px-4 py-3 last:border-b-0 sm:px-5 lg:border-b-0"><p className="flex items-center gap-2 text-xs font-semibold text-next-muted"><span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />{label}</p><p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p></div>)}</div>
+    </div>}
     {showResults && !field && <InstallationDialog title="Resultados de instalaciones" description="Revisá los metros cuadrados terminados, el avance por obra y las metas de tus cuadrillas." onClose={() => setShowResults(false)} size="xl" footer={<><button type="button" className={secondaryButton} onClick={exportReport}>Descargar detalle CSV</button><button type="button" className={button} onClick={() => setShowResults(false)}>Volver a trabajos</button></>}>
       <div className="space-y-5">
         <div className="space-y-2 rounded-xl bg-blue-50 p-3 text-sm text-slate-700"><p>{activeFilterLabels.length ? "Mostrando los resultados con estos filtros:" : "Mostrando todas las obras y cuadrillas de la lista."} Fechas en horario de Paraguay.</p>{activeFilterLabels.length > 0 && <><div className="flex flex-wrap gap-2">{activeFilterLabels.map(label => <span key={String(label)} className="rounded-full border border-blue-100 bg-white px-3 py-1 text-xs">{label}</span>)}</div><button type="button" className="min-h-10 font-bold text-next-blue underline" onClick={() => { setSearch(""); setWorkFilter(""); setTeamFilter(""); setStateFilter(""); setOriginFilter(""); setTypeFilter(""); }}>Mostrar todos los trabajos</button></>}</div>
@@ -367,9 +391,9 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       const finished = work.units.filter(u => u.status === "validado").length;
       const review = work.units.filter(u => u.status === "declarado").length;
       const pending = work.units.length - finished - review;
-      return <details key={work.id} className="group/work overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      return <details key={work.id} className="group/work overflow-hidden rounded-2xl border border-slate-200 bg-white transition-colors hover:border-slate-300">
         <summary className="flex min-h-24 cursor-pointer list-none items-center gap-4 p-4 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-200 sm:p-5 [&::-webkit-details-marker]:hidden">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-next-blue"><ClipboardList className="h-6 w-6" aria-hidden="true" /></span>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-next-light text-next-blue"><ClipboardList className="h-5 w-5" aria-hidden="true" /></span>
           <span className="min-w-0 flex-1"><span className="block break-words text-base font-bold text-slate-900 sm:text-lg">{work.name}</span><span className="mt-1 block text-sm text-next-muted">{finished} de {work.units.length} {work.units.length === 1 ? "unidad terminada" : "unidades terminadas"}{review > 0 ? ` · ${review} por revisar` : ""}{pending > 0 ? ` · ${pending} ${pending === 1 ? "pendiente" : "pendientes"}` : ""}</span></span>
           <ChevronDown className="h-5 w-5 shrink-0 text-next-blue transition-transform group-open/work:rotate-180" aria-hidden="true" />
         </summary>
