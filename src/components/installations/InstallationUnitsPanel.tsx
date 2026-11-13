@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BarChart3, ClipboardList, FileInput, PenLine, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, ChevronDown, ClipboardList, FileInput, PenLine, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import InstallationDialog from "./InstallationDialog";
 import InstallationGoalsDialog from "./InstallationGoalsDialog";
@@ -80,6 +80,12 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     && `${u.code} ${u.description} ${u.obraNombre}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => Number(["declarado", "validado"].includes(a.status)) - Number(["declarado", "validado"].includes(b.status)) || a.code.localeCompare(b.code) || a.ordinal - b.ordinal), [units, workFilter, teamFilter, stateFilter, originFilter, typeFilter, search, field, profile]);
   const filtered = matched.filter(u => !u.installationArchived && !u.installationRemoved);
+  const groupedWorks = new Map<string, { id: string; name: string; units: InstallationUnit[] }>();
+  for (const unit of filtered) {
+    const group = groupedWorks.get(unit.obraId);
+    if (group) group.units.push(unit);
+    else groupedWorks.set(unit.obraId, { id: unit.obraId, name: unit.obraNombre, units: [unit] });
+  }
   const reportUnits = matched.filter(u => (!u.installationArchived && !u.installationRemoved) || ["declarado", "validado"].includes(u.status));
   const visibleUnits = units.filter(u => !u.installationArchived && !u.installationRemoved);
   const productionGroups = [...new Set(units.filter(u => u.origin === "produccion" && u.sourceOrderId).map(u => u.sourceOrderId))].map(id => {
@@ -348,7 +354,7 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
     </InstallationDialog>}
 
     {visibleUnits.length > 0 && <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-slate-900">{field ? "Mis unidades de instalación" : "Unidades de instalación"}</h3><span className="text-xs font-semibold text-next-muted">{filtered.length} {filtered.length === 1 ? "unidad" : "unidades"} · pendientes primero</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-slate-900">{field ? "Mis obras de instalación" : "Obras de instalación"}</h3><span className="text-xs font-semibold text-next-muted">{groupedWorks.size} {groupedWorks.size === 1 ? "obra" : "obras"} · {filtered.length} {filtered.length === 1 ? "unidad" : "unidades"}</span></div>
       <div className="grid gap-3 md:grid-cols-3"><label className="block text-xs font-bold text-slate-600">Buscar trabajo<div className="relative mt-1"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden="true" /><input className="field !mt-0 !pl-9" placeholder="Código, descripción u obra" value={search} onChange={e => setSearch(e.target.value)} /></div></label>
         <label className="block text-xs font-bold text-slate-600">Obra<select className="field" value={workFilter} onChange={e => setWorkFilter(e.target.value)}><option value="">Todas mis obras</option>{works.map(w => <option key={w.id} value={w.id}>{w.nombre}</option>)}</select></label>
         <label className="block text-xs font-bold text-slate-600">Cuadrilla<select className="field" value={teamFilter} onChange={e => setTeamFilter(e.target.value)}><option value="">Todas</option>{teams.filter(t => profile.role === "admin" || profile.assignedTeamIds?.includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></label>
@@ -357,10 +363,27 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
       {admin && <details className="text-sm"><summary className="w-fit cursor-pointer font-semibold text-next-muted">Más filtros</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><label>Origen<select className="field" value={originFilter} onChange={e => setOriginFilter(e.target.value)}><option value="">Todos los orígenes</option><option value="manual">Carga manual</option><option value="produccion">Producción / PDF</option></select></label><label>Tipo de trabajo<select className="field" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">Todos los tipos</option>{installationTypes.map(t => <option key={t}>{t}</option>)}</select></label></div></details>}
     </div>}
     {!filtered.length && loaded && <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-next-blue"><ClipboardList className="h-7 w-7" aria-hidden="true" /></span><h3 className="mt-4 text-lg font-bold text-slate-900">{visibleUnits.length ? "No hay trabajos con estos filtros" : "Todo listo para tu primer trabajo"}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-next-muted">{visibleUnits.length ? "Probá otra obra, cuadrilla o estado para encontrar lo que buscás." : admin ? "Empezá cargando un trabajo manual o trayendo una orden de Producción. Después podrás asignar la cuadrilla y seguir cada unidad." : "Los trabajos asignados a tu obra y cuadrilla aparecerán aquí."}</p>{admin && !visibleUnits.length && <button type="button" className={button + " mt-5"} onClick={() => openCreate()}><Plus className="h-4 w-4" aria-hidden="true" />Agregar primer trabajo</button>}{visibleUnits.length > 0 && <button type="button" className={secondaryButton + " mt-5"} onClick={() => { setSearch(""); setWorkFilter(""); setTeamFilter(""); setStateFilter(""); setOriginFilter(""); setTypeFilter(""); }}>Limpiar filtros</button>}</div>}
-    <div className="space-y-3">{filtered.map(unit => {
+    <div className="space-y-3" aria-label="Obras y unidades">{[...groupedWorks.values()].map(work => {
+      const finished = work.units.filter(u => u.status === "validado").length;
+      const review = work.units.filter(u => u.status === "declarado").length;
+      const pending = work.units.length - finished - review;
+      return <details key={work.id} className="group/work overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <summary className="flex min-h-24 cursor-pointer list-none items-center gap-4 p-4 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-200 sm:p-5 [&::-webkit-details-marker]:hidden">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-next-blue"><ClipboardList className="h-6 w-6" aria-hidden="true" /></span>
+          <span className="min-w-0 flex-1"><span className="block break-words text-base font-bold text-slate-900 sm:text-lg">{work.name}</span><span className="mt-1 block text-sm text-next-muted">{finished} de {work.units.length} {work.units.length === 1 ? "unidad terminada" : "unidades terminadas"}{review > 0 ? ` · ${review} por revisar` : ""}{pending > 0 ? ` · ${pending} ${pending === 1 ? "pendiente" : "pendientes"}` : ""}</span></span>
+          <ChevronDown className="h-5 w-5 shrink-0 text-next-blue transition-transform group-open/work:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="space-y-2 border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+        {work.units.map(unit => {
       const closed = ["declarado", "validado"].includes(unit.status);
       const mayEdit = profile.role === "admin" || (profile.assignedWorkIds.includes(unit.obraId) && profile.assignedTeamIds?.includes(unit.teamId));
-      return <article key={unit.id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex flex-wrap justify-between gap-2"><div className="min-w-0 break-words"><p className="text-xs font-bold text-next-blue">{unit.obraNombre} · {unit.origin === "manual" ? "Manual" : "Producción / PDF"}</p><h3 className="break-all font-black">{unit.code} · Unidad / sector {unit.ordinal}/{unit.quantity}</h3><p>{admin ? unit.description : fieldText(unit.description)}</p></div><span className={`h-fit rounded-lg px-3 py-2 text-xs font-bold ${closed ? "bg-green-50 text-green-700" : "bg-blue-50 text-next-blue"}`}>{statusLabels[unit.status]}</span></div>
+      return <details key={unit.id} className="group/unit overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <summary className="flex min-h-20 cursor-pointer list-none items-center gap-3 p-4 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-200 [&::-webkit-details-marker]:hidden">
+          <span className="min-w-0 flex-1"><span className="block break-words text-sm font-bold text-slate-900">{unit.code} · Unidad / sector {unit.ordinal}/{unit.quantity}</span><span className="mt-1 block break-words text-sm text-next-muted">{admin ? unit.description : fieldText(unit.description)}</span></span>
+          <span className={`rounded-lg px-3 py-2 text-xs font-bold ${unit.status === "validado" ? "bg-green-50 text-green-700" : unit.status === "declarado" ? "bg-amber-50 text-amber-800" : "bg-blue-50 text-next-blue"}`}>{statusLabels[unit.status]}</span>
+          <ChevronDown className="h-5 w-5 shrink-0 text-next-blue transition-transform group-open/unit:rotate-180" aria-hidden="true" />
+        </summary>
+        <article className="space-y-4 border-t border-slate-100 p-4 sm:p-5"><p className="text-xs font-bold text-next-blue">{unit.obraNombre} · {unit.origin === "manual" ? "Manual" : "Producción / PDF"}</p>
         <p className="text-sm">{fmt(unit.value)} {unit.measure === "m2" ? "m²" : unit.measure} · {unit.areaMode === "manual" ? "Superficie manual" : admin ? unit.criterion : fieldText(unit.criterion)} · {unit.teamName || "Pendiente de asignación"}</p>
         {unit.width > 0 && unit.height > 0 && <p className="text-sm text-next-muted">Dimensiones: {unit.width * 1000} × {unit.height * 1000} mm</p>}
         {unit.sourceMissing && <p className="rounded-lg bg-amber-50 p-3 text-sm">Referencia omitida en la última importación; unidad y avances conservados para revisión administrativa.</p>}
@@ -385,7 +408,9 @@ export default function InstallationUnitsPanel({ field = false }: { field?: bool
           {unit.measure === "m2" && <button className={button} disabled={busy} onClick={() => { const value = window.prompt("Nueva superficie de esta unidad en m²", String(unit.value)); if (value === null) return; const reason = window.prompt("Justificación obligatoria. Se recalcularán los reportes, incluso si ya finalizó."); if (reason && window.confirm("¿Confirmar corrección de superficie y recalcular productividad con historial?")) void act(unit, { type: "area", value: Number(value.replace(",", ".")), reason }); }}>Corregir superficie</button>}
           <button className={button} onClick={() => setDetail(detail === unit.id ? "" : unit.id)}>Historial</button></div></details>}
         {detail === unit.id && admin && <ol className="space-y-2 text-xs">{unit.history.map(entry => <li key={entry.id} className="break-words">{entry.at} · {entry.by} · {entry.action} · {entry.reason}{entry.before && <details><summary>Valores antes / después</summary><p>{entry.before}</p><p>{entry.after}</p></details>}</li>)}</ol>}
-      </article>;
+      </article></details>;
+        })}</div>
+      </details>;
     })}</div>
   </section>;
 }
