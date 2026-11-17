@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
 import MonthlySalesDialog from "../components/dashboard/MonthlySalesDialog";
+import DashboardMetricDialog, { type DashboardMetric } from "../components/dashboard/DashboardMetricDialog";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import NewWorkWizard from "../components/work/NewWorkWizard";
@@ -26,7 +27,7 @@ import type { Cobro, Cuadrilla, Obra, ProgressReport, WorkProgressRubric } from 
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
-import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, isDashboardMonth } from "../utils/dashboard";
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, getMonthlyReceipts, getInstalledEntriesThisWeek, isDashboardMonth } from "../utils/dashboard";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -41,6 +42,7 @@ export default function DashboardPage() {
   const [message, setMessage] = useState("");
   const [newWorkOpen, setNewWorkOpen] = useState(false);
   const [salesOpen, setSalesOpen] = useState(false);
+  const [openMetric, setOpenMetric] = useState<DashboardMetric | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentDashboardMonth());
 
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function DashboardPage() {
     load();
   }, []);
 
+  const weekEntries = useMemo(() => getInstalledEntriesThisWeek(progressReports, progressRubrics), [progressReports, progressRubrics]);
   const metrics = useMemo(() => {
     const activeObras = obras.filter((obra) => !["Finalizada", "Cobrado"].includes(obra.estado));
     const monthlyTotals = calculateMonthlyDashboardTotals(obras, cobros, selectedMonth);
@@ -88,11 +91,12 @@ export default function DashboardPage() {
       pendienteProduccion,
       utilidadEstimada: 0,
       margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo").length,
-      m2InstaladosSemana: calculateInstalledM2ThisWeek(progressReports, progressRubrics),
+      m2InstaladosSemana: Math.round(weekEntries.reduce((total, item) => total + item.amount, 0)),
       flujoProyectado: saldoPendiente
     };
-  }, [cobros, obras, progressReports, progressRubrics, selectedMonth]);
+  }, [cobros, obras, selectedMonth, weekEntries]);
 
+  const monthlyReceipts = useMemo(() => getMonthlyReceipts(cobros, selectedMonth), [cobros, selectedMonth]);
   const monthlySalesWorks = useMemo(() => getMonthlySalesWorks(obras, selectedMonth), [obras, selectedMonth]);
 
   const statusRows = useMemo(() => {
@@ -172,16 +176,18 @@ export default function DashboardPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} onClick={canViewFinancials(profile) ? () => setSalesOpen(true) : undefined} />
-        <KpiCard label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" />
-        <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" />
-        <KpiCard label="Flujo proyectado 30 dias" value={formatCurrencyPYG(metrics.flujoProyectado)} icon={BarChart3} />
-        <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" />
-        <KpiCard label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} icon={Factory} tone="orange" />
-        <KpiCard label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} icon={Truck} tone="green" />
-        <KpiCard label="Utilidad estimada" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" />
+        <KpiCard label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" onClick={canViewFinancials(profile) ? () => setOpenMetric("receipts") : undefined} />
+        <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" onClick={canViewFinancials(profile) ? () => setOpenMetric("receivable") : undefined} />
+        <KpiCard label="Flujo proyectado 30 dias" value={formatCurrencyPYG(metrics.flujoProyectado)} icon={BarChart3} onClick={canViewFinancials(profile) ? () => setOpenMetric("forecast") : undefined} />
+        <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" onClick={() => setOpenMetric("late")} />
+        <KpiCard label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} icon={Factory} tone="orange" onClick={() => setOpenMetric("production")} />
+        <KpiCard label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} icon={Truck} tone="green" onClick={() => setOpenMetric("installed")} />
+        <KpiCard label="Utilidad estimada" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" onClick={canViewFinancials(profile) ? () => setOpenMetric("profit") : undefined} />
       </section>
 
       {salesOpen && canViewFinancials(profile) && <MonthlySalesDialog month={selectedMonth} works={monthlySalesWorks} total={metrics.totalMonto} canOpenWork={canViewModule(profile, "finanzas_obras")} error={error} onClose={() => setSalesOpen(false)} />}
+      {openMetric && (!["receipts", "receivable", "forecast", "profit"].includes(openMetric) || canViewFinancials(profile)) && <DashboardMetricDialog kind={openMetric} month={selectedMonth} works={obras} receipts={monthlyReceipts} installedEntries={weekEntries} totalReceipts={metrics.totalCobrado} totalReceivable={metrics.saldoPendiente} totalInstalled={metrics.m2InstaladosSemana} canOpenFinance={canViewFinancials(profile) && canViewModule(profile, "finanzas_obras")} canOpenWork={canViewModule(profile, "avance_obras")} error={error} onClose={() => setOpenMetric(null)} />}
+
 
       <section className="grid gap-5 xl:grid-cols-2">
         <DataCard title="Avance operativo" subtitle="Fiscalizacion, produccion, instalacion y cuadrillas.">
@@ -314,75 +320,6 @@ export default function DashboardPage() {
       ) : null}
     </div>
   );
-}
-
-function calculateInstalledM2ThisWeek(
-  reports: ProgressReport[],
-  rubrics: WorkProgressRubric[]
-): number {
-  const { start, end } = getCurrentWeekRange();
-  const rubricsById = new Map(rubrics.map((rubro) => [rubro.id, rubro]));
-
-  return Math.round(
-    reports
-      .filter((report) => isDateInRange(report.fecha, start, end) && !isCancelledReport(report))
-      .flatMap((report) => report.entries)
-      .reduce((total, entry) => {
-        const executedToday = entry.cantidadEjecutadaHoy ?? 0;
-        const rubric = rubricsById.get(entry.rubroId);
-
-        if (executedToday <= 0 || !isInstalledSquareMeterRubric(rubric, entry.rubroNombre)) {
-          return total;
-        }
-
-        return total + executedToday;
-      }, 0)
-  );
-}
-
-function getCurrentWeekRange() {
-  const today = new Date();
-  const start = new Date(today);
-  const day = start.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  start.setDate(start.getDate() + diffToMonday);
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-
-  return { start, end };
-}
-
-function isDateInRange(value: string, start: Date, end: Date) {
-  if (!value) return false;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return false;
-  return date >= start && date <= end;
-}
-
-function isCancelledReport(report: ProgressReport) {
-  const status = `${report.observacionGeneral ?? ""} ${report.incidentes ?? ""}`.toLowerCase();
-  return status.includes("cancelado") || status.includes("eliminado");
-}
-
-function isInstalledSquareMeterRubric(rubric: WorkProgressRubric | undefined, fallbackName: string) {
-  const unit = normalizeText(rubric?.unidad ?? "");
-  const name = normalizeText(rubric?.nombre ?? fallbackName);
-  const isSquareMeter = unit === "m2" || unit === "m²" || unit.includes("metro cuadrado");
-  const looksInstalled = name.includes("instalad") || name.includes("vidrio");
-  const excluded = name.includes("sellado");
-
-  return isSquareMeter && looksInstalled && !excluded;
-}
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
 }
 
 function getBadgeForStatus(status: string): BadgeStatus {

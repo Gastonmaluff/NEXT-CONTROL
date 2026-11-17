@@ -1,4 +1,4 @@
-import type { Cobro, Obra } from "../types";
+import type { Cobro, Obra, ProgressReport, WorkProgressRubric } from "../types";
 
 const businessMonthFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Asuncion",
@@ -36,6 +36,11 @@ export function getMonthlySalesWorks<T extends Pick<Obra, "fechaInicio" | "creat
   return obras.filter(obra => getRecordMonth(obra.fechaInicio || obra.createdAt) === month && Number.isFinite(obra.montoAprobado));
 }
 
+export function getMonthlyReceipts<T extends Pick<Cobro, "fecha" | "monto">>(cobros: readonly T[], month: string): T[] {
+  if (!isDashboardMonth(month)) return [];
+  return cobros.filter(cobro => getRecordMonth(cobro.fecha) === month && Number.isFinite(cobro.monto));
+}
+
 export function calculateMonthlyDashboardTotals(
   obras: readonly Pick<Obra, "fechaInicio" | "createdAt" | "montoAprobado">[],
   cobros: readonly Pick<Cobro, "fecha" | "monto">[],
@@ -47,9 +52,59 @@ export function calculateMonthlyDashboardTotals(
     // date; creation time is a fallback only for legacy records without it.
     ventas: getMonthlySalesWorks(obras, month).reduce((total, obra) => total + obra.montoAprobado, 0),
     // Collections on older works still belong to the month they were received.
-    cobrado: cobros.reduce((total, cobro) =>
-      getRecordMonth(cobro.fecha) === month && Number.isFinite(cobro.monto)
-        ? total + cobro.monto
-        : total, 0)
+    cobrado: getMonthlyReceipts(cobros, month).reduce((total, cobro) => total + cobro.monto, 0)
   };
+}
+
+export function getInstalledEntriesThisWeek(reports: readonly ProgressReport[], rubrics: readonly WorkProgressRubric[], now = new Date()) {
+  const { start, end } = getCurrentWeekRange(now);
+  const rubricsById = new Map(rubrics.map(rubro => [rubro.id, rubro]));
+  return reports.filter(report => isDateInRange(report.fecha, start, end) && !isCancelledReport(report)).flatMap(report =>
+    report.entries.filter(entry => !((entry.cantidadEjecutadaHoy ?? 0) <= 0) && isInstalledSquareMeterRubric(rubricsById.get(entry.rubroId), entry.rubroNombre))
+      .map(entry => ({ reportId: report.id, entryId: entry.id, obraId: report.obraId, date: report.fecha, name: entry.rubroNombre, amount: entry.cantidadEjecutadaHoy ?? 0, user: report.userName }))
+  );
+}
+
+function getCurrentWeekRange(today: Date) {
+  const start = new Date(today);
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diffToMonday);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+}
+
+function isDateInRange(value: string, start: Date, end: Date) {
+  if (!value) return false;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= start && date <= end;
+}
+
+function isCancelledReport(report: ProgressReport) {
+  const status = `${report.observacionGeneral ?? ""} ${report.incidentes ?? ""}`.toLowerCase();
+  return status.includes("cancelado") || status.includes("eliminado");
+}
+
+function isInstalledSquareMeterRubric(rubric: WorkProgressRubric | undefined, fallbackName: string) {
+  const unit = normalizeText(rubric?.unidad ?? "");
+  const name = normalizeText(rubric?.nombre ?? fallbackName);
+  const isSquareMeter = unit === "m2" || unit === "m²" || unit.includes("metro cuadrado");
+  const looksInstalled = name.includes("instalad") || name.includes("vidrio");
+  const excluded = name.includes("sellado");
+
+  return isSquareMeter && looksInstalled && !excluded;
+}
+
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }

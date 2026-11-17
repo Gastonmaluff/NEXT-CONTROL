@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, isDashboardMonth } from '../src/utils/dashboard.ts';
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, getMonthlyReceipts, getInstalledEntriesThisWeek, isDashboardMonth } from '../src/utils/dashboard.ts';
 
 const work = (fechaInicio, montoAprobado, createdAt = `${fechaInicio}T12:00:00Z`) => ({ fechaInicio, montoAprobado, createdAt });
 const receipt = (fecha, monto) => ({ fecha, monto });
@@ -86,4 +86,28 @@ test('sales detail contains exactly the works that contribute to the monthly amo
   assert.deepEqual(included.map(o => o.id), ['approved', 'prospect', 'legacy']);
   assert.equal(included.reduce((total,o) => total + o.montoAprobado, 0), calculateMonthlyDashboardTotals(obras, [], '2026-10').ventas);
   assert.deepEqual(getMonthlySalesWorks(obras, 'invalid'), []);
+});
+
+
+test('monthly receipt detail matches the amount including Paraguay month boundaries', () => {
+  const cobros = [
+    {...receipt('2026-10-15', 100), id:'a'},
+    {...receipt('2026-11-01T02:59:59Z', 200), id:'b'},
+    {...receipt('2026-11-01T03:00:00Z', 300), id:'c'},
+    {...receipt('2026-10-15', NaN), id:'invalid'}
+  ];
+  const listed = getMonthlyReceipts(cobros, '2026-10');
+  assert.deepEqual(listed.map(c => c.id), ['a', 'b']);
+  assert.equal(listed.reduce((sum,c)=>sum+c.monto, 0), calculateMonthlyDashboardTotals([], cobros, '2026-10').cobrado);
+  assert.deepEqual(getMonthlyReceipts(cobros, 'invalid'), []);
+});
+
+test('weekly installed detail includes the reported installation amounts used by the rounded KPI', () => {
+  const rubrics = [{id:'glass',nombre:'Vidrio instalado',unidad:'m2'}, {id:'seal',nombre:'Sellado',unidad:'m2'}, {id:'unit',nombre:'Ventanas instaladas',unidad:'un'}];
+  const report = (id, fecha, entries, observacionGeneral='') => ({id, obraId:'work', fecha, entries, observacionGeneral, userName:'Ana'});
+  const entry = (id, rubroId, cantidadEjecutadaHoy) => ({id, rubroId, rubroNombre:'Elemento', cantidadEjecutadaHoy});
+  const reports = [report('week','2026-10-07',[entry('a','glass',1.25),entry('b','glass',2.3),entry('c','seal',4),entry('d','unit',3)]), report('cancel','2026-10-08',[entry('e','glass',10)],'Cancelado'), report('prior','2026-10-04',[entry('f','glass',20)])];
+  const rows = getInstalledEntriesThisWeek(reports, rubrics, new Date('2026-10-07T12:00:00'));
+  assert.deepEqual(rows.map(row=>row.entryId), ['a','b']);
+  assert.equal(Math.round(rows.reduce((sum,row)=>sum+row.amount,0)), 4);
 });
