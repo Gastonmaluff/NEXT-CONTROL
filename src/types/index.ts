@@ -203,6 +203,7 @@ export type ChequeStatus = ReceivedChequeStatus | IssuedChequeStatus;
 export type ChequeStatusChange = {
   estado: ChequeStatus;
   fecha: string;
+  fechaEfectiva?: string;
   usuario?: string;
   observacion?: string;
 };
@@ -232,6 +233,8 @@ export type Cheque = {
   fechaEmisionCheque: string;
   fechaCobroCheque: string;
   fechaVencimientoCheque?: string;
+  fechaRealCobro?: string;
+  fechaRealPago?: string;
   observacion?: string;
   historial?: ChequeStatusChange[];
   createdAt: string;

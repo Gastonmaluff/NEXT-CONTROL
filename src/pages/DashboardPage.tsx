@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
 import MonthlySalesDialog from "../components/dashboard/MonthlySalesDialog";
+import ActualMetricDialog, { type ActualMetric } from "../components/dashboard/ActualMetricDialog";
 import DashboardMetricDialog, { type DashboardMetric } from "../components/dashboard/DashboardMetricDialog";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
@@ -17,17 +18,21 @@ import NewWorkWizard from "../components/work/NewWorkWizard";
 import { useAuth } from "../context/AuthContext";
 import {
   getCobrosByObra,
+  getCheques,
+  getMovementsByWork,
   getCuadrillas,
   getObras,
-  getProgressReportsByWork,
-  getProgressRubricsByWork
 } from "../lib/firestore";
-import { canCreateWork, canViewFinancials, canViewModule } from "../lib/roles";
-import type { Cobro, Cuadrilla, Obra, ProgressReport, WorkProgressRubric } from "../types";
+import { canCreateWork, canManageFinancesForUser, canViewFinancials, canViewModule } from "../lib/roles";
+import type { Cobro, Cuadrilla, Obra, Cheque, FinancialMovement } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
-import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, getMonthlyReceipts, getInstalledEntriesThisWeek, isDashboardMonth } from "../utils/dashboard";
+import { getCompletedInstallationUnits, periodBounds, type InstallationUnit } from "../utils/installationUnits";
+import { loadInstallationGoals, loadInstallationUnits } from "../lib/installationRepository";
+import { createCashForecast, loadCashForecast, retireCashForecast } from "../lib/cashForecast";
+import { businessDay, getCashLines, getForecastLines, getWorkResults, type CashForecast } from "../utils/controlActual";
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, getMonthlyReceipts, isDashboardMonth } from "../utils/dashboard";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -35,14 +40,16 @@ export default function DashboardPage() {
   const [obras, setObras] = useState<Obra[]>([]);
   const [cobros, setCobros] = useState<Cobro[]>([]);
   const [cuadrillas, setCuadrillas] = useState<Cuadrilla[]>([]);
-  const [progressReports, setProgressReports] = useState<ProgressReport[]>([]);
-  const [progressRubrics, setProgressRubrics] = useState<WorkProgressRubric[]>([]);
+  const [movements, setMovements] = useState<FinancialMovement[]>([]); const [cheques, setCheques] = useState<Cheque[]>([]); const [forecasts, setForecasts] = useState<CashForecast[]>([]);
+  const [installationUnits, setInstallationUnits] = useState<InstallationUnit[]>([]); const [weekStartsOn, setWeekStartsOn] = useState(1);
+  const [financeError, setFinanceError] = useState(""); const [installError, setInstallError] = useState("");
+  const [financeReady, setFinanceReady] = useState(false); const [installReady, setInstallReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [newWorkOpen, setNewWorkOpen] = useState(false);
   const [salesOpen, setSalesOpen] = useState(false);
-  const [openMetric, setOpenMetric] = useState<DashboardMetric | null>(null);
+  const [openMetric, setOpenMetric] = useState<DashboardMetric | null>(null); const [actualMetric, setActualMetric] = useState<ActualMetric | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentDashboardMonth());
 
   useEffect(() => {
@@ -53,14 +60,8 @@ export default function DashboardPage() {
         const loadedCobros = (await Promise.all(
           loadedObras.map((obra) => getCobrosByObra(obra.id))
         )).flat();
-        const [loadedReports, loadedRubrics] = await Promise.all([
-          Promise.all(loadedObras.map((obra) => getProgressReportsByWork(obra.id))).then((items) => items.flat()),
-          Promise.all(loadedObras.map((obra) => getProgressRubricsByWork(obra.id))).then((items) => items.flat())
-        ]);
         setObras(loadedObras);
         setCobros(loadedCobros);
-        setProgressReports(loadedReports);
-        setProgressRubrics(loadedRubrics);
         setCuadrillas(await getCuadrillas());
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el dashboard.");
@@ -72,7 +73,38 @@ export default function DashboardPage() {
     load();
   }, []);
 
-  const weekEntries = useMemo(() => getInstalledEntriesThisWeek(progressReports, progressRubrics), [progressReports, progressRubrics]);
+  useEffect(() => {
+    if (!profile?.active || !obras.length && loading) return;
+    let cancelled = false;
+    setFinanceReady(false); setInstallReady(false); setFinanceError(""); setInstallError("");
+    if (canManageFinancesForUser(profile) && canViewFinancials(profile)) {
+      void Promise.all([Promise.all(obras.map(work => getMovementsByWork(work.id))).then(values => values.flat()), getCheques(), loadCashForecast(profile)])
+        .then(([items, checks, plans]) => { if (!cancelled) { setMovements(items); setCheques(checks); setForecasts(plans); setFinanceReady(true); } })
+        .catch(e => { if (!cancelled) setFinanceError(e instanceof Error ? e.message : "No se pudieron cargar los datos financieros."); });
+    } else setFinanceError("Tu usuario no tiene acceso a estos datos financieros.");
+    if (profile.role === "admin") {
+      void Promise.all([loadInstallationUnits(profile), loadInstallationGoals()])
+        .then(([items, goals]) => { if (!cancelled) { setInstallationUnits(items); setWeekStartsOn(goals.weekStartsOn ?? 1); setInstallReady(true); } })
+        .catch(e => { if (!cancelled) setInstallError(e instanceof Error ? e.message : "No se pudieron cargar las instalaciones."); });
+    } else setInstallError("El resumen completo de instalaciones requiere acceso de administrador.");
+    return () => { cancelled = true; };
+  }, [profile?.uid, profile?.role, profile?.active, profile?.permissions?.canViewFinancials, obras, loading]);
+  const today = businessDay();
+  const cash = useMemo(() => getCashLines(movements, cheques, today), [movements, cheques, today]);
+  const monthCash = cash.lines.filter(line => line.date.slice(0, 7) === selectedMonth);
+  const income = monthCash.filter(line => line.direction === "ingreso").reduce((sum, line) => sum + line.amount, 0);
+  const expense = monthCash.filter(line => line.direction === "egreso").reduce((sum, line) => sum + line.amount, 0);
+  const forecast = useMemo(() => getForecastLines(cheques, forecasts, today, movements), [cheques, forecasts, today, movements]);
+  const forecastIncome = forecast.lines.filter(line => line.direction === "ingreso").reduce((sum, line) => sum + line.amount, 0);
+  const forecastExpense = forecast.lines.filter(line => line.direction === "egreso").reduce((sum, line) => sum + line.amount, 0);
+  const workResults = useMemo(() => getWorkResults(obras, movements), [obras, movements]);
+  const availableResults = workResults.filter(row => row.available);
+  const week = periodBounds("semana", new Date(), weekStartsOn);
+  const validatedUnits = getCompletedInstallationUnits(installationUnits, "validado", week.start, week.end);
+  const completedUnits = validatedUnits.filter(unit => unit.measure === "m2");
+  const installedM2 = completedUnits.reduce((sum, unit) => sum + unit.value, 0);
+  const financialValue = (value: number) => financeReady ? formatCurrencyPYG(value) : "No disponible";
+  const installationValue = installReady ? `${installedM2.toLocaleString("es-PY", {maximumFractionDigits: 2})} m²` : "No disponible";
   const metrics = useMemo(() => {
     const activeObras = obras.filter((obra) => !["Finalizada", "Cobrado"].includes(obra.estado));
     const monthlyTotals = calculateMonthlyDashboardTotals(obras, cobros, selectedMonth);
@@ -85,16 +117,16 @@ export default function DashboardPage() {
     return {
       activeObras,
       totalMonto: monthlyTotals.ventas,
-      totalCobrado: monthlyTotals.cobrado,
+      totalCobrado: income,
       saldoPendiente,
       atrasadas,
       pendienteProduccion,
-      utilidadEstimada: 0,
+      utilidadEstimada: availableResults.reduce((sum, row) => sum + row.result, 0),
       margenBajo: obras.filter((obra) => getFinancialStatus(obra) === "Margen bajo").length,
-      m2InstaladosSemana: Math.round(weekEntries.reduce((total, item) => total + item.amount, 0)),
-      flujoProyectado: saldoPendiente
+      m2InstaladosSemana: installedM2,
+      flujoProyectado: forecastIncome - forecastExpense
     };
-  }, [cobros, obras, selectedMonth, weekEntries]);
+  }, [cobros, obras, selectedMonth, income, installedM2, forecastIncome, forecastExpense, availableResults]);
 
   const monthlyReceipts = useMemo(() => getMonthlyReceipts(cobros, selectedMonth), [cobros, selectedMonth]);
   const monthlySalesWorks = useMemo(() => getMonthlySalesWorks(obras, selectedMonth), [obras, selectedMonth]);
@@ -157,7 +189,7 @@ export default function DashboardPage() {
         <div>
           <label htmlFor="control-month" className="text-sm font-bold text-next-text">Mes de ventas y cobros</label>
           <p className="mt-1 text-xs leading-5 text-next-muted">
-            Ventas por fecha de inicio de la obra; cobros por fecha del cobro. Los saldos y las alertas son generales.
+            Ventas por fecha de inicio de la obra; cobros por fecha real. Los saldos y las alertas son generales.
           </p>
         </div>
         <input
@@ -176,24 +208,28 @@ export default function DashboardPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} onClick={canViewFinancials(profile) ? () => setSalesOpen(true) : undefined} />
-        <KpiCard label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" onClick={canViewFinancials(profile) ? () => setOpenMetric("receipts") : undefined} />
+        <KpiCard label="Cobrado del mes" value={financialValue(metrics.totalCobrado)} icon={Receipt} tone="green" onClick={canViewFinancials(profile) ? () => setActualMetric("receipts") : undefined} />
         <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" onClick={canViewFinancials(profile) ? () => setOpenMetric("receivable") : undefined} />
-        <KpiCard label="Flujo proyectado 30 dias" value={formatCurrencyPYG(metrics.flujoProyectado)} icon={BarChart3} onClick={canViewFinancials(profile) ? () => setOpenMetric("forecast") : undefined} />
+        <KpiCard label="Flujo previsto 30 días" value={!financeReady ? "No disponible" : forecast.lines.length ? formatCurrencyPYG(metrics.flujoProyectado) : forecast.issues.length ? "Revisar previsiones" : "Sin previsiones"} icon={BarChart3} onClick={canViewFinancials(profile) ? () => setActualMetric("forecast") : undefined} />
         <KpiCard label="Obras atrasadas" value={`${metrics.atrasadas.length}`} icon={CalendarClock} tone="red" onClick={() => setOpenMetric("late")} />
         <KpiCard label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} icon={Factory} tone="orange" onClick={() => setOpenMetric("production")} />
-        <KpiCard label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} icon={Truck} tone="green" onClick={() => setOpenMetric("installed")} />
-        <KpiCard label="Utilidad estimada" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" onClick={canViewFinancials(profile) ? () => setOpenMetric("profit") : undefined} />
+        <KpiCard label="m² instalados esta semana" value={installationValue} icon={Truck} tone="green" onClick={() => setActualMetric("installed")} />
+        <KpiCard label="Resultado parcial por obra" value={!financeReady ? "No disponible" : availableResults.length ? formatCurrencyPYG(metrics.utilidadEstimada) : "Sin costos registrados"} icon={BarChart3} tone="green" onClick={canViewFinancials(profile) ? () => setActualMetric("profit") : undefined} />
+        <KpiCard label="Caja neta del mes" value={financialValue(income - expense)} icon={BarChart3} onClick={canViewFinancials(profile) ? () => setActualMetric("cash") : undefined} />
       </section>
 
+      {financeReady && (cash.issues.length > 0 || monthlyReceipts.length > 0 || forecast.issues.length > 0 || forecast.overdue.length > 0 || workResults.some(item => !item.available)) && <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Algunos datos requieren revisión o están incompletos. Abrí los indicadores para ver qué registros faltan o no se sumaron.</p>}
+
       {salesOpen && canViewFinancials(profile) && <MonthlySalesDialog month={selectedMonth} works={monthlySalesWorks} total={metrics.totalMonto} canOpenWork={canViewModule(profile, "finanzas_obras")} error={error} onClose={() => setSalesOpen(false)} />}
-      {openMetric && (!["receipts", "receivable", "forecast", "profit"].includes(openMetric) || canViewFinancials(profile)) && <DashboardMetricDialog kind={openMetric} month={selectedMonth} works={obras} receipts={monthlyReceipts} installedEntries={weekEntries} totalReceipts={metrics.totalCobrado} totalReceivable={metrics.saldoPendiente} totalInstalled={metrics.m2InstaladosSemana} canOpenFinance={canViewFinancials(profile) && canViewModule(profile, "finanzas_obras")} canOpenWork={canViewModule(profile, "avance_obras")} error={error} onClose={() => setOpenMetric(null)} />}
+      {actualMetric && (actualMetric === "installed" || canViewFinancials(profile)) && <ActualMetricDialog kind={actualMetric} month={selectedMonth} today={today} works={obras} canOpenFinance={canViewModule(profile, "finanzas_obras")} cash={cash} monthCash={monthCash} income={income} expense={expense} forecast={forecast} forecastIncome={forecastIncome} forecastExpense={forecastExpense} workResults={workResults} completedUnits={completedUnits} nonAreaCount={validatedUnits.length - completedUnits.length} installedM2={installedM2} week={week} financeReady={financeReady} financeError={financeError} installReady={installReady} installError={installError} legacyCount={monthlyReceipts.length} onClose={() => setActualMetric(null)} onCreateForecast={async (data, id) => { if (!profile) throw new Error("Falta el usuario."); await createCashForecast(profile, data, id); setForecasts(await loadCashForecast(profile)); }} onRetireForecast={async id => { if (!profile) throw new Error("Falta el usuario."); await retireCashForecast(profile, id); setForecasts(await loadCashForecast(profile)); }} />}
+      {openMetric && (!["receipts", "receivable", "forecast", "profit"].includes(openMetric) || canViewFinancials(profile)) && <DashboardMetricDialog kind={openMetric} month={selectedMonth} works={obras} receipts={monthlyReceipts} installedEntries={[]} totalReceipts={metrics.totalCobrado} totalReceivable={metrics.saldoPendiente} totalInstalled={metrics.m2InstaladosSemana} canOpenFinance={canViewFinancials(profile) && canViewModule(profile, "finanzas_obras")} canOpenWork={canViewModule(profile, "avance_obras")} error={error} onClose={() => setOpenMetric(null)} />}
 
 
       <section className="grid gap-5 xl:grid-cols-2">
         <DataCard title="Avance operativo" subtitle="Fiscalizacion, produccion, instalacion y cuadrillas.">
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric label="Obras atrasadas" value={`${metrics.atrasadas.length}`} />
-            <Metric label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} />
+            <Metric label="m² instalados esta semana" value={installationValue} />
             <Metric label="Produccion pendiente" value={`${metrics.pendienteProduccion} obras`} />
             <Metric label="Cuadrillas activas" value={`${cuadrillas.filter((crew) => crew.estado !== "Disponible").length}`} />
           </div>
@@ -202,7 +238,7 @@ export default function DashboardPage() {
         <DataCard title="Finanzas" subtitle="Caja, rentabilidad y margen por obra.">
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} />
-            <Metric label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} />
+            <Metric label="Cobrado del mes" value={financialValue(metrics.totalCobrado)} />
             <Metric label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} />
             <Metric label="Obras con margen bajo" value={`${metrics.margenBajo}`} />
           </div>

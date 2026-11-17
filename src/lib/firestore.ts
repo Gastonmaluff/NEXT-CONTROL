@@ -1312,14 +1312,16 @@ export async function updateCheque(id: string, data: Partial<Cheque>): Promise<C
   const profile = await getCurrentUserProfile();
   const previous = (await getCheques()).find((cheque) => cheque.id === id);
   const nextStatus = data.estado;
-  const history = nextStatus && previous?.estado !== nextStatus
+  const realDateChanged = Boolean(previous && ((data.fechaRealCobro && data.fechaRealCobro !== previous.fechaRealCobro) || (data.fechaRealPago && data.fechaRealPago !== previous.fechaRealPago)));
+  const history = previous && ((nextStatus && previous.estado !== nextStatus) || realDateChanged)
     ? [
         ...(previous?.historial ?? []),
         {
-          estado: nextStatus,
+          estado: nextStatus ?? previous.estado,
           fecha: now(),
+          fechaEfectiva: data.fechaRealCobro ?? data.fechaRealPago,
           usuario: profile?.nombre ?? profile?.email ?? "Sistema",
-          observacion: data.observacion
+          observacion: realDateChanged && !nextStatus ? "Fecha real de cobro o pago corregida" : data.observacion
         }
       ]
     : previous?.historial;

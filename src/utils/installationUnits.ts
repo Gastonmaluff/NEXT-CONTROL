@@ -169,10 +169,16 @@ export function periodBounds(period: "hoy" | "semana" | "anterior" | "mes", now 
   const start = date.toISOString().slice(0, 10); date.setUTCDate(date.getUTCDate() + 6);
   return { start, end: date.toISOString().slice(0, 10) };
 }
-export function summarizeUnits(units: InstallationUnit[], base: "declarado" | "validado", start = "", end = "9999") {
-  const closed = (u: InstallationUnit) => stageKeys.some(k => u.required[k]) && stageKeys.every(k => !u.required[k] || u.stages[k]) && Boolean(u.photoUrl && u.completedAt && u.completedBy && u.creditedTeamId)
+export function isInstallationClosed(u: InstallationUnit, base: "declarado" | "validado") {
+  return stageKeys.some(k => u.required[k]) && stageKeys.every(k => !u.required[k] || u.stages[k]) && Boolean(u.photoUrl && u.completedAt && u.completedBy && u.creditedTeamId)
     && ((u.status === "validado" && Boolean(u.validatedAt && u.validatedBy)) || (base === "declarado" && u.status === "declarado"));
-  const completed = units.filter(u => closed(u) && u.completedAt && paraguayDay(u.completedAt) >= start && paraguayDay(u.completedAt) <= end);
+}
+export function getCompletedInstallationUnits(units: readonly InstallationUnit[], base: "declarado" | "validado", start = "", end = "9999") {
+  return units.filter(u => isInstallationClosed(u, base) && u.completedAt && paraguayDay(u.completedAt) >= start && paraguayDay(u.completedAt) <= end);
+}
+export function summarizeUnits(units: InstallationUnit[], base: "declarado" | "validado", start = "", end = "9999") {
+  const closed = (u: InstallationUnit) => isInstallationClosed(u, base);
+  const completed = getCompletedInstallationUnits(units, base, start, end);
   return {
     totalM2: units.filter(u => u.measure === "m2").reduce((s, u) => s + u.value, 0),
     finishedM2: completed.filter(u => u.measure === "m2").reduce((s, u) => s + u.value, 0),

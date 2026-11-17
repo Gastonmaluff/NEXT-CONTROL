@@ -220,12 +220,14 @@ export default function ChequesPage() {
 
   async function confirmStatusChange() {
     if (!confirmAction || saving) return;
+    if ((confirmAction.nextStatus === "cobrado" || confirmAction.nextStatus === "debitado") && !confirmAction.dateValue) { setError("Indicá la fecha real de cobro o pago."); return; }
     setSaving(true);
     setError("");
     try {
       const note = statusChangeTitle(confirmAction.cheque, confirmAction.nextStatus);
       const updated = await updateCheque(confirmAction.cheque.id, {
         estado: confirmAction.nextStatus,
+        ...(confirmAction.nextStatus === "cobrado" ? { fechaRealCobro: confirmAction.dateValue } : confirmAction.nextStatus === "debitado" ? { fechaRealPago: confirmAction.dateValue } : {}),
         updatedBy: profile?.uid ?? "unknown",
         observacion: mergeObservation(confirmAction.cheque.observacion, `${note}: ${formatDisplayDate(confirmAction.dateValue)}`)
       });
@@ -901,6 +903,7 @@ function ChequeDetailModal({
     bancoCheque: cheque.bancoCheque ?? "",
     fechaEmisionCheque: cheque.fechaEmisionCheque,
     fechaCobroCheque: getChequeDueDate(cheque),
+    fechaReal: cheque.tipo === "recibido" ? cheque.fechaRealCobro ?? "" : cheque.fechaRealPago ?? "",
     monto: String(cheque.monto),
     observacion: cheque.observacion ?? ""
   });
@@ -924,6 +927,7 @@ function ChequeDetailModal({
           <DetailItem label="Faltan" value={getDueAlert(cheque).text} />
           <DetailItem label="Fecha expedicion" value={formatDisplayDate(cheque.fechaEmisionCheque)} />
           <DetailItem label="Fecha vencimiento/cobro" value={formatDisplayDate(getChequeDueDate(cheque))} />
+          {(cheque.estado === "cobrado" || cheque.estado === "debitado") && <DetailItem label={cheque.tipo === "recibido" ? "Fecha real de cobro" : "Fecha real de pago"} value={cheque.tipo === "recibido" ? formatDisplayDate(cheque.fechaRealCobro || "") : formatDisplayDate(cheque.fechaRealPago || "")} />}
           <DetailItem label="Banco" value={cheque.bancoCheque || ""} />
           <DetailItem label={cheque.tipo === "emitido" ? "Beneficiario" : "Cliente / Pagador"} value={cheque.terceroNombre} />
           <DetailItem label="Obra" value={cheque.obraNombre || "Sin obra vinculada"} />
@@ -955,6 +959,7 @@ function ChequeDetailModal({
               <Field label="Banco"><input className="field" value={draft.bancoCheque} onChange={(event) => setDraft({ ...draft, bancoCheque: event.target.value })} /></Field>
               <Field label="Fecha expedicion"><input className="field" type="date" value={draft.fechaEmisionCheque} onChange={(event) => setDraft({ ...draft, fechaEmisionCheque: event.target.value })} /></Field>
               <Field label="Fecha vencimiento/cobro"><input className="field" type="date" value={draft.fechaCobroCheque} onChange={(event) => setDraft({ ...draft, fechaCobroCheque: event.target.value })} /></Field>
+              {(cheque.estado === "cobrado" || cheque.estado === "debitado") && <Field label={cheque.tipo === "recibido" ? "Fecha real de cobro" : "Fecha real de pago"}><input className="field" type="date" value={draft.fechaReal} onChange={(event) => setDraft({ ...draft, fechaReal: event.target.value })} /></Field>}
               <Field label="Monto"><input className="field" min={0} type="number" value={draft.monto} onChange={(event) => setDraft({ ...draft, monto: event.target.value })} /></Field>
               <Field label="Descripcion"><input className="field" value={draft.observacion} onChange={(event) => setDraft({ ...draft, observacion: event.target.value })} /></Field>
             </div>
@@ -968,6 +973,7 @@ function ChequeDetailModal({
                   fechaEmisionCheque: draft.fechaEmisionCheque,
                   fechaCobroCheque: draft.fechaCobroCheque,
                   fechaVencimientoCheque: draft.fechaCobroCheque,
+                  ...(draft.fechaReal && cheque.estado === "cobrado" ? { fechaRealCobro: draft.fechaReal } : draft.fechaReal && cheque.estado === "debitado" ? { fechaRealPago: draft.fechaReal } : {}),
                   monto: Number(draft.monto || 0),
                   observacion: draft.observacion || undefined
                 });
