@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DataCard from "../components/ui/DataCard";
 import KpiCard from "../components/ui/KpiCard";
+import MonthlySalesDialog from "../components/dashboard/MonthlySalesDialog";
 import ProgressBar from "../components/ui/ProgressBar";
 import StatusBadge, { type BadgeStatus } from "../components/ui/StatusBadge";
 import NewWorkWizard from "../components/work/NewWorkWizard";
@@ -20,12 +21,12 @@ import {
   getProgressReportsByWork,
   getProgressRubricsByWork
 } from "../lib/firestore";
-import { canCreateWork } from "../lib/roles";
+import { canCreateWork, canViewFinancials, canViewModule } from "../lib/roles";
 import type { Cobro, Cuadrilla, Obra, ProgressReport, WorkProgressRubric } from "../types";
 import { formatCurrencyPYG, formatDateShort } from "../utils/formatters";
 import { getFinancialStatus } from "../utils/finances";
 import { calculateWeightedProgress } from "../utils/progress";
-import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, isDashboardMonth } from "../utils/dashboard";
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, isDashboardMonth } from "../utils/dashboard";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [newWorkOpen, setNewWorkOpen] = useState(false);
+  const [salesOpen, setSalesOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentDashboardMonth());
 
   useEffect(() => {
@@ -90,6 +92,8 @@ export default function DashboardPage() {
       flujoProyectado: saldoPendiente
     };
   }, [cobros, obras, progressReports, progressRubrics, selectedMonth]);
+
+  const monthlySalesWorks = useMemo(() => getMonthlySalesWorks(obras, selectedMonth), [obras, selectedMonth]);
 
   const statusRows = useMemo(() => {
     const total = Math.max(obras.length, 1);
@@ -167,7 +171,7 @@ export default function DashboardPage() {
       </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} />
+        <KpiCard label="Ventas del mes" value={formatCurrencyPYG(metrics.totalMonto)} icon={Receipt} onClick={canViewFinancials(profile) ? () => setSalesOpen(true) : undefined} />
         <KpiCard label="Cobrado del mes" value={formatCurrencyPYG(metrics.totalCobrado)} icon={Receipt} tone="green" />
         <KpiCard label="Cuentas por cobrar" value={formatCurrencyPYG(metrics.saldoPendiente)} icon={CalendarClock} tone="orange" />
         <KpiCard label="Flujo proyectado 30 dias" value={formatCurrencyPYG(metrics.flujoProyectado)} icon={BarChart3} />
@@ -176,6 +180,8 @@ export default function DashboardPage() {
         <KpiCard label="M2 instalados esta semana" value={`${metrics.m2InstaladosSemana} m2`} icon={Truck} tone="green" />
         <KpiCard label="Utilidad estimada" value={formatCurrencyPYG(metrics.utilidadEstimada)} icon={BarChart3} tone="green" />
       </section>
+
+      {salesOpen && canViewFinancials(profile) && <MonthlySalesDialog month={selectedMonth} works={monthlySalesWorks} total={metrics.totalMonto} canOpenWork={canViewModule(profile, "finanzas_obras")} error={error} onClose={() => setSalesOpen(false)} />}
 
       <section className="grid gap-5 xl:grid-cols-2">
         <DataCard title="Avance operativo" subtitle="Fiscalizacion, produccion, instalacion y cuadrillas.">

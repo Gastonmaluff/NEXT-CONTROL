@@ -5,6 +5,7 @@ type KpiCardProps = {
   value: string;
   icon: LucideIcon;
   tone?: string;
+  onClick?: () => void;
 };
 
 const toneClasses: Record<string, string> = {
@@ -14,9 +15,8 @@ const toneClasses: Record<string, string> = {
   red: "bg-red-50 text-next-red"
 };
 
-export default function KpiCard({ label, value, icon: Icon, tone = "blue" }: KpiCardProps) {
-  return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+export default function KpiCard({ label, value, icon: Icon, tone = "blue", onClick }: KpiCardProps) {
+  const content = (
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-next-muted">{label}</p>
@@ -32,6 +32,10 @@ export default function KpiCard({ label, value, icon: Icon, tone = "blue" }: Kpi
           <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
       </div>
-    </article>
   );
+  const card = "rounded-lg border border-slate-200 bg-white p-4 shadow-soft";
+  if (onClick) return <button type="button" onClick={onClick} className={`${card} w-full text-left transition hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200`} aria-label={`${label}: ${value}. Ver detalle`}>
+    {content}<span className="mt-3 block text-xs font-bold text-next-blue">Ver detalle →</span>
+  </button>;
+  return <article className={card}>{content}</article>;
 }

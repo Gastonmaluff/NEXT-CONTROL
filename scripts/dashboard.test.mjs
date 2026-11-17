@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, isDashboardMonth } from '../src/utils/dashboard.ts';
+import { calculateMonthlyDashboardTotals, getCurrentDashboardMonth, getMonthlySalesWorks, isDashboardMonth } from '../src/utils/dashboard.ts';
 
 const work = (fechaInicio, montoAprobado, createdAt = `${fechaInicio}T12:00:00Z`) => ({ fechaInicio, montoAprobado, createdAt });
 const receipt = (fecha, monto) => ({ fecha, monto });
@@ -71,4 +71,19 @@ test('invalid/empty month never becomes an unfiltered all-time total', () => {
     assert.deepEqual(calculateMonthlyDashboardTotals(obras, [], month), { ventas: 0, cobrado: 0 });
   }
   assert.equal(isDashboardMonth('2026-10'), true);
+});
+
+
+test('sales detail contains exactly the works that contribute to the monthly amount', () => {
+  const obras = [
+    {...work('2026-10-01', 100), id:'approved', estado:'Aprobado'},
+    {...work('2026-10-20', 200), id:'prospect', estado:'Prospecto'},
+    {...work('', 300, '2026-11-01T02:59:59Z'), id:'legacy', estado:'Produccion'},
+    {...work('2026-11-01', 400), id:'outside', estado:'Aprobado'},
+    {...work('2026-10-10', NaN), id:'invalid', estado:'Aprobado'}
+  ];
+  const included = getMonthlySalesWorks(obras, '2026-10');
+  assert.deepEqual(included.map(o => o.id), ['approved', 'prospect', 'legacy']);
+  assert.equal(included.reduce((total,o) => total + o.montoAprobado, 0), calculateMonthlyDashboardTotals(obras, [], '2026-10').ventas);
+  assert.deepEqual(getMonthlySalesWorks(obras, 'invalid'), []);
 });

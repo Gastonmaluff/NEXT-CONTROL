@@ -30,6 +30,12 @@ function getRecordMonth(value: string | undefined): string {
   return getCurrentDashboardMonth(new Date(value));
 }
 
+// The list and the KPI share the same inclusion rule so their totals always reconcile.
+export function getMonthlySalesWorks<T extends Pick<Obra, "fechaInicio" | "createdAt" | "montoAprobado">>(obras: readonly T[], month: string): T[] {
+  if (!isDashboardMonth(month)) return [];
+  return obras.filter(obra => getRecordMonth(obra.fechaInicio || obra.createdAt) === month && Number.isFinite(obra.montoAprobado));
+}
+
 export function calculateMonthlyDashboardTotals(
   obras: readonly Pick<Obra, "fechaInicio" | "createdAt" | "montoAprobado">[],
   cobros: readonly Pick<Cobro, "fecha" | "monto">[],
@@ -39,10 +45,7 @@ export function calculateMonthlyDashboardTotals(
   return {
     // There is no separate sale/approval date in Obra. Use its explicit start
     // date; creation time is a fallback only for legacy records without it.
-    ventas: obras.reduce((total, obra) =>
-      getRecordMonth(obra.fechaInicio || obra.createdAt) === month && Number.isFinite(obra.montoAprobado)
-        ? total + obra.montoAprobado
-        : total, 0),
+    ventas: getMonthlySalesWorks(obras, month).reduce((total, obra) => total + obra.montoAprobado, 0),
     // Collections on older works still belong to the month they were received.
     cobrado: cobros.reduce((total, cobro) =>
       getRecordMonth(cobro.fecha) === month && Number.isFinite(cobro.monto)
